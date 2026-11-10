@@ -110,7 +110,7 @@ async fn request_shape() {
 // write does, and the verdict stands as answered: what the repair left in
 // the tree is the caller's to seal.
 #[tokio::test]
-async fn repairs() {
+async fn repair_by_write() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     std::fs::create_dir_all(tmp.path().join("src")).expect("src dir");
@@ -147,7 +147,7 @@ async fn repairs() {
 // the rest of the file as it was, and a whole-file rewrite that would halve
 // the file is refused as a build's is.
 #[tokio::test]
-async fn repairs_by_edit() {
+async fn repair_by_edit() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     std::fs::create_dir_all(tmp.path().join("src")).expect("src dir");
@@ -349,7 +349,7 @@ async fn missing_prompt() {
 // broken entry named and the call ended before a turn is spent, so a grant
 // the host would refuse never reaches it.
 #[tokio::test]
-async fn worker_refused() {
+async fn invalid_worker_grant() {
     const BROKEN: Grant = Grant {
         egress: &["https://registry.npmjs.org", "registry.npmjs.org"],
         read: &["/opt/node", "~/", "~/a/../b", "~/.volta"],
@@ -387,7 +387,7 @@ async fn worker_refused() {
 // A grant of empty lists grants nothing, so a list of it puts no worker
 // grant, as no grants put none.
 #[tokio::test]
-async fn worker_reaching_nothing() {
+async fn empty_worker_grant() {
     const GRANTS: &[Grant] = &[Grant {
         egress: &[],
         read: &[],

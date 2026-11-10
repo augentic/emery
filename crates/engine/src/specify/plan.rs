@@ -89,6 +89,96 @@ impl<'a> PartBrief<'a> {
     }
 }
 
+impl Brief for PartBrief<'_> {
+    type Answer = PartAnswer;
+    type Output = Plan;
+
+    const NAME: &'static str = "slicing";
+    const PROSE: &'static [&'static str] = &["slicing.md"];
+
+    fn tighten(&self, schema: &mut Value) -> Result<(), Error> {
+        let parts = Self::at(schema, "/properties/parts")?;
+        parts.insert("minItems".to_owned(), json!(1));
+        parts.insert("maxItems".to_owned(), json!(self.floors.len()));
+
+        // restrict each list to this run's requirement ids and type keys
+        let ids = json!(self.bases.iter().map(|basis| basis.id).collect::<Vec<_>>());
+        Self::at(schema, "/$defs/Draft/properties/requirements")?
+            .insert("minItems".to_owned(), json!(1));
+        Self::at(schema, "/$defs/Draft/properties/requirements/items")?
+            .insert("enum".to_owned(), ids);
+        for pointer in ["/$defs/Draft/properties/types", "/$defs/Draft/properties/uses"] {
+            if self.types.is_empty() {
+                Self::at(schema, pointer)?.insert("maxItems".to_owned(), json!(0));
+            } else {
+                Self::at(schema, &format!("{pointer}/items"))?
+                    .insert("enum".to_owned(), json!(self.types.keys));
+            }
+        }
+        Ok(())
+    }
+
+    fn verify(&self, answer: &PartAnswer, review: &mut Review) {
+        review.paragraphs(&answer.preamble, "preamble");
+        self.floors.check(&self.types, &answer.parts, review);
+    }
+
+    // Parts are numbered by their lowest requirement, so re-runs over one
+    // specification number alike; every list is written in id order.
+    fn into_output(self, answer: PartAnswer) -> Result<Plan, Error> {
+        let mut drafts = answer.parts;
+        drafts.sort_by_key(|draft| draft.requirements.iter().min().copied());
+        let mut parts: Vec<Part> = drafts
+            .into_iter()
+            .zip(PartId::sequence())
+            .map(|(draft, id)| draft.into_part(id, &self.types))
+            .collect();
+        self.types.depend(&mut parts);
+
+        Ok(Plan {
+            emery: EMERY,
+            parent: None,
+            preamble: answer.preamble,
+            parts,
+        })
+    }
+}
+
+impl Display for PartBrief<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("Slice the specification into a build plan.\n\n## Baseline\n\n")?;
+        for stem in &self.floors.stems {
+            writeln!(
+                f,
+                "- `{}` — {}{}",
+                stem.label,
+                listed(&stem.requirements),
+                self.floors.triggered(&stem.requirements)
+            )?;
+        }
+        f.write_str("\n")?;
+        self.floors.write_rules(f)?;
+
+        if self.types.is_empty() {
+            f.write_str(
+                "\n## Type keys\n\nThe design has no data type; answer every `types` and `uses` \
+                 list empty.\n",
+            )?;
+        } else {
+            f.write_str(
+                "\n## Type keys\n\nThe design's data types. Each key is owned by exactly one \
+                 part, the one that builds the requirements reading or producing it, whatever \
+                 module declared it in the source.\n\n",
+            )?;
+            for key in &self.types.keys {
+                self.types.write_key(f, key)?;
+            }
+        }
+
+        write!(f, "\n## Requirements\n\n{bases}", bases = BasesSection(self.bases))
+    }
+}
+
 // The facts the slicing gate holds a plan to: the requirements by stem, and
 // the triggers that reach them. Built from a specification's requirements or
 // a grouping's bases alike, so one gate reads a specify's answer and an
@@ -259,6 +349,25 @@ impl<'a> Floors<'a> {
     }
 }
 
+// The requirements under one stem.
+struct Stem<'a> {
+    label: &'a str,
+    requirements: Vec<ReqId>,
+}
+
+impl<'a> Stem<'a> {
+    // Files `id` under `label`, in first-occurrence order.
+    fn file(stems: &mut Vec<Self>, label: &'a str, id: ReqId) {
+        match stems.iter_mut().find(|entry| entry.label == label) {
+            Some(entry) => entry.requirements.push(id),
+            None => stems.push(Self {
+                label,
+                requirements: vec![id],
+            }),
+        }
+    }
+}
+
 fn check_types(types: &Types, drafts: &[Draft], review: &mut Review) {
     let mut owners: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for draft in drafts {
@@ -323,117 +432,6 @@ fn check_types(types: &Types, drafts: &[Draft], review: &mut Review) {
     }
 }
 
-impl Brief for PartBrief<'_> {
-    type Answer = PartAnswer;
-    type Output = Plan;
-
-    const NAME: &'static str = "slicing";
-    const PROSE: &'static [&'static str] = &["slicing.md"];
-
-    fn tighten(&self, schema: &mut Value) -> Result<(), Error> {
-        let parts = Self::at(schema, "/properties/parts")?;
-        parts.insert("minItems".to_owned(), json!(1));
-        parts.insert("maxItems".to_owned(), json!(self.floors.len()));
-
-        // restrict each list to this run's requirement ids and type keys
-        let ids = json!(self.bases.iter().map(|basis| basis.id).collect::<Vec<_>>());
-        Self::at(schema, "/$defs/Draft/properties/requirements")?
-            .insert("minItems".to_owned(), json!(1));
-        Self::at(schema, "/$defs/Draft/properties/requirements/items")?
-            .insert("enum".to_owned(), ids);
-        for pointer in ["/$defs/Draft/properties/types", "/$defs/Draft/properties/uses"] {
-            if self.types.is_empty() {
-                Self::at(schema, pointer)?.insert("maxItems".to_owned(), json!(0));
-            } else {
-                Self::at(schema, &format!("{pointer}/items"))?
-                    .insert("enum".to_owned(), json!(self.types.keys));
-            }
-        }
-        Ok(())
-    }
-
-    fn verify(&self, answer: &PartAnswer, review: &mut Review) {
-        review.paragraphs(&answer.preamble, "preamble");
-        self.floors.check(&self.types, &answer.parts, review);
-    }
-
-    // Parts are numbered by their lowest requirement, so re-runs over one
-    // specification number alike; every list is written in id order.
-    fn into_output(self, answer: PartAnswer) -> Result<Plan, Error> {
-        let mut drafts = answer.parts;
-        drafts.sort_by_key(|draft| draft.requirements.iter().min().copied());
-        let mut parts: Vec<Part> = drafts
-            .into_iter()
-            .zip(PartId::sequence())
-            .map(|(draft, id)| draft.into_part(id, &self.types))
-            .collect();
-        self.types.depend(&mut parts);
-
-        Ok(Plan {
-            emery: EMERY,
-            parent: None,
-            preamble: answer.preamble,
-            parts,
-        })
-    }
-}
-
-fn quoted(names: impl IntoIterator<Item: Display>) -> String {
-    names.into_iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ")
-}
-
-fn listed(ids: &[ReqId]) -> String {
-    ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
-}
-
-impl Display for PartBrief<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str("Slice the specification into a build plan.\n\n## Baseline\n\n")?;
-        for stem in &self.floors.stems {
-            writeln!(
-                f,
-                "- `{}` — {}{}",
-                stem.label,
-                listed(&stem.requirements),
-                self.floors.triggered(&stem.requirements)
-            )?;
-        }
-        f.write_str("\n")?;
-        self.floors.write_rules(f)?;
-
-        if self.types.is_empty() {
-            f.write_str(
-                "\n## Type keys\n\nThe design has no data type; answer every `types` and `uses` \
-                 list empty.\n",
-            )?;
-        } else {
-            f.write_str(
-                "\n## Type keys\n\nThe design's data types. Each key is owned by exactly one \
-                 part, the one that builds the requirements reading or producing it, whatever \
-                 module declared it in the source.\n\n",
-            )?;
-            for key in &self.types.keys {
-                self.types.write_key(f, key)?;
-            }
-        }
-
-        write!(f, "\n## Requirements\n\n{bases}", bases = BasesSection(self.bases))
-    }
-}
-
-/// Model-authored content for a build plan.
-///
-/// The engine supplies part identifiers and the order of every list.
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(title = "Emery slicing answer")]
-pub struct PartAnswer {
-    /// Markdown paragraphs before the first part.
-    pub preamble: Vec<String>,
-    /// One draft per part, in any order.
-    pub parts: Vec<Draft>,
-}
-
 // The part names a cycle in `edges` leaves unorderable.
 fn unorderable<'a>(drafts: &'a [Draft], edges: &'a [Edge]) -> Vec<&'a str> {
     let names: BTreeSet<&str> = drafts.iter().map(|draft| draft.name.as_str()).collect();
@@ -450,6 +448,27 @@ fn unorderable<'a>(drafts: &'a [Draft], edges: &'a [Edge]) -> Vec<&'a str> {
         .collect();
     let (_, cyclic) = ranks(pending);
     cyclic
+}
+
+fn quoted(names: impl IntoIterator<Item: Display>) -> String {
+    names.into_iter().map(|name| format!("`{name}`")).collect::<Vec<_>>().join(", ")
+}
+
+fn listed(ids: &[ReqId]) -> String {
+    ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
+}
+
+/// Model-authored content for a build plan.
+///
+/// The engine supplies part identifiers and the order of every list.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(title = "Emery slicing answer")]
+pub struct PartAnswer {
+    /// Markdown paragraphs before the first part.
+    pub preamble: Vec<String>,
+    /// One draft per part, in any order.
+    pub parts: Vec<Draft>,
 }
 
 /// The drafted content of one part, before the engine numbers and orders it.
@@ -505,25 +524,6 @@ impl From<&Part> for Draft {
             types: part.types.clone(),
             uses: part.uses.clone(),
             brief: part.brief.clone(),
-        }
-    }
-}
-
-// The requirements under one stem.
-struct Stem<'a> {
-    label: &'a str,
-    requirements: Vec<ReqId>,
-}
-
-impl<'a> Stem<'a> {
-    // Files `id` under `label`, in first-occurrence order.
-    fn file(stems: &mut Vec<Self>, label: &'a str, id: ReqId) {
-        match stems.iter_mut().find(|entry| entry.label == label) {
-            Some(entry) => entry.requirements.push(id),
-            None => stems.push(Self {
-                label,
-                requirements: vec![id],
-            }),
         }
     }
 }

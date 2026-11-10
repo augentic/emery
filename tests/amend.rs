@@ -521,7 +521,7 @@ async fn amend_retired_chain() {
 // `uses` and derived `depends on`, and a join's `uses` merges in design
 // order and re-derives `depends-on` across current and new parts alike.
 #[tokio::test]
-async fn amend_edges_rederived() {
+async fn part_edges() {
     let base_design = format!(
         r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
             {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}]}},
@@ -832,7 +832,7 @@ async fn amend_retired_overview() {
 // section is a finding naming the requirement, and the next answer rewording
 // it around the kept one is accepted.
 #[tokio::test]
-async fn amend_revised_dropped() {
+async fn revised_dropped_block() {
     let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
                  under it.";
     let base = format!(
@@ -1221,7 +1221,7 @@ async fn amend_moved() {
 // current part, one listed twice, an empty one, and a touched part left
 // without one are each refused and corrected.
 #[tokio::test]
-async fn amend_rebrief_refused() {
+async fn untouched_rebriefed() {
     let placed = r#""parts": [
         {"name": "reporting", "requirements": ["REQ-004"], "types": [], "uses": ["orders.order"],
          "brief": ["Reports a cancellation."]}
@@ -1524,7 +1524,7 @@ async fn amend_sliced_joined() {
 // names a new part as a current one is refused naming each, and the
 // correction lands.
 #[tokio::test]
-async fn amend_sliced_refused() {
+async fn invalid_part_amend() {
     let refused = r#"{"parts": [
         {"name": "orders", "requirements": ["REQ-005"], "types": [], "uses": [], "brief": []}
     ], "joins": [
@@ -2386,7 +2386,7 @@ async fn amend_retire_contested() {
 // among its notes, counted under no trailer, and nothing refuses it, since
 // the next change is where the operator reconciles it.
 #[tokio::test]
-async fn amend_retire_contested_applied() {
+async fn retire_contested_apply() {
     let (provider, revision) = contested_retire();
 
     let resp =
@@ -2502,7 +2502,7 @@ async fn amend_retire_own() {
 // the status the change sources alone settle with its notes gone, and `show
 // amendment` prints the competing statements on its `Before:` line.
 #[tokio::test]
-async fn amend_resolves_conflict() {
+async fn conflict_claim() {
     let competing = "[conflict] A signed-in user cancels an open order. | A signed-in user \
                      cancels an order within an hour of placing it.";
     let resolved = "A signed-in user cancels an order within a day of placing it.";
@@ -2588,7 +2588,7 @@ async fn amend_resolves_conflict() {
 // statements as its statement before and after, the amended specification
 // holds it as the base does, and `show amendment` lists it so.
 #[tokio::test]
-async fn amend_conflict_unchanged() {
+async fn standing_conflict() {
     let competing = "[conflict] A signed-in user cancels an open order. | A signed-in user \
                      cancels an order within an hour of placing it.";
     // index 0 is `docs`, 1..=4 the standing requirements in id order
@@ -2803,7 +2803,7 @@ async fn amend_apply() {
 // seal it once the repository answers, and nothing of the current revision
 // moves.
 #[tokio::test]
-async fn amend_apply_seal_refused() {
+async fn apply_dirty_checkout() {
     let mut provider = Provider::answering([CLASSES_GROUPING, CLASSES_DRAFT]);
     bind(&mut provider);
     let revision = seed(&provider.files, SPEC, DESIGN, PLAN);
@@ -2939,7 +2939,7 @@ async fn amend_over_staged() {
 // `baseline` names the current revision's own requirements in the grouping,
 // so a source of that name is refused before any load.
 #[tokio::test]
-async fn amend_baseline_refused() {
+async fn corrupt_baseline() {
     let provider = Provider::idle();
     seed(&provider.files, SPEC, DESIGN, PLAN);
 

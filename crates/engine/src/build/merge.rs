@@ -228,33 +228,6 @@ pub struct MergeBrief<'a> {
     pub conflicts: Vec<Conflict>,
 }
 
-// One path a slice's merge left conflicted, as each side holds it.
-pub struct Conflict {
-    // The path, relative to the tree root.
-    pub path: String,
-    // The file as the integrated tree holds it.
-    pub integrated: String,
-    // The file as the slice wrote it.
-    pub slice: String,
-}
-
-/// One conflicted path as the model resolved it.
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Resolution {
-    /// The conflicted path.
-    pub path: String,
-    /// The whole file, both sides combined.
-    pub content: String,
-}
-
-/// The model's answer: one resolution per conflicted path.
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct MergeAnswer {
-    files: Vec<Resolution>,
-}
-
 impl Brief for MergeBrief<'_> {
     type Answer = MergeAnswer;
     type Output = Vec<Resolution>;
@@ -334,4 +307,31 @@ fn fenced(f: &mut Formatter<'_>, heading: &str, content: &str) -> fmt::Result {
     let fence = "`".repeat(longest.max(2) + 1);
     let body = content.strip_suffix('\n').unwrap_or(content);
     writeln!(f, "### {heading}\n\n{fence}\n{body}\n{fence}\n")
+}
+
+// One path a slice's merge left conflicted, as each side holds it.
+pub struct Conflict {
+    // The path, relative to the tree root.
+    pub path: String,
+    // The file as the integrated tree holds it.
+    pub integrated: String,
+    // The file as the slice wrote it.
+    pub slice: String,
+}
+
+/// One conflicted path as the model resolved it.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Resolution {
+    /// The conflicted path.
+    pub path: String,
+    /// The whole file, both sides combined.
+    pub content: String,
+}
+
+/// The model's answer: one resolution per conflicted path.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MergeAnswer {
+    files: Vec<Resolution>,
 }

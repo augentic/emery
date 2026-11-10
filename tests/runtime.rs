@@ -1674,7 +1674,7 @@ async fn amend_branches_merged() {
 // and `amend` are refused `spec-mismatch` before any turn, hinted to keep
 // one side whole, and the merge redone that way reads.
 #[tokio::test]
-async fn amend_branches_hand_merged() {
+async fn amend_hand_merged() {
     let journey = Branched::new().await;
     let Branched {
         roots,
@@ -2097,7 +2097,7 @@ async fn build_budget_serial() {
 // is built again, and only the remaining `REQ-003` builds under the new
 // budget.
 #[tokio::test]
-async fn build_budget_resume_requirements() {
+async fn budget_resume_reqs() {
     let (roots, backends, base, revision) = specified_serial().await;
     let label = format!("emery/{revision}");
     let project = roots.project.path();
@@ -2259,7 +2259,7 @@ async fn build_resumed_staged() {
 // first-parent chain and the resolved file, and the slice's merge brings in
 // the resolution over the slice's own commit.
 #[tokio::test]
-async fn build_conflict_resolved() {
+async fn build_conflict() {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
     roots.stored(TARGET, MOCK_TARGET);
@@ -2365,7 +2365,7 @@ async fn build_conflict_resolved() {
 // slice before anything is sealed: no label is set, no verify turn is put,
 // and the copy stays under `worktrees/` with the file as it was written.
 #[tokio::test]
-async fn build_secret_refused() {
+async fn build_secret() {
     let (roots, backends, base) = specified().await;
     let project = roots.project.path();
     let sealed = roots.git.labelled(project);
@@ -2523,7 +2523,7 @@ async fn build_spec_rewritten() {
 // A checkout with a change the operator has not committed is no base: the
 // path is named, the engine's own `.emery/` is not, and nothing is built.
 #[tokio::test]
-async fn build_dirty_refused() {
+async fn build_dirty_checkout() {
     let (roots, backends, _) = specified().await;
     let project = roots.project.path();
     let sealed = roots.git.labelled(project);
@@ -2848,7 +2848,7 @@ async fn build_resumed_off_base() {
 // `apply` seals into, is no label there either: the build is fresh, the
 // branch is set beside the tag in the clone, and the tag stands.
 #[tokio::test]
-async fn build_brownfield_shadowed() {
+async fn brownfield_shadowed() {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
     roots.stored(TARGET, MOCK_TARGET);
@@ -2896,7 +2896,7 @@ async fn build_brownfield_shadowed() {
 // is fresh, the local label the build's, the remote's standing untouched;
 // the next run resumes from the local label.
 #[tokio::test]
-async fn build_brownfield_remote_label() {
+async fn brownfield_remote_label() {
     let roots = Roots::new();
     roots.stored(SOURCE, MOCK_SOURCE);
     roots.stored(TARGET, MOCK_TARGET);

@@ -187,53 +187,6 @@ impl Lexicon {
     }
 }
 
-/// Returns the words of `text`, lowercased, split at its separators and camel-case boundaries.
-///
-/// A word is a run of ASCII letters and digits. A run splits again where a
-/// lowercase letter or a digit meets an uppercase one, and where an uppercase
-/// run meets its last letter's lowercase successor, so `IORedis` is `io`,
-/// `redis`. Nothing is returned for a text of separators alone.
-///
-/// # Examples
-///
-/// ```
-/// use emery_lexicon::words;
-///
-/// assert_eq!(words("useConfluentKafkaConfig"), ["use", "confluent", "kafka", "config"]);
-/// assert_eq!(words("KEYVAULT_HOST"), ["keyvault", "host"]);
-/// assert_eq!(words("HTTPServer v2"), ["http", "server", "v2"]);
-/// assert!(words("--").is_empty());
-/// ```
-#[must_use]
-pub fn words(text: &str) -> Vec<String> {
-    let mut words = Vec::new();
-    let mut word = String::new();
-    let mut prev_upper = false;
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if !c.is_ascii_alphanumeric() {
-            if !word.is_empty() {
-                words.push(std::mem::take(&mut word));
-            }
-            prev_upper = false;
-            continue;
-        }
-        let upper = c.is_ascii_uppercase();
-        if upper
-            && !word.is_empty()
-            && (!prev_upper || chars.peek().is_some_and(char::is_ascii_lowercase))
-        {
-            words.push(std::mem::take(&mut word));
-        }
-        word.push(c.to_ascii_lowercase());
-        prev_upper = upper;
-    }
-    if !word.is_empty() {
-        words.push(word);
-    }
-    words
-}
-
 // The terms of one package specifier, spelled as a fixed name is, under the
 // rules `Lexicon::from_packages` states.
 fn package_terms(specifier: impl AsRef<str>) -> impl Iterator<Item = String> {
@@ -510,16 +463,63 @@ const TECHNOLOGY: &[&str] = &[
     "milvus",
 ];
 
+/// Returns the words of `text`, lowercased, split at its separators and camel-case boundaries.
+///
+/// A word is a run of ASCII letters and digits. A run splits again where a
+/// lowercase letter or a digit meets an uppercase one, and where an uppercase
+/// run meets its last letter's lowercase successor, so `IORedis` is `io`,
+/// `redis`. Nothing is returned for a text of separators alone.
+///
+/// # Examples
+///
+/// ```
+/// use emery_lexicon::words;
+///
+/// assert_eq!(words("useConfluentKafkaConfig"), ["use", "confluent", "kafka", "config"]);
+/// assert_eq!(words("KEYVAULT_HOST"), ["keyvault", "host"]);
+/// assert_eq!(words("HTTPServer v2"), ["http", "server", "v2"]);
+/// assert!(words("--").is_empty());
+/// ```
+#[must_use]
+pub fn words(text: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut prev_upper = false;
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if !c.is_ascii_alphanumeric() {
+            if !word.is_empty() {
+                words.push(std::mem::take(&mut word));
+            }
+            prev_upper = false;
+            continue;
+        }
+        let upper = c.is_ascii_uppercase();
+        if upper
+            && !word.is_empty()
+            && (!prev_upper || chars.peek().is_some_and(char::is_ascii_lowercase))
+        {
+            words.push(std::mem::take(&mut word));
+        }
+        word.push(c.to_ascii_lowercase());
+        prev_upper = upper;
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    words
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{Lexicon, TECHNOLOGY, words};
+    use super::TECHNOLOGY;
 
     // Every fixed entry is non-empty, lowercase ASCII letters and digits with
     // no separator, and listed once.
     #[test]
-    fn fixed_table_invariants() {
+    fn fixed_table() {
         let mut seen = BTreeSet::new();
         for &entry in TECHNOLOGY {
             assert!(!entry.is_empty(), "empty lexicon entry");
@@ -529,57 +529,5 @@ mod tests {
             );
             assert!(seen.insert(entry), "`{entry}` is listed twice in TECHNOLOGY");
         }
-    }
-
-    #[test]
-    fn package_specifiers() {
-        let lexicon = Lexicon::from_packages([
-            "@azure/keyvault-secrets/subpath",
-            "@aws-sdk/client-s3",
-            "@/empty",
-            "@",
-            "socket.io/client",
-            "pymongo",
-            "py",
-            "bullmq",
-            "mq",
-            "sqlalchemy",
-            "requests",
-            "boto3",
-            "boto3",
-        ]);
-        assert_eq!(
-            lexicon,
-            Lexicon::with([
-                "azure",
-                "keyvaultsecrets",
-                "awssdk",
-                "clients3",
-                "socketio",
-                "pymongo",
-                "bullmq",
-                "sqlalchemy",
-                "boto3",
-            ])
-        );
-    }
-
-    // Longest match wins (`eventhubs` over `eventhub`), a single-character
-    // trailing word (`ek s`) does not complete a multi-word entry, and each
-    // matched name is returned once in first-reached order.
-    #[test]
-    fn longest_and_deduplicated_matches() {
-        let lexicon = Lexicon::from_packages(["@azure/keyvault-secrets"]);
-        assert_eq!(
-            lexicon.names("Event Hubs and Key Vault Secrets and Event Hub and Key Vault"),
-            ["eventhubs", "keyvaultsecrets", "eventhub", "keyvault"]
-        );
-        assert_eq!(lexicon.names("ek s"), Vec::<String>::new());
-    }
-
-    #[test]
-    fn camel_and_acronym_words() {
-        assert_eq!(words("IORedis2Client"), ["io", "redis2", "client"]);
-        assert_eq!(words("v2Beta"), ["v2", "beta"]);
     }
 }

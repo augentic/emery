@@ -315,7 +315,7 @@ async fn show_schedule() {
 // sub-stems before triggered ones, keeps a shared-trigger group whole as
 // `over-budget`, and skips loading the target adapter.
 #[tokio::test]
-async fn show_schedule_budget_flag() {
+async fn schedule_budget_flag() {
     let mut spec: Value = serde_json::from_slice(SPEC).expect("spec fixture");
     spec["requirements"][1]["subject"] = json!("orders.validate.schema");
     spec["requirements"][2]["subject"] = json!("orders.create.route");
@@ -412,7 +412,7 @@ async fn show_schedule_budget_flag() {
 // `show schedule --staged` is refused: a schedule cuts the sealed plan
 // `emery build` reads, never the staged candidate.
 #[tokio::test]
-async fn show_schedule_staged_refused() {
+async fn schedule_staged_flag() {
     let provider = Provider::idle();
     stage(&provider.storage, SPEC, DESIGN, PLAN);
 

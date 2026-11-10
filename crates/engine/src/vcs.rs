@@ -462,6 +462,104 @@ impl SourceClone {
     }
 }
 
+// One spelling for every URL that names one repository: trimmed, the
+// `git@host:path` form as `ssh://git@host/path`, scheme and host lowercased,
+// a trailing `/` and `.git` dropped.
+fn normalise(url: &str) -> String {
+    let url = url.trim();
+    let url = match scp_like(url) {
+        Some((authority, path)) => format!("ssh://{authority}/{path}"),
+        None => url.to_owned(),
+    };
+    let (scheme, rest) = url.split_once("://").unwrap_or(("", url.as_str()));
+    let (authority, path) =
+        if scheme.is_empty() { ("", rest) } else { rest.split_once('/').unwrap_or((rest, "")) };
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path).trim_end_matches('/');
+    if scheme.is_empty() {
+        path.to_owned()
+    } else {
+        format!("{}://{}/{path}", scheme.to_ascii_lowercase(), authority.to_ascii_lowercase())
+    }
+}
+
+// `user@host:path` and `host:path`, which git reads as SSH: a colon before
+// any slash, and no scheme.
+fn scp_like(url: &str) -> Option<(&str, &str)> {
+    if url.contains("://") {
+        return None;
+    }
+    let (authority, path) = url.split_once(':')?;
+    (!authority.is_empty() && !authority.contains('/') && !path.starts_with("//"))
+        .then_some((authority, path))
+}
+
+// Clones `url` at `at`, or fetches its origin when a run already cloned it:
+// the clone is the one operation that creates its location, so a read or a
+// fetch at a path the run does not hold yet is refused there.
+async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> {
+    match vcs.clone_repo(url, at, CloneOptions { depth: None }).await {
+        Ok(()) => {
+            tracing::info!(repository = url, clone = at, "cloned");
+            Ok(())
+        }
+        Err(vcs::Error::Exists(_)) => {
+            tracing::info!(repository = url, clone = at, "fetching");
+            vcs.fetch(at, ORIGIN).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+// What a run addressed when the capability refused, which decides the
+// class and code the refusal reaches the operator as.
+#[derive(Clone, Copy)]
+enum Subject<'a> {
+    Project,
+    Repository(&'a str),
+    Target(&'a str),
+    WorkingCopy(&'a str),
+}
+
+impl Subject<'_> {
+    fn refusal(self, error: vcs::Error) -> Error {
+        match error {
+            vcs::Error::NotFound(what) => Error::NotFound {
+                code: "revision-not-found".into(),
+                description: format!("{self} has no `{what}`"),
+            },
+            vcs::Error::NotARepository => match self {
+                Self::Project => Error::BadRequest {
+                    code: "repository-required".into(),
+                    description: "the project directory is not a repository".into(),
+                },
+                Self::Repository(_) | Self::Target(_) | Self::WorkingCopy(_) => {
+                    server_error!("{self} is not a repository")
+                }
+            },
+            vcs::Error::Pending(paths) => Error::BadRequest {
+                code: "base-not-sealed".into(),
+                description: format!("{self} holds pending changes: {}", paths.join(", ")),
+            },
+            vcs::Error::Access(detail) => bad_gateway!("{self}: {detail}"),
+            vcs::Error::Diverged(what) => server_error!("{self}: `{what}` diverged"),
+            vcs::Error::Exists(what) => server_error!("{self}: `{what}` already exists"),
+            vcs::Error::Other(detail) => server_error!("{self}: {detail}"),
+        }
+    }
+}
+
+impl fmt::Display for Subject<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Project => f.write_str("the project repository"),
+            Self::Repository(url) => write!(f, "repository `{url}`"),
+            Self::Target(name) => write!(f, "the target repository `{}`", target_path(name)),
+            Self::WorkingCopy(at) => write!(f, "working copy `{at}`"),
+        }
+    }
+}
+
 /// The target as a run names it: the name its repository is kept under and where that repository is.
 ///
 /// A run's `[target]` table, or its command line, carries one; a verb
@@ -841,6 +939,27 @@ impl BuildRepo {
     }
 }
 
+// Holds the project checkout to nothing pending outside the engine's own
+// directories, so a build starts from a sealed tree.
+async fn project_clean<V: Vcs>(vcs: &V) -> Result<(), Error> {
+    let pending = vcs.pending(PROJECT).await.map_err(|error| Subject::Project.refusal(error))?;
+    let unsealed: Vec<String> = pending
+        .into_iter()
+        .map(|change| change.path)
+        .filter(|path| !path.split('/').next().is_some_and(|first| SKIP_DIRS.contains(&first)))
+        .collect();
+    if !unsealed.is_empty() {
+        return Err(Error::BadRequest {
+            code: "base-not-sealed".into(),
+            description: format!(
+                "the project checkout holds pending changes: {}",
+                unsealed.join(", ")
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// The integration working copy a build runs over, and what it was found holding.
 ///
 /// Cut by [`BuildRepo::cut_integration`]: at the head the build starts from,
@@ -976,259 +1095,4 @@ impl WorkingCopy {
 /// Returns [`Error::ServerError`] when the capability fails.
 pub async fn pending<V: Vcs>(vcs: &V, at: &str) -> Result<Vec<Change>, Error> {
     vcs.pending(at).await.map_err(|error| Subject::WorkingCopy(at).refusal(error))
-}
-
-// Clones `url` at `at`, or fetches its origin when a run already cloned it:
-// the clone is the one operation that creates its location, so a read or a
-// fetch at a path the run does not hold yet is refused there.
-async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> {
-    match vcs.clone_repo(url, at, CloneOptions { depth: None }).await {
-        Ok(()) => {
-            tracing::info!(repository = url, clone = at, "cloned");
-            Ok(())
-        }
-        Err(vcs::Error::Exists(_)) => {
-            tracing::info!(repository = url, clone = at, "fetching");
-            vcs.fetch(at, ORIGIN).await
-        }
-        Err(error) => Err(error),
-    }
-}
-
-// Holds the project checkout to nothing pending outside the engine's own
-// directories, so a build starts from a sealed tree.
-async fn project_clean<V: Vcs>(vcs: &V) -> Result<(), Error> {
-    let pending = vcs.pending(PROJECT).await.map_err(|error| Subject::Project.refusal(error))?;
-    let unsealed: Vec<String> = pending
-        .into_iter()
-        .map(|change| change.path)
-        .filter(|path| !path.split('/').next().is_some_and(|first| SKIP_DIRS.contains(&first)))
-        .collect();
-    if !unsealed.is_empty() {
-        return Err(Error::BadRequest {
-            code: "base-not-sealed".into(),
-            description: format!(
-                "the project checkout holds pending changes: {}",
-                unsealed.join(", ")
-            ),
-        });
-    }
-    Ok(())
-}
-
-// What a run addressed when the capability refused, which decides the
-// class and code the refusal reaches the operator as.
-#[derive(Clone, Copy)]
-enum Subject<'a> {
-    Project,
-    Repository(&'a str),
-    Target(&'a str),
-    WorkingCopy(&'a str),
-}
-
-impl Subject<'_> {
-    fn refusal(self, error: vcs::Error) -> Error {
-        match error {
-            vcs::Error::NotFound(what) => Error::NotFound {
-                code: "revision-not-found".into(),
-                description: format!("{self} has no `{what}`"),
-            },
-            vcs::Error::NotARepository => match self {
-                Self::Project => Error::BadRequest {
-                    code: "repository-required".into(),
-                    description: "the project directory is not a repository".into(),
-                },
-                Self::Repository(_) | Self::Target(_) | Self::WorkingCopy(_) => {
-                    server_error!("{self} is not a repository")
-                }
-            },
-            vcs::Error::Pending(paths) => Error::BadRequest {
-                code: "base-not-sealed".into(),
-                description: format!("{self} holds pending changes: {}", paths.join(", ")),
-            },
-            vcs::Error::Access(detail) => bad_gateway!("{self}: {detail}"),
-            vcs::Error::Diverged(what) => server_error!("{self}: `{what}` diverged"),
-            vcs::Error::Exists(what) => server_error!("{self}: `{what}` already exists"),
-            vcs::Error::Other(detail) => server_error!("{self}: {detail}"),
-        }
-    }
-}
-
-impl fmt::Display for Subject<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Project => f.write_str("the project repository"),
-            Self::Repository(url) => write!(f, "repository `{url}`"),
-            Self::Target(name) => write!(f, "the target repository `{}`", target_path(name)),
-            Self::WorkingCopy(at) => write!(f, "working copy `{at}`"),
-        }
-    }
-}
-
-// One spelling for every URL that names one repository: trimmed, the
-// `git@host:path` form as `ssh://git@host/path`, scheme and host lowercased,
-// a trailing `/` and `.git` dropped.
-fn normalise(url: &str) -> String {
-    let url = url.trim();
-    let url = match scp_like(url) {
-        Some((authority, path)) => format!("ssh://{authority}/{path}"),
-        None => url.to_owned(),
-    };
-    let (scheme, rest) = url.split_once("://").unwrap_or(("", url.as_str()));
-    let (authority, path) =
-        if scheme.is_empty() { ("", rest) } else { rest.split_once('/').unwrap_or((rest, "")) };
-    let path = path.trim_end_matches('/');
-    let path = path.strip_suffix(".git").unwrap_or(path).trim_end_matches('/');
-    if scheme.is_empty() {
-        path.to_owned()
-    } else {
-        format!("{}://{}/{path}", scheme.to_ascii_lowercase(), authority.to_ascii_lowercase())
-    }
-}
-
-// `user@host:path` and `host:path`, which git reads as SSH: a colon before
-// any slash, and no scheme.
-fn scp_like(url: &str) -> Option<(&str, &str)> {
-    if url.contains("://") {
-        return None;
-    }
-    let (authority, path) = url.split_once(':')?;
-    (!authority.is_empty() && !authority.contains('/') && !path.starts_with("//"))
-        .then_some((authority, path))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn revision_message_round_trip() {
-        let sealed = RevisionMessage {
-            revision: "abc123".to_owned(),
-            parent: Some("def456".to_owned()),
-            base: Some("0123abcd".to_owned()),
-            summary: None,
-        };
-        let text = sealed.to_string();
-        assert_eq!(text, "Revision abc123\n\nRevision: abc123\nParent: def456\nBase: 0123abcd");
-        assert_eq!(RevisionMessage::parse(&text), Some(sealed));
-        assert!(Message::parse(&text).is_none(), "a slice's reading passes a revision's over");
-
-        let root = RevisionMessage {
-            revision: "abc123".to_owned(),
-            parent: None,
-            base: None,
-            summary: None,
-        };
-        let text = root.to_string();
-        assert_eq!(text, "Revision abc123\n\nRevision: abc123");
-        assert_eq!(RevisionMessage::parse(&text), Some(root));
-    }
-
-    #[test]
-    fn revision_message_summary_round_trip() {
-        let amended = RevisionMessage {
-            revision: "abc123".to_owned(),
-            parent: Some("def456".to_owned()),
-            base: Some("0123abcd".to_owned()),
-            summary: Some(Summary {
-                added: 1,
-                changed: 2,
-                retired: 0,
-                parts: vec![
-                    PartSummary {
-                        id: "PART-002".parse().expect("a part id"),
-                        name: "orders".to_owned(),
-                        class: PartClass::Changed,
-                    },
-                    PartSummary {
-                        id: "PART-003".parse().expect("a part id"),
-                        name: "export".to_owned(),
-                        class: PartClass::Removed,
-                    },
-                ],
-            }),
-        };
-        let text = amended.to_string();
-        assert_eq!(
-            text,
-            "Revision abc123\n\nRevision: abc123\nParent: def456\nBase: 0123abcd\nAdded: \
-             1\nChanged: 2\nRetired: 0\nParts: PART-002 orders changed, PART-003 export removed"
-        );
-        assert_eq!(RevisionMessage::parse(&text), Some(amended));
-
-        // no part changed leaves the trailer out, and reads back as none
-        let unparted = RevisionMessage {
-            summary: Some(Summary {
-                added: 0,
-                changed: 1,
-                retired: 0,
-                parts: Vec::new(),
-            }),
-            ..RevisionMessage::parse(&text).expect("a revision message")
-        };
-        let text = unparted.to_string();
-        assert!(!text.contains("Parts:"), "{text}");
-        assert_eq!(RevisionMessage::parse(&text), Some(unparted));
-
-        // a trailer of another name is passed over; a malformed summary is not
-        let message = RevisionMessage::parse(
-            "Revision abc123\n\nRevision: abc123\nSigned-off-by: someone\nBase: 0123abcd",
-        )
-        .expect("a revision message");
-        assert_eq!(message.summary, None);
-        assert_eq!(message.base.as_deref(), Some("0123abcd"));
-        assert!(
-            RevisionMessage::parse("Revision abc123\n\nRevision: abc123\nAdded: 1").is_none(),
-            "a count missing"
-        );
-        assert!(
-            RevisionMessage::parse("Revision abc123\n\nRevision: abc123\nChanged: 1").is_none(),
-            "Added missing when another summary trailer is present"
-        );
-        assert!(
-            RevisionMessage::parse(
-                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: x\nRetired: 0"
-            )
-            .is_none(),
-            "a count malformed"
-        );
-        assert!(
-            RevisionMessage::parse(
-                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nParts:"
-            )
-            .is_none(),
-            "an empty Parts trailer"
-        );
-        assert!(
-            RevisionMessage::parse(
-                "Revision abc123\n\nRevision: abc123\nAdded: 1\nChanged: 0\nRetired: 0\nParts: \
-                 orders changed"
-            )
-            .is_none(),
-            "a part entry malformed"
-        );
-    }
-
-    #[test]
-    fn revision_message_passes_over_others() {
-        let slice = Message {
-            slice: SliceId::FIRST,
-            part: PartId::FIRST,
-            name: "authentication".to_owned(),
-            revision: "abc123".to_owned(),
-            budget: 12,
-            requirements: vec![ReqId::FIRST],
-            covered: vec![ReqId::FIRST],
-            adapter: "acme:builder@1.0.0".to_owned(),
-            base: "0123abcd".to_owned(),
-            wave: 1,
-        }
-        .to_string();
-        assert_eq!(Message::parse(&slice).as_ref().map(ToString::to_string), Some(slice.clone()));
-        assert!(RevisionMessage::parse(&slice).is_none());
-        assert!(RevisionMessage::parse("Revision abc123\n\nRevision: other").is_none());
-        assert!(RevisionMessage::parse("Revision \n\nRevision: ").is_none());
-        assert!(RevisionMessage::parse(INITIALISE).is_none());
-    }
 }

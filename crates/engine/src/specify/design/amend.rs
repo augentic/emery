@@ -443,6 +443,37 @@ impl Display for DesignAmend<'_> {
     }
 }
 
+// Whether a paragraph of `base`'s `kind` section cites one of `retired`.
+fn describes(base: &Design, kind: SectionKind, retired: &BTreeMap<ReqId, &str>) -> bool {
+    base.section(kind).is_some_and(|section| {
+        section.blocks.iter().any(|block| match block {
+            revision::Block::Text(text) => cited(text).iter().any(|id| retired.contains_key(id)),
+            revision::Block::Type { .. } => false,
+        })
+    })
+}
+
+// The requirement ids `text` cites, each spelled `REQ-NNN`.
+fn cited(text: &str) -> BTreeSet<ReqId> {
+    text.match_indices("REQ-")
+        .filter_map(|(at, prefix)| {
+            let rest = &text[at + prefix.len()..];
+            let end = rest.find(|ch: char| !ch.is_ascii_digit()).unwrap_or(rest.len());
+            text[at..at + prefix.len() + end].parse().ok()
+        })
+        .collect()
+}
+
+// Whitespace collapsed: the shape a kept paragraph is compared in.
+fn verbatim(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+// The items spelled in order, comma-separated, as a finding names them.
+fn listed(items: impl IntoIterator<Item: Display>) -> String {
+    items.into_iter().map(|item| item.to_string()).collect::<Vec<_>>().join(", ")
+}
+
 /// Model-authored content for an amended design: the sections the change informs, redrafted.
 ///
 /// The engine keeps every other section and the preamble from the current
@@ -475,35 +506,4 @@ impl Redraft {
             Block::Type(_) => None,
         })
     }
-}
-
-// Whitespace collapsed: the shape a kept paragraph is compared in.
-fn verbatim(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-// The items spelled in order, comma-separated, as a finding names them.
-fn listed(items: impl IntoIterator<Item: Display>) -> String {
-    items.into_iter().map(|item| item.to_string()).collect::<Vec<_>>().join(", ")
-}
-
-// Whether a paragraph of `base`'s `kind` section cites one of `retired`.
-fn describes(base: &Design, kind: SectionKind, retired: &BTreeMap<ReqId, &str>) -> bool {
-    base.section(kind).is_some_and(|section| {
-        section.blocks.iter().any(|block| match block {
-            revision::Block::Text(text) => cited(text).iter().any(|id| retired.contains_key(id)),
-            revision::Block::Type { .. } => false,
-        })
-    })
-}
-
-// The requirement ids `text` cites, each spelled `REQ-NNN`.
-fn cited(text: &str) -> BTreeSet<ReqId> {
-    text.match_indices("REQ-")
-        .filter_map(|(at, prefix)| {
-            let rest = &text[at + prefix.len()..];
-            let end = rest.find(|ch: char| !ch.is_ascii_digit()).unwrap_or(rest.len());
-            text[at..at + prefix.len() + end].parse().ok()
-        })
-        .collect()
 }

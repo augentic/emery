@@ -39,33 +39,3 @@ pub fn stems(evidence: &Evidence) -> String {
 pub fn file(path: &str) -> &str {
     path.split_once('#').map_or(path, |(file, _)| file)
 }
-
-#[cfg(test)]
-mod tests {
-    use emery_adapter::source::Evidence;
-
-    use super::{kinds, stems};
-
-    fn evidence() -> Evidence {
-        serde_json::from_str(
-            r#"{ "claims": [
-                { "kind": "requirement", "id": "start.listen", "statement": "a" },
-                { "kind": "requirement", "id": "start.route", "statement": "b" },
-                { "kind": "requirement", "id": "orders.create", "statement": "c" },
-                { "kind": "type", "id": "orders.order", "path": "src/orders.ts" },
-                { "kind": "type", "path": "src/orders.ts" },
-                { "kind": "call", "path": "src/orders.ts#L9" }
-            ] }"#,
-        )
-        .expect("well-formed evidence")
-    }
-
-    #[test]
-    fn summarised() {
-        let evidence = evidence();
-        assert_eq!(kinds(&evidence), "requirement=3 type=2 call=1");
-        assert_eq!(stems(&evidence), "start=2 orders=1");
-        assert_eq!(kinds(&Evidence { claims: vec![] }), "");
-        assert_eq!(stems(&Evidence { claims: vec![] }), "");
-    }
-}

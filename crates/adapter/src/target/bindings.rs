@@ -40,6 +40,34 @@ use crate::target::{
 };
 use crate::{Route, Trigger};
 
+/// The WebAssembly guest interface implemented by a target adapter.
+///
+/// This module exposes the generated `Guest` trait, its records, and the
+/// `export!` macro.
+pub mod export {
+    // The root glob carries the bindgen support items the `export!` macro
+    // expands against; the second names the world's records and `Guest`.
+    pub use super::generated::exports::emery::adapter::target::*;
+    pub use super::generated::*;
+}
+
+#[must_use]
+pub fn metadata(id: &str) -> TargetMetadata {
+    wit::metadata(id).into()
+}
+
+// A failure names the adapter; the caller, which dispatches task by task,
+// names the slice or the wave.
+pub async fn run(id: &str, workspace: &str, task: &Task) -> Result<Outcome, Error> {
+    let outcome = wit::run(id.to_string(), workspace.to_string(), task.clone().into())
+        .await
+        .map_err(|err| match err {
+            types::Error::InvalidRequest(detail) => bad_request!("adapter `{id}`: {detail}"),
+            types::Error::Internal(detail) => bad_gateway!("adapter `{id}`: {detail}"),
+        })?;
+    Ok(outcome.into())
+}
+
 impl From<TargetMetadata> for wit::TargetMetadata {
     fn from(metadata: TargetMetadata) -> Self {
         Self {
@@ -312,32 +340,4 @@ impl From<wit::Outcome> for Outcome {
             wit::Outcome::Verified(verdict) => Self::Verified(verdict.into()),
         }
     }
-}
-
-/// The WebAssembly guest interface implemented by a target adapter.
-///
-/// This module exposes the generated `Guest` trait, its records, and the
-/// `export!` macro.
-pub mod export {
-    // The root glob carries the bindgen support items the `export!` macro
-    // expands against; the second names the world's records and `Guest`.
-    pub use super::generated::exports::emery::adapter::target::*;
-    pub use super::generated::*;
-}
-
-#[must_use]
-pub fn metadata(id: &str) -> TargetMetadata {
-    wit::metadata(id).into()
-}
-
-// A failure names the adapter; the caller, which dispatches task by task,
-// names the slice or the wave.
-pub async fn run(id: &str, workspace: &str, task: &Task) -> Result<Outcome, Error> {
-    let outcome = wit::run(id.to_string(), workspace.to_string(), task.clone().into())
-        .await
-        .map_err(|err| match err {
-            types::Error::InvalidRequest(detail) => bad_request!("adapter `{id}`: {detail}"),
-            types::Error::Internal(detail) => bad_gateway!("adapter `{id}`: {detail}"),
-        })?;
-    Ok(outcome.into())
 }

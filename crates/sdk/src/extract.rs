@@ -217,37 +217,6 @@ struct Plan<'a> {
     lexicon: &'a Lexicon,
 }
 
-// One line span a `requirement` may anchor at, root-relative; no lines is
-// the whole file.
-#[derive(Debug)]
-struct Anchored {
-    path: String,
-    lines: Option<(u64, u64)>,
-}
-
-impl Anchored {
-    // Whether a claim's anchor at `path` over `lines` shares a line with this
-    // one. A whole-file span here covers every line of its file; a claim
-    // citing a whole file against listed lines cites none of them.
-    fn overlaps(&self, path: &str, lines: Option<(u64, u64)>) -> bool {
-        self.path == path
-            && match (self.lines, lines) {
-                (None, _) => true,
-                (Some(_), None) => false,
-                (Some((start, end)), Some((from, to))) => from <= end && start <= to,
-            }
-    }
-}
-
-// What the turn is put over: the lent tree, files settled beneath it, or the
-// inline value itself.
-#[derive(Debug)]
-enum Lend<'a> {
-    Tree,
-    Files(Scope),
-    Value(&'a str),
-}
-
 impl<'a> Plan<'a> {
     // Files over an inline value, or a malformed stem, is the adapter's own
     // defect, so `server_error`; the rest is the operator's input.
@@ -488,6 +457,37 @@ impl<'a> Plan<'a> {
     }
 }
 
+// One line span a `requirement` may anchor at, root-relative; no lines is
+// the whole file.
+#[derive(Debug)]
+struct Anchored {
+    path: String,
+    lines: Option<(u64, u64)>,
+}
+
+impl Anchored {
+    // Whether a claim's anchor at `path` over `lines` shares a line with this
+    // one. A whole-file span here covers every line of its file; a claim
+    // citing a whole file against listed lines cites none of them.
+    fn overlaps(&self, path: &str, lines: Option<(u64, u64)>) -> bool {
+        self.path == path
+            && match (self.lines, lines) {
+                (None, _) => true,
+                (Some(_), None) => false,
+                (Some((start, end)), Some((from, to))) => from <= end && start <= to,
+            }
+    }
+}
+
+// What the turn is put over: the lent tree, files settled beneath it, or the
+// inline value itself.
+#[derive(Debug)]
+enum Lend<'a> {
+    Tree,
+    Files(Scope),
+    Value(&'a str),
+}
+
 // The lines a regular file holds; `None` for anything else at the path. A
 // trailing newline closes the last line rather than opening another.
 pub fn line_count(root: &str, path: &str) -> Option<u64> {
@@ -559,6 +559,46 @@ pub fn inline(root: &str, files: &[String]) -> Vec<String> {
     }
 
     inlined
+}
+
+// The files of a scope whole: a heading per file, then its lines in a fence
+// no run of backticks inside can close, each led by its number.
+pub struct Inlined<'a> {
+    pub files: &'a [String],
+    pub bodies: &'a [String],
+}
+
+impl Display for Inlined<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        for (position, (file, body)) in self.files.iter().zip(self.bodies).enumerate() {
+            if position > 0 {
+                f.write_str("\n\n")?;
+            }
+            let lines: Vec<&str> = body.lines().collect();
+            let width = lines.len().max(1).to_string().len();
+            let fence = "`".repeat(longest_run(body).max(2) + 1);
+            let count = match lines.len() {
+                1 => "1 line".to_owned(),
+                n => format!("{n} lines"),
+            };
+            writeln!(f, "### `{file}` ({count})\n\n{fence}")?;
+            for (number, line) in (1..).zip(&lines) {
+                writeln!(f, "{number:>width$}|{line}")?;
+            }
+            f.write_str(&fence)?;
+        }
+        Ok(())
+    }
+}
+
+fn longest_run(body: &str) -> usize {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in body.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    longest
 }
 
 // The turn is one of several in flight, so its events and its question name
@@ -755,46 +795,6 @@ impl Display for Brief<'_> {
              the document; do not write it yourself.",
         )
     }
-}
-
-// The files of a scope whole: a heading per file, then its lines in a fence
-// no run of backticks inside can close, each led by its number.
-pub struct Inlined<'a> {
-    pub files: &'a [String],
-    pub bodies: &'a [String],
-}
-
-impl Display for Inlined<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for (position, (file, body)) in self.files.iter().zip(self.bodies).enumerate() {
-            if position > 0 {
-                f.write_str("\n\n")?;
-            }
-            let lines: Vec<&str> = body.lines().collect();
-            let width = lines.len().max(1).to_string().len();
-            let fence = "`".repeat(longest_run(body).max(2) + 1);
-            let count = match lines.len() {
-                1 => "1 line".to_owned(),
-                n => format!("{n} lines"),
-            };
-            writeln!(f, "### `{file}` ({count})\n\n{fence}")?;
-            for (number, line) in (1..).zip(&lines) {
-                writeln!(f, "{number:>width$}|{line}")?;
-            }
-            f.write_str(&fence)?;
-        }
-        Ok(())
-    }
-}
-
-fn longest_run(body: &str) -> usize {
-    let mut longest = 0;
-    let mut run = 0;
-    for c in body.chars() {
-        run = if c == '`' { run + 1 } else { 0 };
-        longest = longest.max(run);
-    }
-    longest
 }
 
 fn join(

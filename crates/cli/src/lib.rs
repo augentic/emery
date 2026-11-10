@@ -117,6 +117,106 @@ const COMPLETIONS_DESC: &str = "Generate shell completions.\n\n\
     Pipe into your shell's completion directory. Example: \
     `emery completions zsh > ~/.zsh/_emery`";
 
+const SPECIFY_DESC: &str = "Stage spec.md, design.md, and plan.md from source adapters.\n\n\
+    Name one or more adapters, use `--description <adapter>=<text>` for inline input, \
+    or use `--config [<path>]` (default: `emery.toml`). With no sources, Emery looks \
+    for `emery.toml` in the project root. Command-line sources layer over the config: \
+    one named as a `[[source]]` is — by its adapter's package name — takes that entry's \
+    place whole; any other is appended.\n\n\
+    An adapter is an exact package reference, `namespace:name@version`. Emery reads it \
+    from its store, `~/.emery/adapters`, where the file `namespace_name@version.wasm` is \
+    that release on this machine, and fetches a release the store lacks through the \
+    `emery` namespace's registry, `augentic.io`, keeping it there. Another namespace is \
+    fetched by `wkg get <reference> -o ~/.emery/adapters/`. A `[[source]]` naming a \
+    `repository` and `revision` is read from a clone kept under `.emery/vcs/`, checked out \
+    at the revision for the run. Each run loads its adapters, reconciles their claims, and \
+    stages the drafted revision as the one candidate, replacing any staged before it, for \
+    `emery show <artifact> --staged` to review and `emery apply` to seal; `--apply` seals \
+    it in the same run. The `[target]` table of the config, named or discovered, says \
+    which repository the specification lives in: the diff reported is against the \
+    revision it holds, which a seal displaces, and `--apply` needs one. A revision that \
+    amends an earlier one, as `emery apply` seals an amendment, is a lineage a specify \
+    would start over, so the run is refused `lineage-exists` before any adapter loads \
+    unless `--fresh` says so: the candidate is then staged fresh and sealed with no parent \
+    over the repository's head, every earlier label left standing.";
+
+const APPLY_DESC: &str = "Seal the staged candidate or amendment as the current revision.\n\n\
+    The candidate `emery specify` staged, or the amendment `emery amend` staged, is sealed \
+    in the repository the `[target]` table of `--config [<path>]` (default: `emery.toml`) \
+    names — a URL, cloned under `.emery/vcs/repos/<name>`; `.`, the project checkout; or, \
+    with none, a repository created once at `.emery/vcs/repos/<name>` and kept — as one \
+    commit over the head, holding `spec/spec.json`, `spec/design.json`, and \
+    `spec/plan.json`, labelled `emery/<revision>`; `--repository` takes the place of the \
+    table's. An amendment seals its three documents over the commit its base was read at, \
+    the commit naming the base as the parent and carrying what changed, and only while \
+    that base is still the current revision there; otherwise the verb fails with \
+    `amendment-stale` and the amendment stays staged for `emery amend` to prepare again. \
+    Over a revision sealed from an amendment, a candidate seals only when `emery specify \
+    --fresh` staged it, with no parent and over the head, every earlier label left \
+    standing; otherwise the verb fails with `lineage-exists` and the candidate stays staged. \
+    The checkout is never touched: merge or rebase the label to carry the specification on \
+    the branch. `emery show` and `emery build` read the sealed revision from then on, and \
+    the staging slot is cleared. With nothing staged the verb fails with `nothing-staged`.";
+
+const AMEND_DESC: &str = "Stage an amendment against the current revision.\n\n\
+    Name one or more adapters, use `--description <adapter>=<text>` for inline input, or \
+    use `--config [<path>]` for the `[[source]]` tables of a change file, read and layered \
+    as `emery specify` reads them. The current revision is read from the repository the \
+    `[target]` table of that file names, or of the project-root `emery.toml` when the file \
+    names none, and its requirements stand as the baseline the change is matched against: \
+    a claim restating or revising one keeps the requirement's id, a claim no requirement \
+    covers is added under a new id, and a requirement no claim touches stands unchanged. \
+    No source may be named `baseline`. A change that leaves every requirement as it \
+    stands stages nothing. Otherwise the amendment is staged for `emery show amendment` to \
+    review and `emery apply` to seal, replacing any amendment staged before it; a staged \
+    revision candidate is never replaced, so seal it with `emery apply` first. `--apply` \
+    seals the staged amendment in the same run; without it nothing is sealed.";
+
+const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
+    Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
+    `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
+    A command-line adapter layers over the config, taking the place of its `adapter` \
+    under its `name` and dropping its `digest`; `--repository` takes the place of its \
+    `repository`.\n\n\
+    The build lands as commits in one repository, never in the checkout, the one \
+    `--repository` or the `[target] repository` names, which also holds the revision it \
+    builds, sealed by `emery apply` under `emery/<revision>`: a URL, cloned under \
+    `.emery/vcs/repos/<name>` and built from its default branch; `.`, the project \
+    checkout, from its head, which must hold no pending change outside `.emery/`; or, \
+    with none named, the repository `emery apply` created at `.emery/vcs/repos/<name>`. \
+    `<name>` is the `[target] name`, the adapter's package name when the config gives \
+    none. A build in which no slice is merged yet first has the adapter initialise the \
+    tree — scaffold the files of its layout the tree lacks, with no model turn — and \
+    seals them as the `Initialise` commit every slice builds over. A label \
+    `emery/<revision>` the repository already holds, descending from the head, is \
+    resumed: the slices it records are not built again, and neither are the slices \
+    `.emery/vcs/integration` holds merged over it from a run that ended before their wave \
+    was verified, which are verified instead. The rest go \
+    in waves: every slice whose dependencies are merged is built at once, up to `--jobs` \
+    concurrently, each in its own working copy under `.emery/vcs/worktrees/<id>` cut at \
+    the wave's head; what each changed is sealed as one commit and merged in id order into \
+    `.emery/vcs/integration` under the adapter's merge rules, a path the rules leave \
+    conflicted resolved with the model and merged in its place. The adapter then verifies \
+    the integrated tree, repairing what its checks find, and the wave is labelled; the \
+    label stands in the repository for the operator to read or push. A build that fails \
+    upstream or runs out of the model's time is put once more in a fresh copy, a \
+    verification once more over the same one. A conflict the model cannot resolve ends the \
+    run (`merge-unresolved`), as a wave the adapter does not verify does (`verify-failed`), \
+    the label where the last verified wave left it and the integration working copy left \
+    for the next run to resume from. The adapter is an exact package reference, \
+    `namespace:name@version`, read from the store `~/.emery/adapters` and fetched through \
+    the `emery` namespace's registry when the store lacks it, as for `specify`.";
+
+const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
+    The revision is read from the repository the `[target]` table of `--config [<path>]` \
+    (default: `emery.toml`) names, where `emery apply` sealed it. `schedule` cuts the \
+    sealed plan into build slices under `--budget`, the `[target] budget`, or the target \
+    adapter's default, with no model turn. `--staged` prints `spec`, `design`, or `plan` \
+    from the candidate `emery specify` staged and `emery apply` has not sealed, and \
+    needs no target. `amendment` prints the staged amendment, which stands staged alone \
+    until it is sealed, and needs neither. Text output contains only the artifact body. \
+    `--format json` also includes the revision id and the typed document.";
+
 #[derive(Debug, Subcommand)]
 enum Verb {
     /// Stage spec.md, design.md, and plan.md from the named sources as a candidate
@@ -141,29 +241,6 @@ enum Verb {
         shell: Shell,
     },
 }
-
-const SPECIFY_DESC: &str = "Stage spec.md, design.md, and plan.md from source adapters.\n\n\
-    Name one or more adapters, use `--description <adapter>=<text>` for inline input, \
-    or use `--config [<path>]` (default: `emery.toml`). With no sources, Emery looks \
-    for `emery.toml` in the project root. Command-line sources layer over the config: \
-    one named as a `[[source]]` is — by its adapter's package name — takes that entry's \
-    place whole; any other is appended.\n\n\
-    An adapter is an exact package reference, `namespace:name@version`. Emery reads it \
-    from its store, `~/.emery/adapters`, where the file `namespace_name@version.wasm` is \
-    that release on this machine, and fetches a release the store lacks through the \
-    `emery` namespace's registry, `augentic.io`, keeping it there. Another namespace is \
-    fetched by `wkg get <reference> -o ~/.emery/adapters/`. A `[[source]]` naming a \
-    `repository` and `revision` is read from a clone kept under `.emery/vcs/`, checked out \
-    at the revision for the run. Each run loads its adapters, reconciles their claims, and \
-    stages the drafted revision as the one candidate, replacing any staged before it, for \
-    `emery show <artifact> --staged` to review and `emery apply` to seal; `--apply` seals \
-    it in the same run. The `[target]` table of the config, named or discovered, says \
-    which repository the specification lives in: the diff reported is against the \
-    revision it holds, which a seal displaces, and `--apply` needs one. A revision that \
-    amends an earlier one, as `emery apply` seals an amendment, is a lineage a specify \
-    would start over, so the run is refused `lineage-exists` before any adapter loads \
-    unless `--fresh` says so: the candidate is then staged fresh and sealed with no parent \
-    over the repository's head, every earlier label left standing.";
 
 #[derive(Debug, clap::Args)]
 struct SpecifyArgs {
@@ -204,24 +281,6 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
     }
 }
 
-const APPLY_DESC: &str = "Seal the staged candidate or amendment as the current revision.\n\n\
-    The candidate `emery specify` staged, or the amendment `emery amend` staged, is sealed \
-    in the repository the `[target]` table of `--config [<path>]` (default: `emery.toml`) \
-    names — a URL, cloned under `.emery/vcs/repos/<name>`; `.`, the project checkout; or, \
-    with none, a repository created once at `.emery/vcs/repos/<name>` and kept — as one \
-    commit over the head, holding `spec/spec.json`, `spec/design.json`, and \
-    `spec/plan.json`, labelled `emery/<revision>`; `--repository` takes the place of the \
-    table's. An amendment seals its three documents over the commit its base was read at, \
-    the commit naming the base as the parent and carrying what changed, and only while \
-    that base is still the current revision there; otherwise the verb fails with \
-    `amendment-stale` and the amendment stays staged for `emery amend` to prepare again. \
-    Over a revision sealed from an amendment, a candidate seals only when `emery specify \
-    --fresh` staged it, with no parent and over the head, every earlier label left \
-    standing; otherwise the verb fails with `lineage-exists` and the candidate stays staged. \
-    The checkout is never touched: merge or rebase the label to carry the specification on \
-    the branch. `emery show` and `emery build` read the sealed revision from then on, and \
-    the staging slot is cleared. With nothing staged the verb fails with `nothing-staged`.";
-
 #[derive(Debug, clap::Args)]
 struct ApplyArgs {
     /// The repository the revision is sealed in: a URL, cloned under .emery/vcs/repos/<name>, or `.` for the project checkout; over `--config`, it replaces the `[target] repository`.
@@ -241,20 +300,6 @@ impl TryFrom<ApplyArgs> for ApplyInput {
         Ok(Self { target })
     }
 }
-
-const AMEND_DESC: &str = "Stage an amendment against the current revision.\n\n\
-    Name one or more adapters, use `--description <adapter>=<text>` for inline input, or \
-    use `--config [<path>]` for the `[[source]]` tables of a change file, read and layered \
-    as `emery specify` reads them. The current revision is read from the repository the \
-    `[target]` table of that file names, or of the project-root `emery.toml` when the file \
-    names none, and its requirements stand as the baseline the change is matched against: \
-    a claim restating or revising one keeps the requirement's id, a claim no requirement \
-    covers is added under a new id, and a requirement no claim touches stands unchanged. \
-    No source may be named `baseline`. A change that leaves every requirement as it \
-    stands stages nothing. Otherwise the amendment is staged for `emery show amendment` to \
-    review and `emery apply` to seal, replacing any amendment staged before it; a staged \
-    revision candidate is never replaced, so seal it with `emery apply` first. `--apply` \
-    seals the staged amendment in the same run; without it nothing is sealed.";
 
 #[derive(Debug, clap::Args)]
 struct AmendArgs {
@@ -291,41 +336,6 @@ impl TryFrom<AmendArgs> for AmendInput {
     }
 }
 
-const BUILD_DESC: &str = "Build the current plan through a target adapter.\n\n\
-    Name the adapter, or use `--config [<path>]` (default: `emery.toml`) to read its \
-    `[target]` table. With no adapter, Emery looks for `emery.toml` in the project root. \
-    A command-line adapter layers over the config, taking the place of its `adapter` \
-    under its `name` and dropping its `digest`; `--repository` takes the place of its \
-    `repository`.\n\n\
-    The build lands as commits in one repository, never in the checkout, the one \
-    `--repository` or the `[target] repository` names, which also holds the revision it \
-    builds, sealed by `emery apply` under `emery/<revision>`: a URL, cloned under \
-    `.emery/vcs/repos/<name>` and built from its default branch; `.`, the project \
-    checkout, from its head, which must hold no pending change outside `.emery/`; or, \
-    with none named, the repository `emery apply` created at `.emery/vcs/repos/<name>`. \
-    `<name>` is the `[target] name`, the adapter's package name when the config gives \
-    none. A build in which no slice is merged yet first has the adapter initialise the \
-    tree — scaffold the files of its layout the tree lacks, with no model turn — and \
-    seals them as the `Initialise` commit every slice builds over. A label \
-    `emery/<revision>` the repository already holds, descending from the head, is \
-    resumed: the slices it records are not built again, and neither are the slices \
-    `.emery/vcs/integration` holds merged over it from a run that ended before their wave \
-    was verified, which are verified instead. The rest go \
-    in waves: every slice whose dependencies are merged is built at once, up to `--jobs` \
-    concurrently, each in its own working copy under `.emery/vcs/worktrees/<id>` cut at \
-    the wave's head; what each changed is sealed as one commit and merged in id order into \
-    `.emery/vcs/integration` under the adapter's merge rules, a path the rules leave \
-    conflicted resolved with the model and merged in its place. The adapter then verifies \
-    the integrated tree, repairing what its checks find, and the wave is labelled; the \
-    label stands in the repository for the operator to read or push. A build that fails \
-    upstream or runs out of the model's time is put once more in a fresh copy, a \
-    verification once more over the same one. A conflict the model cannot resolve ends the \
-    run (`merge-unresolved`), as a wave the adapter does not verify does (`verify-failed`), \
-    the label where the last verified wave left it and the integration working copy left \
-    for the next run to resume from. The adapter is an exact package reference, \
-    `namespace:name@version`, read from the store `~/.emery/adapters` and fetched through \
-    the `emery` namespace's registry when the store lacks it, as for `specify`.";
-
 #[derive(Debug, clap::Args)]
 struct BuildArgs {
     /// The target adapter, an exact package reference `namespace:name@version`; over `--config`, it replaces the `[target] adapter`.
@@ -358,16 +368,6 @@ impl TryFrom<BuildArgs> for BuildInput {
         .resolve()
     }
 }
-
-const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
-    The revision is read from the repository the `[target]` table of `--config [<path>]` \
-    (default: `emery.toml`) names, where `emery apply` sealed it. `schedule` cuts the \
-    sealed plan into build slices under `--budget`, the `[target] budget`, or the target \
-    adapter's default, with no model turn. `--staged` prints `spec`, `design`, or `plan` \
-    from the candidate `emery specify` staged and `emery apply` has not sealed, and \
-    needs no target. `amendment` prints the staged amendment, which stands staged alone \
-    until it is sealed, and needs neither. Text output contains only the artifact body. \
-    `--format json` also includes the revision id and the typed document.";
 
 #[derive(Debug, clap::Args)]
 struct ShowArgs {
@@ -418,19 +418,6 @@ enum Invoked {
     Build,
     Show,
     Completions,
-}
-
-impl From<&Verb> for Invoked {
-    fn from(verb: &Verb) -> Self {
-        match verb {
-            Verb::Specify(_) => Self::Specify,
-            Verb::Apply(_) => Self::Apply,
-            Verb::Amend(_) => Self::Amend,
-            Verb::Build(_) => Self::Build,
-            Verb::Show(_) => Self::Show,
-            Verb::Completions { .. } => Self::Completions,
-        }
-    }
 }
 
 impl Invoked {
@@ -550,6 +537,19 @@ impl Invoked {
             Self::Apply | Self::Show | Self::Completions => {
                 "add a `[target]` table to `emery.toml`, or pass `--config <path>`"
             }
+        }
+    }
+}
+
+impl From<&Verb> for Invoked {
+    fn from(verb: &Verb) -> Self {
+        match verb {
+            Verb::Specify(_) => Self::Specify,
+            Verb::Apply(_) => Self::Apply,
+            Verb::Amend(_) => Self::Amend,
+            Verb::Build(_) => Self::Build,
+            Verb::Show(_) => Self::Show,
+            Verb::Completions { .. } => Self::Completions,
         }
     }
 }

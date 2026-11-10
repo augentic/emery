@@ -8,9 +8,6 @@ use crate::kebab;
 // Segments that only version or namespace a path, never naming a resource.
 const PATH_NOISE: &[&str] = &["api", "rest", "internal"];
 
-// Literals a scheduler is led by that name its trigger, not its job.
-const TRIGGERS: &[&str] = &["cron", "interval", "date"];
-
 /// How a language's frameworks spell a route's parameters and patterns.
 ///
 /// The one per-language input to the route helpers: an adapter declares one
@@ -123,6 +120,9 @@ pub fn join(prefix: &str, path: &str) -> String {
         prefix.split('/').chain(path.split('/')).filter(|segment| !segment.is_empty()).collect();
     format!("/{}", segments.join("/"))
 }
+
+// Literals a scheduler is led by that name its trigger, not its job.
+const TRIGGERS: &[&str] = &["cron", "interval", "date"];
 
 /// Returns the stem a literal spells: its first word, a dotted name by its first segment.
 ///
