@@ -92,6 +92,32 @@ impl SourceCarriers<'_> {
     }
 }
 
+fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error> {
+    let adapter = AdapterRef::from_str(reference)?;
+    Ok(SourceConfig {
+        name: adapter.name().to_owned(),
+        adapter,
+        content,
+        repository: None,
+        digest: None,
+        rank: None,
+        scope: Scope::default(),
+    })
+}
+
+fn description(entry: &str) -> Result<(&str, &str), Error> {
+    entry.split_once('=').filter(|(reference, _)| !reference.is_empty()).ok_or_else(|| {
+        bad_request!("invalid argument --description: expected `<adapter>=<text>`, got `{entry}`")
+    })
+}
+
+fn carrier_label(path: Option<&Path>) -> impl fmt::Display {
+    fmt::from_fn(move |f| match path {
+        Some(path) => write!(f, "{}", path.display()),
+        None => f.write_str("argv"),
+    })
+}
+
 // The target whose repository the specification lives in, as `apply`, `show`,
 // and `amend` read it.
 //
@@ -140,6 +166,13 @@ pub fn missing_target(verb: &str) -> Error {
         "the specification has no repository to live in: {verb} needs a `[target]` table \
          naming one"
     ))
+}
+
+fn target_required(description: impl Into<String>) -> Error {
+    Error::BadRequest {
+        code: "build-target-required".into(),
+        description: description.into(),
+    }
 }
 
 // A positional target adapter, a `--repository`, an optional `--config` path,
@@ -198,52 +231,6 @@ impl TargetCarriers<'_> {
     }
 }
 
-fn carrier_label(path: Option<&Path>) -> impl fmt::Display {
-    fmt::from_fn(move |f| match path {
-        Some(path) => write!(f, "{}", path.display()),
-        None => f.write_str("argv"),
-    })
-}
-
-fn target_required(description: impl Into<String>) -> Error {
-    Error::BadRequest {
-        code: "build-target-required".into(),
-        description: description.into(),
-    }
-}
-
-fn config_path(path: &Path) -> Result<PathBuf, Error> {
-    preopen_path(path).map_err(|err| {
-        let description = err.description();
-        bad_request!("invalid argument --config: {description}")
-    })
-}
-
-fn description(entry: &str) -> Result<(&str, &str), Error> {
-    entry.split_once('=').filter(|(reference, _)| !reference.is_empty()).ok_or_else(|| {
-        bad_request!("invalid argument --description: expected `<adapter>=<text>`, got `{entry}`")
-    })
-}
-
-fn argv_source(reference: &str, content: SourceContent) -> Result<SourceConfig, Error> {
-    let adapter = AdapterRef::from_str(reference)?;
-    Ok(SourceConfig {
-        name: adapter.name().to_owned(),
-        adapter,
-        content,
-        repository: None,
-        digest: None,
-        rank: None,
-        scope: Scope::default(),
-    })
-}
-
-fn discover() -> Result<Option<PathBuf>, Error> {
-    let path = Path::new(CONFIG_FILE);
-    let found = path.try_exists().with_context(|| format!("reading {CONFIG_FILE}"))?;
-    Ok(found.then(|| path.to_owned()))
-}
-
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields, default)]
 struct ConfigFile {
@@ -292,6 +279,19 @@ impl ConfigFile {
         self.target
             .ok_or_else(|| target_required(format!("{} has no `[target]` table", path.display())))
     }
+}
+
+fn config_path(path: &Path) -> Result<PathBuf, Error> {
+    preopen_path(path).map_err(|err| {
+        let description = err.description();
+        bad_request!("invalid argument --config: {description}")
+    })
+}
+
+fn discover() -> Result<Option<PathBuf>, Error> {
+    let path = Path::new(CONFIG_FILE);
+    let found = path.try_exists().with_context(|| format!("reading {CONFIG_FILE}"))?;
+    Ok(found.then(|| path.to_owned()))
 }
 
 #[derive(Debug, serde::Deserialize)]
