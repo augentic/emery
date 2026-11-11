@@ -6,7 +6,6 @@
 //! first with a bounded number pending, and a turn that fails upstream is put
 //! once more.
 
-use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
@@ -413,7 +412,7 @@ impl<'a> Plan<'a> {
         }
         for key in claim.kind.required_extras() {
             let Some(value) = claim.extras.get(*key) else { continue };
-            let text = value.as_str().map_or_else(|| Cow::Owned(value.to_string()), Cow::Borrowed);
+            let text = value.as_str().map_or_else(|| value.to_string(), str::to_owned);
             let named = self.lexicon.names(&text);
             if !named.is_empty() {
                 findings.push(format!(

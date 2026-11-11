@@ -82,8 +82,6 @@ use std::path::Path;
 use emery_sdk::target::{Grant, MergeRule, Metadata, Outcome, TargetAdapter, Task};
 use emery_sdk::{Doc, Error, Model, server_error};
 
-const RULES: &[MergeRule] = &[MergeRule::ours("Cargo.lock")];
-
 const CARGO: Grant = Grant {
     egress: &["index.crates.io", "static.crates.io"],
     read: &["~/.rustup", "~/.cargo/bin"],
@@ -95,7 +93,7 @@ pub struct Adapter;
 impl TargetAdapter for Adapter {
     fn metadata() -> Metadata {
         Metadata {
-            rules: RULES,
+            rules: vec![MergeRule::ours("Cargo.lock")],
             grants: &[CARGO],
             budget: NonZeroU32::new(12),
         }
@@ -150,7 +148,7 @@ Before calling `target::build`, an adapter can generate skeleton files from the 
 
 `TargetAdapter::metadata()` returns static `target::Metadata`:
 
-- **`rules` (`&[MergeRule]`):** Path-glob strategies (`MergeRule::union`, `MergeRule::ours`, `MergeRule::theirs`) that the engine applies when merging parallel slice branches into the integration worktree.
+- **`rules` (`Vec<MergeRule>`):** Path-glob strategies (`MergeRule::union`, `MergeRule::ours`, `MergeRule::theirs`) that the engine applies when merging parallel slice branches into the integration worktree.
 - **`grants` (`&[Grant]`):** Toolchain permissions attached to the isolated worker sandbox during `build` and `verify` turns:
   - `egress`: Allowed outbound hostnames (`"index.crates.io"`, `"*.example.com"`).
   - `read`: Read-only directories under the operator's home directory (`"~/.rustup"`, `"~/.nvm/versions/node"`).

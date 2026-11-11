@@ -1,7 +1,6 @@
 //! Cuts the design to a slice for its build brief: a type the adapter laid
 //! reduced to a pointer, a type no text of the slice speaks of left out.
 
-use std::borrow::Cow;
 use std::fmt::Write as _;
 
 use emery_adapter::target::Slice;
@@ -21,22 +20,22 @@ const MECHANISM: &str = " (mechanism)";
 pub fn cut(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> String {
     let laid = scaffold.map_or(&[][..], |scaffold| scaffold.types);
     let spelled = spelled(slice, scaffold);
-    let mut kept: Vec<Cow<'_, str>> = Vec::new();
+    let mut kept: Vec<String> = Vec::new();
     let mut left_out: Vec<&str> = Vec::new();
     for block in blocks(&slice.design) {
         let Some((key, mechanism)) = type_block(block) else {
-            kept.push(Cow::Borrowed(block));
+            kept.push(block.to_owned());
             continue;
         };
         if mechanism {
-            kept.push(Cow::Borrowed(block));
+            kept.push(block.to_owned());
         } else if laid.iter().any(|laid| laid == key) {
-            kept.push(Cow::Owned(format!(
+            kept.push(format!(
                 "{TYPE}{key} — laid in the tree by the adapter before this turn, as the scaffold \
                  section says."
-            )));
+            ));
         } else if slice.types.iter().any(|owned| owned.key == key) || names(key, &spelled) {
-            kept.push(Cow::Borrowed(block));
+            kept.push(block.to_owned());
         } else {
             left_out.push(key);
         }

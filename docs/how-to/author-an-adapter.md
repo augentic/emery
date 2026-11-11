@@ -139,9 +139,6 @@ use emery_sdk::target::{
 };
 use emery_sdk::{Doc, Error, Model, server_error};
 
-// Path-glob merge rules applied when slice commits merge into .emery/vcs/integration
-const RULES: &[MergeRule] = &[MergeRule::union("src/index.ts")];
-
 // Optional worker sandbox grants (network hosts, read-only ~/ roots, env vars)
 const GRANTS: &[Grant] = &[];
 
@@ -150,7 +147,8 @@ pub struct Adapter;
 impl TargetAdapter for Adapter {
     fn metadata() -> Metadata {
         Metadata {
-            rules: RULES,
+            // Path-glob merge rules applied when slice commits merge into .emery/vcs/integration
+            rules: vec![MergeRule::union("src/index.ts")],
             grants: GRANTS,
             budget: NonZeroU32::new(12),
         }

@@ -5,7 +5,6 @@
 //! wrote them, and seals and merges the resolutions; the brief holds every
 //! answer to one whole file per path, free of conflict markers.
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 
@@ -235,8 +234,8 @@ impl Brief for MergeBrief<'_> {
     const NAME: &'static str = "merge";
     const PROSE: &'static [&'static str] = &["merge.md"];
 
-    fn label(&self) -> Cow<'static, str> {
-        Cow::Owned(format!("merge-{}", self.slice))
+    fn label(&self) -> String {
+        format!("merge-{}", self.slice)
     }
 
     fn tighten(&self, schema: &mut Value) -> Result<(), Error> {

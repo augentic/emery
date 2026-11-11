@@ -12,16 +12,14 @@ use std::path::Path;
 use emery_sdk::target::{InitContext, MergeRule, Metadata, Outcome, TargetAdapter, Task, scope};
 use emery_sdk::{Doc, Error, Model, server_error};
 
-// two slices that list requirements in one index keep both lists
-const RULES: &[MergeRule] = &[MergeRule::union("build/*/index.md")];
-
 /// The adapter implementation.
 pub struct Adapter;
 
 impl TargetAdapter for Adapter {
     fn metadata() -> Metadata {
         Metadata {
-            rules: RULES,
+            // two slices that list requirements in one index keep both lists
+            rules: vec![MergeRule::union("build/*/index.md")],
             budget: NonZeroU32::new(2),
             ..Metadata::default()
         }

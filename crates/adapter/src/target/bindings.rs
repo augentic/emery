@@ -92,7 +92,7 @@ impl From<wit::TargetMetadata> for TargetMetadata {
 impl From<MergeRule> for wit::MergeRule {
     fn from(rule: MergeRule) -> Self {
         Self {
-            paths: rule.paths.into_owned(),
+            paths: rule.paths,
             strategy: rule.strategy.into(),
         }
     }
@@ -101,7 +101,7 @@ impl From<MergeRule> for wit::MergeRule {
 impl From<wit::MergeRule> for MergeRule {
     fn from(rule: wit::MergeRule) -> Self {
         Self {
-            paths: rule.paths.into(),
+            paths: rule.paths,
             strategy: rule.strategy.into(),
         }
     }

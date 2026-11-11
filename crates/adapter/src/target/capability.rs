@@ -6,7 +6,6 @@
 //! builds dispatch through the imported adapter interface; native builds
 //! require an implementation.
 
-use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
 use std::future::Future;
 
@@ -293,16 +292,6 @@ impl Requirement {
     pub fn stem(&self) -> &str {
         self.subject.split('.').next().unwrap_or(&self.subject)
     }
-
-    /// Returns the statement's paragraphs joined as one line, or `"[conflict]"` when empty.
-    #[must_use]
-    pub fn summary(&self) -> Cow<'_, str> {
-        match self.statement.as_slice() {
-            [] => Cow::Borrowed("[conflict]"),
-            [only] => Cow::Borrowed(only.as_str()),
-            many => Cow::Owned(many.join(" ")),
-        }
-    }
 }
 
 /// One acceptance scenario of a requirement.
@@ -352,25 +341,23 @@ pub struct TargetMetadata {
 
 /// One rule for merging a slice into the integrated tree.
 ///
-/// An adapter spells its rules as a `const` slice through [`MergeRule::union`],
-/// [`MergeRule::ours`], and [`MergeRule::theirs`], so `paths` borrows a
-/// literal there and owns what the contract carries across. A conflict no
-/// rule resolves is the engine's to resolve with the model.
+/// An adapter spells its rules through [`MergeRule::union`],
+/// [`MergeRule::ours`], and [`MergeRule::theirs`]. A conflict no rule
+/// resolves is the engine's to resolve with the model.
 ///
 /// # Examples
 ///
 /// ```
 /// use emery_adapter::target::{MergeRule, MergeStrategy};
 ///
-/// const RULES: &[MergeRule] =
-///     &[MergeRule::ours("Cargo.lock"), MergeRule::union("src/*/index.ts")];
-/// assert_eq!(RULES[1].paths, "src/*/index.ts");
-/// assert_eq!(RULES[1].strategy, MergeStrategy::Union);
+/// let rules = [MergeRule::ours("Cargo.lock"), MergeRule::union("src/*/index.ts")];
+/// assert_eq!(rules[1].paths, "src/*/index.ts");
+/// assert_eq!(rules[1].strategy, MergeStrategy::Union);
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MergeRule {
     /// A glob over paths relative to the tree root.
-    pub paths: Cow<'static, str>,
+    pub paths: String,
     /// How a conflict at a matching path is resolved.
     pub strategy: MergeStrategy,
 }
@@ -378,25 +365,25 @@ pub struct MergeRule {
 impl MergeRule {
     /// Returns a rule keeping both sides' lines at the paths `paths` matches.
     #[must_use]
-    pub const fn union(paths: &'static str) -> Self {
+    pub fn union(paths: impl Into<String>) -> Self {
         Self::new(paths, MergeStrategy::Union)
     }
 
     /// Returns a rule keeping the integrated tree's side at the paths `paths` matches.
     #[must_use]
-    pub const fn ours(paths: &'static str) -> Self {
+    pub fn ours(paths: impl Into<String>) -> Self {
         Self::new(paths, MergeStrategy::Ours)
     }
 
     /// Returns a rule keeping the slice's side at the paths `paths` matches.
     #[must_use]
-    pub const fn theirs(paths: &'static str) -> Self {
+    pub fn theirs(paths: impl Into<String>) -> Self {
         Self::new(paths, MergeStrategy::Theirs)
     }
 
-    const fn new(paths: &'static str, strategy: MergeStrategy) -> Self {
+    fn new(paths: impl Into<String>, strategy: MergeStrategy) -> Self {
         Self {
-            paths: Cow::Borrowed(paths),
+            paths: paths.into(),
             strategy,
         }
     }

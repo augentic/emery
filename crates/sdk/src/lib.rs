@@ -178,7 +178,7 @@ macro_rules! export_target {
                 ) -> $crate::target::export::TargetMetadata {
                     let metadata = <$adapter as $crate::target::TargetAdapter>::metadata();
                     $crate::target::export::TargetMetadata::from($crate::target::metadata(
-                        metadata.rules,
+                        &metadata.rules,
                         metadata.budget,
                     ))
                 }

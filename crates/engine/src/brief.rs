@@ -3,7 +3,6 @@
 //! A [`Brief`] combines engine facts, prompt documents, an answer schema, and
 //! fact-based validation to produce verified engine output.
 
-use std::borrow::Cow;
 use std::fmt::Display;
 
 use emery_lexicon::Lexicon;
@@ -29,8 +28,8 @@ pub trait Brief: Display + Sync + Sized {
 
     // `Self::NAME` unless a run puts the brief more than once, when each
     // question carries what tells it apart.
-    fn label(&self) -> Cow<'static, str> {
-        Cow::Borrowed(Self::NAME)
+    fn label(&self) -> String {
+        Self::NAME.to_owned()
     }
 
     // Schema changes guide generation; `Self::verify` remains the

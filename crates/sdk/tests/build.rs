@@ -269,14 +269,14 @@ async fn request_shape() {
 // rules and default slice budget beside the SDK's version pin.
 #[test]
 fn target_metadata() {
-    const RULES: &[MergeRule] = &[MergeRule::ours("Cargo.lock")];
+    let rules = vec![MergeRule::ours("Cargo.lock")];
     let declared = Metadata {
-        rules: RULES,
+        rules: rules.clone(),
         grants: &[],
         budget: NonZeroU32::new(12),
     };
     let lowered = TargetMetadata::from(declared);
-    assert_eq!(lowered, metadata(RULES, NonZeroU32::new(12)));
+    assert_eq!(lowered, metadata(&rules, NonZeroU32::new(12)));
     assert_eq!(lowered.emery_version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
     assert_eq!(lowered.merge_rules, [MergeRule::ours("Cargo.lock")]);
     assert_eq!(lowered.budget, Some(12));

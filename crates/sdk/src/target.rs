@@ -253,13 +253,13 @@ fn is_variable_name(name: &str) -> bool {
 /// component's `metadata` export, and [`build`] and [`verify`] attach
 /// [`grants`](Self::grants) to every turn. The default declares no rules,
 /// no grants, and no budget.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Metadata {
     /// Merge rules applied when integrating each slice into the tree.
     ///
     /// The first rule matching a conflicting path applies; paths matched by no
     /// rule are resolved by the engine through a merge turn.
-    pub rules: &'static [MergeRule],
+    pub rules: Vec<MergeRule>,
     /// Toolchain access granted to the model's worker in [`build`] and
     /// [`verify`] turns, one [`Grant`] per program the prompts run.
     pub grants: &'static [Grant],
@@ -270,7 +270,7 @@ pub struct Metadata {
 
 impl From<Metadata> for TargetMetadata {
     fn from(metadata: Metadata) -> Self {
-        self::metadata(metadata.rules, metadata.budget)
+        self::metadata(&metadata.rules, metadata.budget)
     }
 }
 
@@ -974,9 +974,9 @@ impl Brief<'_> {
                 writeln!(f, "- `{}` `{}` [{standing}]", requirement.id, requirement.subject)?;
                 if standing == Standing::Changed {
                     if let Some(prior) = change.prior(&requirement.id) {
-                        writeln!(f, "  - Prior: {}", prior.summary())?;
+                        writeln!(f, "  - Prior: {}", statement(&prior.statement))?;
                     }
-                    writeln!(f, "  - Current: {}", requirement.summary())?;
+                    writeln!(f, "  - Current: {}", statement(&requirement.statement))?;
                 }
             }
             f.write_str("\n")?;
@@ -992,14 +992,14 @@ impl Brief<'_> {
                         "- `{}` `{}` [moved to `{part}`]: {}",
                         req.id,
                         req.subject,
-                        req.summary(),
+                        statement(&req.statement),
                     )?,
                     None => writeln!(
                         f,
                         "- `{}` `{}` [retired]: {}",
                         req.id,
                         req.subject,
-                        req.summary(),
+                        statement(&req.statement),
                     )?,
                 }
             }
@@ -1086,6 +1086,10 @@ fn write_section_changes(f: &mut Formatter<'_>, sections: &[SectionChange]) -> f
         }
     }
     Ok(())
+}
+
+fn statement(paragraphs: &[String]) -> String {
+    if paragraphs.is_empty() { "[conflict]".to_owned() } else { paragraphs.join(" ") }
 }
 
 // The user turn of a verification. The lend carries the root, so the brief
