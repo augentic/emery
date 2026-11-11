@@ -292,22 +292,22 @@ async fn doc_refs() {
 // checks run the same toolchain over the integrated tree.
 #[tokio::test]
 async fn worker_grant() {
-    const NPM: Grant = Grant {
-        egress: &["registry.npmjs.org"],
-        read: &[],
-        env: &[],
+    let npm = Grant {
+        egress: vec!["registry.npmjs.org".into()],
+        read: Vec::new(),
+        env: Vec::new(),
     };
-    const NVM: Grant = Grant {
-        egress: &[],
-        read: &["~/.nvm/versions/node"],
-        env: &[],
+    let nvm = Grant {
+        egress: Vec::new(),
+        read: vec!["~/.nvm/versions/node".into()],
+        env: Vec::new(),
     };
-    const GRANTS: &[Grant] = &[NPM, NVM];
+    let grants = [npm, nvm];
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = ScriptedModel::answering([PASSED]);
 
-    ask_as(&model, root, GRANTS).await.expect("accepted");
+    ask_as(&model, root, &grants).await.expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -350,22 +350,22 @@ async fn missing_prompt() {
 // the host would refuse never reaches it.
 #[tokio::test]
 async fn invalid_worker_grant() {
-    const BROKEN: Grant = Grant {
-        egress: &["https://registry.npmjs.org", "registry.npmjs.org"],
-        read: &["/opt/node", "~/", "~/a/../b", "~/.volta"],
-        env: &[("VOLTA-HOME", "~/.volta"), ("NODE_ENV", "test")],
+    let broken = Grant {
+        egress: vec!["https://registry.npmjs.org".into(), "registry.npmjs.org".into()],
+        read: vec!["/opt/node".into(), "~/".into(), "~/a/../b".into(), "~/.volta".into()],
+        env: vec![("VOLTA-HOME".into(), "~/.volta".into()), ("NODE_ENV".into(), "test".into())],
     };
-    const OTHER: Grant = Grant {
-        egress: &[],
-        read: &[],
-        env: &[("NODE_ENV", "production")],
+    let other = Grant {
+        egress: Vec::new(),
+        read: Vec::new(),
+        env: vec![("NODE_ENV".into(), "production".into())],
     };
-    const GRANTS: &[Grant] = &[BROKEN, OTHER];
+    let grants = [broken, other];
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = ScriptedModel::default();
 
-    let error = ask_as(&model, root, GRANTS).await.expect_err("refused");
+    let error = ask_as(&model, root, &grants).await.expect_err("refused");
 
     assert_eq!(error.code(), "server_error");
     let description = error.description();
@@ -388,16 +388,12 @@ async fn invalid_worker_grant() {
 // grant, as no grants put none.
 #[tokio::test]
 async fn empty_worker_grant() {
-    const GRANTS: &[Grant] = &[Grant {
-        egress: &[],
-        read: &[],
-        env: &[],
-    }];
+    let grants = [Grant::default()];
     let tmp = tempfile::tempdir().expect("tempdir");
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = ScriptedModel::answering([PASSED]);
 
-    ask_as(&model, root, GRANTS).await.expect("accepted");
+    ask_as(&model, root, &grants).await.expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);

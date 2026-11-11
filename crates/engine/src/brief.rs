@@ -29,7 +29,7 @@ pub trait Brief: Display + Sync + Sized {
     // `Self::NAME` unless a run puts the brief more than once, when each
     // question carries what tells it apart.
     fn label(&self) -> String {
-        Self::NAME.to_owned()
+        Self::NAME.to_string()
     }
 
     // Schema changes guide generation; `Self::verify` remains the

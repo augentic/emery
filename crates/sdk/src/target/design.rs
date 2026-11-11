@@ -24,18 +24,18 @@ pub fn cut(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> String {
     let mut left_out: Vec<&str> = Vec::new();
     for block in blocks(&slice.design) {
         let Some((key, mechanism)) = type_block(block) else {
-            kept.push(block.to_owned());
+            kept.push(block.to_string());
             continue;
         };
         if mechanism {
-            kept.push(block.to_owned());
+            kept.push(block.to_string());
         } else if laid.iter().any(|laid| laid == key) {
             kept.push(format!(
                 "{TYPE}{key} — laid in the tree by the adapter before this turn, as the scaffold \
                  section says."
             ));
         } else if slice.types.iter().any(|owned| owned.key == key) || names(key, &spelled) {
-            kept.push(block.to_owned());
+            kept.push(block.to_string());
         } else {
             left_out.push(key);
         }

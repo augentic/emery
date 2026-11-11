@@ -272,7 +272,7 @@ fn target_metadata() {
     let rules = vec![MergeRule::ours("Cargo.lock")];
     let declared = Metadata {
         rules: rules.clone(),
-        grants: &[],
+        grants: Vec::new(),
         budget: NonZeroU32::new(12),
     };
     let lowered = TargetMetadata::from(declared);
@@ -774,24 +774,24 @@ async fn write_scaffolded_edit() {
 // host's to apply.
 #[tokio::test]
 async fn worker_grant() {
-    const CARGO: Grant = Grant {
-        egress: &["index.crates.io", "static.crates.io"],
-        read: &["~/.cargo/bin"],
-        env: &[],
+    let cargo = Grant {
+        egress: vec!["index.crates.io".into(), "static.crates.io".into()],
+        read: vec!["~/.cargo/bin".into()],
+        env: Vec::new(),
     };
-    const RUSTUP: Grant = Grant {
-        egress: &[],
-        read: &["~/.rustup", "~/.cargo/bin"],
-        env: &[("RUSTUP_HOME", "~/.rustup")],
+    let rustup = Grant {
+        egress: Vec::new(),
+        read: vec!["~/.rustup".into(), "~/.cargo/bin".into()],
+        env: vec![("RUSTUP_HOME".into(), "~/.rustup".into())],
     };
-    const GRANTS: &[Grant] = &[CARGO, RUSTUP];
+    let grants = [cargo, rustup];
     let tmp = tempfile::tempdir().expect("tempdir");
     seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
     let root = tmp.path().to_str().expect("a UTF-8 scratch root");
     let model = ScriptedModel::answering([VALID]);
     let slice = slice();
 
-    ask_as(&model, &slice, root, GRANTS).await.expect("accepted");
+    ask_as(&model, &slice, root, &grants).await.expect("accepted");
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -2319,8 +2319,8 @@ fn changed_slice(prior: Requirement) -> Slice {
         "it is opened",
     );
     slice.change = Some(SliceChange {
-        built: "rev-001".to_owned(),
-        commit: "0000111122223333444455556666777788889999".to_owned(),
+        built: "rev-001".into(),
+        commit: "0000111122223333444455556666777788889999".into(),
         standing: vec![Standing::Changed, Standing::Added, Standing::Unchanged],
         prior: vec![prior],
         departed: vec![
@@ -2330,32 +2330,32 @@ fn changed_slice(prior: Requirement) -> Slice {
             },
             Departure {
                 requirement: moved,
-                moved_to: Some("PART-002".to_owned()),
+                moved_to: Some("PART-002".into()),
             },
         ],
-        built_before: vec!["REQ-000".to_owned()],
-        vanished: vec!["legacy".to_owned()],
+        built_before: vec!["REQ-000".into()],
+        vanished: vec!["legacy".into()],
         types: vec![
             TypeChange {
-                key: "orders.order".to_owned(),
-                before: Some("interface Order { id: string }".to_owned()),
-                after: Some("interface Order { id: string; total: number }".to_owned()),
+                key: "orders.order".into(),
+                before: Some("interface Order { id: string }".into()),
+                after: Some("interface Order { id: string; total: number }".into()),
             },
             TypeChange {
-                key: "orders.line".to_owned(),
+                key: "orders.line".into(),
                 before: None,
-                after: Some("interface Line { sku: string }".to_owned()),
+                after: Some("interface Line { sku: string }".into()),
             },
             TypeChange {
-                key: "draft.Draft (src/draft.ts#L1)".to_owned(),
-                before: Some("interface Draft { id: string }".to_owned()),
+                key: "draft.Draft (src/draft.ts#L1)".into(),
+                before: Some("interface Draft { id: string }".into()),
                 after: None,
             },
         ],
         sections: vec![SectionChange {
-            kind: "apis".to_owned(),
-            before: Some("Old upstream.".to_owned()),
-            after: Some("New upstream.".to_owned()),
+            kind: "apis".into(),
+            before: Some("Old upstream.".into()),
+            after: Some("New upstream.".into()),
         }],
     });
     slice
@@ -2389,21 +2389,21 @@ fn assert_change_helpers(slice: &Slice, prior: &Requirement) {
             "it is created",
         )],
         types: vec![DesignType {
-            key: "pricing.Quote (src/pricing.ts#L2)".to_owned(),
-            signature: "interface Quote { cents: number }".to_owned(),
+            key: "pricing.Quote (src/pricing.ts#L2)".into(),
+            signature: "interface Quote { cents: number }".into(),
         }],
         change: Some(SliceChange {
             standing: vec![Standing::Unchanged],
             types: vec![
                 TypeChange {
-                    key: "pricing.Quote (src/pricing.ts#L2)".to_owned(),
-                    before: Some("interface Quote { total: number }".to_owned()),
-                    after: Some("interface Quote { cents: number }".to_owned()),
+                    key: "pricing.Quote (src/pricing.ts#L2)".into(),
+                    before: Some("interface Quote { total: number }".into()),
+                    after: Some("interface Quote { cents: number }".into()),
                 },
                 TypeChange {
-                    key: "customers.Customer".to_owned(),
-                    before: Some("interface Customer { id: string }".to_owned()),
-                    after: Some("interface Customer { id: string; tier: string }".to_owned()),
+                    key: "customers.Customer".into(),
+                    before: Some("interface Customer { id: string }".into()),
+                    after: Some("interface Customer { id: string; tier: string }".into()),
                 },
             ],
             ..SliceChange::default()
@@ -2494,15 +2494,15 @@ async fn build_retiring_brief() {
         r#"{"covered":[],"written":[]}"#,
     ]);
     let mut slice = slice();
-    slice.id = "SLICE-002".to_owned();
-    slice.part = "PART-002".to_owned();
-    slice.name = "returns".to_owned();
+    slice.id = "SLICE-002".into();
+    slice.part = "PART-002".into();
+    slice.name = "returns".into();
     slice.requirements.clear();
     slice.types.clear();
     slice.spec.clear();
     slice.change = Some(SliceChange {
-        built: "rev-001".to_owned(),
-        commit: "0000111122223333444455556666777788889999".to_owned(),
+        built: "rev-001".into(),
+        commit: "0000111122223333444455556666777788889999".into(),
         departed: vec![Departure {
             requirement: requirement(
                 "REQ-004",
@@ -2513,7 +2513,7 @@ async fn build_retiring_brief() {
             ),
             moved_to: None,
         }],
-        vanished: vec!["returns".to_owned()],
+        vanished: vec!["returns".into()],
         ..SliceChange::default()
     });
 
@@ -2560,25 +2560,25 @@ async fn build_retiring_brief() {
 #[test]
 fn scope_conservative() {
     let mut change = Change {
-        built: "rev-001".to_owned(),
-        commit: "00001111".to_owned(),
+        built: "rev-001".into(),
+        commit: "00001111".into(),
         parts: vec![
             PartReach {
-                id: "PART-001".to_owned(),
-                name: "auth".to_owned(),
-                requirements: vec!["REQ-001".to_owned()],
+                id: "PART-001".into(),
+                name: "auth".into(),
+                requirements: vec!["REQ-001".into()],
                 reasons: Vec::new(),
             },
             PartReach {
-                id: "PART-002".to_owned(),
-                name: "orders".to_owned(),
-                requirements: vec!["REQ-002".to_owned()],
-                reasons: vec!["requirements".to_owned()],
+                id: "PART-002".into(),
+                name: "orders".into(),
+                requirements: vec!["REQ-002".into()],
+                reasons: vec!["requirements".into()],
             },
             PartReach {
-                id: "PART-003".to_owned(),
-                name: "billing".to_owned(),
-                requirements: vec!["REQ-003".to_owned()],
+                id: "PART-003".into(),
+                name: "billing".into(),
+                requirements: vec!["REQ-003".into()],
                 reasons: Vec::new(),
             },
         ],
@@ -2587,9 +2587,9 @@ fn scope_conservative() {
     assert_eq!(scope::conservative(&change), ["PART-002"]);
 
     change.sections.push(SectionChange {
-        kind: "overview".to_owned(),
-        before: Some("Before.".to_owned()),
-        after: Some("After.".to_owned()),
+        kind: "overview".into(),
+        before: Some("Before.".into()),
+        after: Some("After.".into()),
     });
     assert_eq!(
         scope::conservative(&change),
@@ -2598,9 +2598,9 @@ fn scope_conservative() {
     );
 
     change.sections.push(SectionChange {
-        kind: "technical-logic".to_owned(),
-        before: Some("Old rule.".to_owned()),
-        after: Some("New rule.".to_owned()),
+        kind: "technical-logic".into(),
+        before: Some("Old rule.".into()),
+        after: Some("New rule.".into()),
     });
     assert_eq!(scope::conservative(&change), ["PART-001", "PART-002", "PART-003"]);
 }

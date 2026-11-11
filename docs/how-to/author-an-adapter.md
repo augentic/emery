@@ -139,9 +139,6 @@ use emery_sdk::target::{
 };
 use emery_sdk::{Doc, Error, Model, server_error};
 
-// Optional worker sandbox grants (network hosts, read-only ~/ roots, env vars)
-const GRANTS: &[Grant] = &[];
-
 pub struct Adapter;
 
 impl TargetAdapter for Adapter {
@@ -149,7 +146,8 @@ impl TargetAdapter for Adapter {
         Metadata {
             // Path-glob merge rules applied when slice commits merge into .emery/vcs/integration
             rules: vec![MergeRule::union("src/index.ts")],
-            grants: GRANTS,
+            // Optional worker sandbox grants (network hosts, read-only ~/ roots, env vars)
+            grants: Vec::new(),
             budget: NonZeroU32::new(12),
         }
     }

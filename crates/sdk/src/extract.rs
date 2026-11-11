@@ -412,7 +412,7 @@ impl<'a> Plan<'a> {
         }
         for key in claim.kind.required_extras() {
             let Some(value) = claim.extras.get(*key) else { continue };
-            let text = value.as_str().map_or_else(|| value.to_string(), str::to_owned);
+            let text = value.as_str().map_or_else(|| value.to_string(), str::to_string);
             let named = self.lexicon.names(&text);
             if !named.is_empty() {
                 findings.push(format!(

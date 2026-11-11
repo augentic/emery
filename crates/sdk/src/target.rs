@@ -25,29 +25,27 @@
 //! use emery_sdk::target::{Grant, Metadata, Outcome, TargetAdapter, Task, scope};
 //! use emery_sdk::{Doc, Error, Model, server_error};
 //!
-//! // cargo fetches from crates.io's sparse index and its download host
-//! const CARGO: Grant = Grant {
-//!     egress: &["index.crates.io", "static.crates.io"],
-//!     read: &[],
-//!     env: &[],
-//! };
-//!
-//! // rustup finds its toolchains under `RUSTUP_HOME`, which the worker's
-//! // private `HOME` would otherwise hide
-//! const RUSTUP: Grant = Grant {
-//!     egress: &[],
-//!     read: &["~/.rustup", "~/.cargo/bin"],
-//!     env: &[("RUSTUP_HOME", "~/.rustup")],
-//! };
-//!
-//! const GRANTS: &[Grant] = &[CARGO, RUSTUP];
-//!
 //! pub struct Adapter;
 //!
 //! impl TargetAdapter for Adapter {
 //!     fn metadata() -> Metadata {
+//!         // cargo fetches from crates.io's sparse index and its download host
+//!         let cargo = Grant {
+//!             egress: vec!["index.crates.io".into(), "static.crates.io".into()],
+//!             read: Vec::new(),
+//!             env: Vec::new(),
+//!         };
+//!
+//!         // rustup finds its toolchains under `RUSTUP_HOME`, which the worker's
+//!         // private `HOME` would otherwise hide
+//!         let rustup = Grant {
+//!             egress: Vec::new(),
+//!             read: vec!["~/.rustup".into(), "~/.cargo/bin".into()],
+//!             env: vec![("RUSTUP_HOME".into(), "~/.rustup".into())],
+//!         };
+//!
 //!         Metadata {
-//!             grants: GRANTS,
+//!             grants: vec![cargo, rustup],
 //!             ..Metadata::default()
 //!         }
 //!     }
@@ -140,20 +138,20 @@ pub mod capability {
 /// its shape and the backend applies what exists on its machine. The adapter
 /// is trusted by its digest, so what it spells is what the deployment
 /// granted when it pinned it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Grant {
     /// Host names the program's commands may reach through the backend's
     /// egress proxy: a name whole, or `*.suffix` for a domain and every
     /// host beneath it. Never an IP literal, a port, a scheme, or a path.
-    pub egress: &'static [&'static str],
+    pub egress: Vec<String>,
     /// Directories the program may read beside the lend and the system,
     /// each `~/<path>`: beneath the operator's home, never `~/` itself and
     /// never holding `..`. One the machine lacks grants nothing.
-    pub read: &'static [&'static str],
+    pub read: Vec<String>,
     /// Environment variables set for the program, each a name of the shape
     /// `[A-Za-z_][A-Za-z0-9_]*` and a value whose leading `~/` the backend
     /// expands to the operator's home.
-    pub env: &'static [(&'static str, &'static str)],
+    pub env: Vec<(String, String)>,
 }
 
 impl Grant {
@@ -163,15 +161,9 @@ impl Grant {
     #[must_use]
     pub fn union(grants: &[Self]) -> Option<WorkerGrant> {
         let union = WorkerGrant {
-            egress: unique(
-                grants.iter().flat_map(|grant| grant.egress.iter().map(|host| (*host).to_owned())),
-            ),
-            read: unique(
-                grants.iter().flat_map(|grant| grant.read.iter().map(|root| (*root).to_owned())),
-            ),
-            env: unique(grants.iter().flat_map(|grant| {
-                grant.env.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-            })),
+            egress: unique(grants.iter().flat_map(|grant| grant.egress.iter().cloned())),
+            read: unique(grants.iter().flat_map(|grant| grant.read.iter().cloned())),
+            env: unique(grants.iter().flat_map(|grant| grant.env.iter().cloned())),
         };
         (union != WorkerGrant::default()).then_some(union)
     }
@@ -191,7 +183,7 @@ impl Grant {
     pub fn findings(grants: &[Self]) -> Vec<String> {
         let mut findings = Vec::new();
         for grant in grants {
-            for host in grant.egress {
+            for host in &grant.egress {
                 if !is_host_name(host) {
                     findings.push(format!(
                         "egress `{host}` is not a host name: a name whole or `*.suffix`, never a \
@@ -199,14 +191,14 @@ impl Grant {
                     ));
                 }
             }
-            for root in grant.read {
+            for root in &grant.read {
                 if !is_home_root(root) {
                     findings.push(format!(
                         "read root `{root}` is not `~/<path>` over a plain relative path"
                     ));
                 }
             }
-            for (name, _) in grant.env {
+            for (name, _) in &grant.env {
                 if !is_variable_name(name) {
                     findings.push(format!(
                         "variable `{name}` is not a name of the shape `[A-Za-z_][A-Za-z0-9_]*`"
@@ -216,7 +208,9 @@ impl Grant {
         }
 
         // one value per variable across the grants
-        let env = unique(grants.iter().flat_map(|grant| grant.env.iter().copied()));
+        let env = unique(grants.iter().flat_map(|grant| {
+            grant.env.iter().map(|(name, value)| (name.as_str(), value.as_str()))
+        }));
         for (index, (name, value)) in env.iter().enumerate() {
             let earlier = env[..index].iter().find(|(other, _)| other == name);
             if let Some((_, other)) = earlier {
@@ -262,7 +256,7 @@ pub struct Metadata {
     pub rules: Vec<MergeRule>,
     /// Toolchain access granted to the model's worker in [`build`] and
     /// [`verify`] turns, one [`Grant`] per program the prompts run.
-    pub grants: &'static [Grant],
+    pub grants: Vec<Grant>,
     /// Default requirement budget per slice when neither `--budget` nor
     /// `[target] budget` sets one.
     pub budget: Option<NonZeroU32>,
@@ -783,14 +777,14 @@ pub async fn call<A: TargetAdapter>(
             adapter_id: &id,
             slice,
             workspace: &workspace,
-            grants: metadata.grants,
+            grants: &metadata.grants,
             model: &crate::Provider,
             scaffold: None,
         }),
         emery_adapter::target::Task::Verify => Task::Verify(VerifyContext {
             adapter_id: &id,
             workspace: &workspace,
-            grants: metadata.grants,
+            grants: &metadata.grants,
             model: &crate::Provider,
         }),
     };
@@ -1089,7 +1083,7 @@ fn write_section_changes(f: &mut Formatter<'_>, sections: &[SectionChange]) -> f
 }
 
 fn statement(paragraphs: &[String]) -> String {
-    if paragraphs.is_empty() { "[conflict]".to_owned() } else { paragraphs.join(" ") }
+    if paragraphs.is_empty() { "[conflict]".to_string() } else { paragraphs.join(" ") }
 }
 
 // The user turn of a verification. The lend carries the root, so the brief
