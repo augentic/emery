@@ -29,6 +29,9 @@ pub const INTEGRATION: &str = "./.emery/vcs/integration";
 /// The working copy a revision is read from and sealed in.
 pub const REVISION: &str = "./.emery/vcs/revision";
 
+/// The working copy a target adapter scopes a change build in.
+pub const SCOPE: &str = "./.emery/vcs/scope";
+
 /// The directory beneath the project root that holds the working copy each slice builds in.
 pub const WORKTREES: &str = "./.emery/vcs/worktrees";
 

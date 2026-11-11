@@ -352,6 +352,9 @@ struct BuildArgs {
     /// The maximum number of requirements per build slice; over `--config`, it replaces the `[target] budget`.
     #[arg(long, short = 'b', env = "EMERY_BUDGET", value_name = "N")]
     budget: Option<NonZeroUsize>,
+    /// Build every part of the plan from the base, ignoring any built ancestor in the lineage.
+    #[arg(long)]
+    whole: bool,
 }
 
 impl TryFrom<BuildArgs> for BuildInput {
@@ -364,6 +367,7 @@ impl TryFrom<BuildArgs> for BuildInput {
             config: args.config.as_deref(),
             jobs: args.jobs,
             budget: args.budget,
+            whole: args.whole,
         }
         .resolve()
     }

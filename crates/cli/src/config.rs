@@ -176,7 +176,7 @@ fn target_required(description: impl Into<String>) -> Error {
 }
 
 // A positional target adapter, a `--repository`, an optional `--config` path,
-// an optional `--jobs` cap, and an optional `--budget` cap.
+// an optional `--jobs` cap, an optional `--budget` cap, and `--whole`.
 //
 // The file's `[target]` table is the base and the flags layer over it: an
 // argv adapter takes the place of its `adapter`, dropping the `digest` that
@@ -190,6 +190,7 @@ pub struct TargetCarriers<'a> {
     pub config: Option<&'a Path>,
     pub jobs: Option<NonZeroUsize>,
     pub budget: Option<NonZeroUsize>,
+    pub whole: bool,
 }
 
 impl TargetCarriers<'_> {
@@ -200,6 +201,7 @@ impl TargetCarriers<'_> {
             config,
             jobs,
             budget,
+            whole,
         } = self;
 
         // the file, named or discovered, and the target it states
@@ -221,7 +223,7 @@ impl TargetCarriers<'_> {
             target.repository = Some(repository.to_owned());
         }
 
-        let input = target.into_input(jobs, budget);
+        let input = target.into_input(jobs, budget, whole);
         tracing::debug!(
             carrier = %carrier_label(path.as_deref()),
             adapter = %input.adapter,
@@ -389,7 +391,7 @@ impl TargetEntry {
     }
 
     fn into_input(
-        self, jobs: Option<NonZeroUsize>, flag_budget: Option<NonZeroUsize>,
+        self, jobs: Option<NonZeroUsize>, flag_budget: Option<NonZeroUsize>, whole: bool,
     ) -> BuildInput {
         let name = self.name.unwrap_or_else(|| self.adapter.name().to_owned());
         let (budget, budget_source) = resolve_budget(flag_budget, self.budget);
@@ -401,6 +403,7 @@ impl TargetEntry {
             jobs,
             budget,
             budget_source,
+            whole,
         }
     }
 

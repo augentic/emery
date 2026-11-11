@@ -15,9 +15,20 @@ use super::files::FilesScript;
 // into the branch leaves, which needs no pointer and no label. Returns the
 // revision id.
 pub fn seed(files: &FilesScript, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
-    files.lists(REVISION, ".", &[(SPECIFICATION, EntryKind::Directory)]);
+    seed_in(files, REVISION, spec, design, plan)
+}
+
+// Scripts the three documents under `spec/` in the revision working copy when cut at `commit`.
+pub fn seed_at(
+    files: &FilesScript, commit: &str, spec: &[u8], design: &[u8], plan: &[u8],
+) -> String {
+    seed_in(files, &FilesScript::at_commit(REVISION, commit), spec, design, plan)
+}
+
+fn seed_in(files: &FilesScript, at: &str, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
+    files.lists(at, ".", &[(SPECIFICATION, EntryKind::Directory)]);
     files.lists(
-        REVISION,
+        at,
         SPECIFICATION,
         &[
             ("spec.json", EntryKind::File),
@@ -26,7 +37,7 @@ pub fn seed(files: &FilesScript, spec: &[u8], design: &[u8], plan: &[u8]) -> Str
         ],
     );
     for (name, body) in [("spec", spec), ("design", design), ("plan", plan)] {
-        files.holds_bytes(REVISION, &document(name), body);
+        files.holds_bytes(at, &document(name), body);
     }
     revision(spec, design, plan)
 }

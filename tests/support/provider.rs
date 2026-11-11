@@ -586,11 +586,11 @@ impl<S: Send + Sync + 'static> Vcs for Provider<S> {
 
 impl<S: Send + Sync + 'static> Files for Provider<S> {
     fn read(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
-        Files::read(&self.files, at, path)
+        self.files.read_at(at, self.vcs.cut_at(at), path)
     }
 
     fn list(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send {
-        Files::list(&self.files, at, path)
+        self.files.list_at(at, self.vcs.cut_at(at), path)
     }
 
     fn write(

@@ -7,6 +7,7 @@
 //! wave, and labels the verified head `emery/<revision>`. Interrupted runs
 //! resume from the existing label and integration working copy.
 
+mod basis;
 pub mod change;
 pub(crate) mod merge;
 mod schedule;
@@ -19,10 +20,12 @@ use emery_adapter::{BadPath, SPECIFICATION, beneath};
 use futures::{FutureExt as _, StreamExt as _, stream};
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
-use omnia_sdk::vcs::{Change, ChangeKind, Rule, Strategy};
+use omnia_sdk::vcs::{Change as VcsChange, ChangeKind, Rule, Strategy};
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, server_error};
 use serde::{Deserialize, Serialize};
 
+pub(crate) use self::basis::Basis;
+pub use self::change::{Change, PartReach, Reason, Whole, WholeReason};
 use self::merge::UnresolvedMerge;
 pub(crate) use self::schedule::Schedule;
 pub use self::schedule::{BudgetSource, DEFAULT_BUDGET, ScheduledSlice};
@@ -152,10 +155,14 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     // the base, and what the label already holds over it
     let head = standing.head.as_deref().unwrap_or(&current.commit);
     let base = repo.base(provider, head).await?;
-    let label = store::label(&revision_id);
-    let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
     let (budget, budget_source) =
         BudgetSource::resolve(input.budget, input.budget_source, metadata.budget);
+    let basis =
+        Basis::settle(provider, &repo, Some(&adapter), &base, &revision, budget, input.whole)
+            .await?;
+    let (change, whole) = basis.outcome(Vec::new());
+    let label = store::label(&revision_id);
+    let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
     let mut progress = Progress::start(&base, labelled);
     let Integration {
         copy: integration,
@@ -212,6 +219,8 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     Ok(BuildOutput {
         revision: revision_id,
         candidate,
+        change,
+        whole,
         budget: budget.get(),
         budget_source,
         parts,
@@ -277,6 +286,10 @@ pub struct BuildInput {
     /// and `budget_source` is `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_source: Option<BudgetSource>,
+    /// Whether to build every part of the plan from the base, ignoring any
+    /// built ancestor in the lineage (`--whole`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub whole: bool,
 }
 
 /// What a successful [`build`] built.
@@ -292,6 +305,14 @@ pub struct BuildOutput {
     /// or the candidate is the revision built.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub candidate: Option<Candidate>,
+    /// What this build rebuilt, carried, and retired against the built
+    /// ancestor; `None` when [`whole`](Self::whole) is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change: Option<Change>,
+    /// Why every part of the plan was built from the base; `None` when
+    /// [`change`](Self::change) is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub whole: Option<Whole>,
     /// The requirement budget per slice the schedule was cut under.
     pub budget: usize,
     /// Where [`budget`](Self::budget) came from.
@@ -843,7 +864,7 @@ async fn kind_at<P: Files>(provider: &P, at: &str, path: &str) -> Result<Option<
 // upstream: an init puts no turn, so a failure is the adapter's.
 async fn initialise<P: Target + Vcs + Files>(
     provider: &P, adapter: &str, at: &str,
-) -> Result<Vec<Change>, Error> {
+) -> Result<Vec<VcsChange>, Error> {
     tracing::info!(tree = at, "initialising");
     let outcome = Target::run(provider, adapter, at, &Task::Init).await?;
     if outcome != Outcome::Initialised {
@@ -861,7 +882,7 @@ async fn initialise<P: Target + Vcs + Files>(
 // its label names, then the secret gate. The specification guard reads
 // nothing, so it runs first and a refusal reads no file.
 async fn gated<P: Files>(
-    provider: &P, at: &str, wrote: &str, pending: &[Change],
+    provider: &P, at: &str, wrote: &str, pending: &[VcsChange],
 ) -> Result<(), Error> {
     let rewritten: Vec<String> = pending
         .iter()
@@ -961,7 +982,7 @@ impl Progress {
             && kind_at(provider, integration.path(), path).await?.is_none()
         {
             provider.write(integration.path(), path, content).await?;
-            changes.push(Change {
+            changes.push(VcsChange {
                 path: path.to_owned(),
                 kind: ChangeKind::Added,
             });

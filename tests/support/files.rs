@@ -28,6 +28,11 @@ pub struct FilesScript {
 }
 
 impl FilesScript {
+    // Keys a working copy `at` to a specific `commit` it was cut at.
+    pub fn at_commit(at: &str, commit: &str) -> String {
+        format!("{at}@{commit}")
+    }
+
     // Scripts what `path` beneath `at` reads as.
     pub fn holds(&self, at: &str, path: &str, content: &str) {
         self.holds_bytes(at, path, content.as_bytes());
@@ -70,16 +75,16 @@ impl FilesScript {
         self.writes.lock().expect("writes").clone()
     }
 
-    fn script(&self, at: &str, path: &str, content: Option<Vec<u8>>) {
-        self.contents.lock().expect("contents").insert((at.to_owned(), path.to_owned()), content);
-    }
-}
-
-impl Files for FilesScript {
-    fn read(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
+    pub fn read_at(
+        &self, at: &str, commit: Option<String>, path: &str,
+    ) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
         self.reads.lock().expect("reads").push((at.to_owned(), path.to_owned()));
-        let scripted =
-            self.contents.lock().expect("contents").get(&(at.to_owned(), path.to_owned())).cloned();
+        let contents = self.contents.lock().expect("contents");
+        let scripted = commit
+            .and_then(|commit| contents.get(&(Self::at_commit(at, &commit), path.to_owned())))
+            .or_else(|| contents.get(&(at.to_owned(), path.to_owned())))
+            .cloned();
+        drop(contents);
         let answer = match scripted {
             Some(Some(bytes)) => Ok(bytes),
             Some(None) => Err(server_error!("reading `{path}` under `{at}`: scripted unreadable")),
@@ -88,16 +93,32 @@ impl Files for FilesScript {
         async move { answer }
     }
 
-    fn list(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send {
+    pub fn list_at(
+        &self, at: &str, commit: Option<String>, path: &str,
+    ) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send {
         self.listed.lock().expect("listed").push((at.to_owned(), path.to_owned()));
-        let entries = self
-            .listings
-            .lock()
-            .expect("listings")
-            .get(&(at.to_owned(), path.to_owned()))
+        let listings = self.listings.lock().expect("listings");
+        let entries = commit
+            .and_then(|commit| listings.get(&(Self::at_commit(at, &commit), path.to_owned())))
+            .or_else(|| listings.get(&(at.to_owned(), path.to_owned())))
             .cloned()
             .unwrap_or_default();
+        drop(listings);
         async move { Ok(entries) }
+    }
+
+    fn script(&self, at: &str, path: &str, content: Option<Vec<u8>>) {
+        self.contents.lock().expect("contents").insert((at.to_owned(), path.to_owned()), content);
+    }
+}
+
+impl Files for FilesScript {
+    fn read(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
+        self.read_at(at, None, path)
+    }
+
+    fn list(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send {
+        self.list_at(at, None, path)
     }
 
     fn write(

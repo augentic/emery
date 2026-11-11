@@ -246,6 +246,7 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 ```json
 {
   "revision": "9f8e7d6c…",
+  "whole": { "reason": "no-parent" },
   "budget": 12,
   "budget-source": "adapter",
   "parts": [["PART-001", "PART-003"], ["PART-002"]],
@@ -325,6 +326,8 @@ All text-mode formatters (`crates/cli/src/text.rs`) follow a uniform layout:
 | Field | Type | Presence | Description |
 | --- | --- | --- | --- |
 | `revision` | `string` | Always | SHA-256 ID of the sealed revision that was built. |
+| `change` | `{ from, commit, rebuilt, carried, retiring }` | Optional | Change-build summary against the built ancestor revision (`from` and its label `commit`, `rebuilt` `{ id, name, reasons }[]` parts, `carried` `PART-NNN[]`, and `retiring` `SLICE-NNN[]`). Present when `whole` is omitted. |
+| `whole` | `{ reason }` | Optional | Why every part of the plan was built from the base (`"requested"` \| `"no-parent"` \| `"parent-unbuilt"`). Present when `change` is omitted. |
 | `budget` | `number` | Always | Requirement budget per slice the schedule was cut under. |
 | `budget-source` | `"flag"` \| `"config"` \| `"adapter"` \| `"default"` | Always | Where `budget` came from (`--budget` / `EMERY_BUDGET`, `[target] budget`, `TargetMetadata.budget`, or engine fallback `12`). |
 | `parts` | `string[][]` | Always | Dependency waves of `PART-NNN` IDs from the sealed plan. |

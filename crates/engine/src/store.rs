@@ -313,7 +313,7 @@ impl Current {
     // The revision the tree at `commit` holds under `spec/`, with its id;
     // `None` when the tree holds no `spec/`. Held to `expect`, the id the
     // label names, where there is one.
-    async fn read_at<P: Vcs + Files>(
+    pub async fn read_at<P: Vcs + Files>(
         provider: &P, repo: &BuildRepo, commit: &str, expect: Option<&str>,
     ) -> Result<Option<Self>, Error> {
         let copy = WorkingCopy::cut(provider, &repo.path(), REVISION, commit).await?;

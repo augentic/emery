@@ -6,9 +6,11 @@ mod support;
 
 use std::fs;
 
-use emery_adapter::target::{DesignType, MergeRule, Report, Requirement, Scenario, Slice, Verdict};
+use emery_adapter::target::{
+    DesignType, MergeRule, PartReach, Report, Requirement, Scenario, Slice, Verdict,
+};
 use emery_adapter::{Route, Trigger};
-use emery_engine::vcs::REVISION;
+use emery_engine::vcs::{REVISION, SCOPE};
 use emery_engine::{EntryKind, REVISION_KEY};
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::vcs::{Change, ChangeKind, Entry, Error, Merged, Rule, Strategy};
@@ -18,7 +20,7 @@ use omnia_test::guest::ScriptedModel;
 use serde_json::{Value, json};
 use support::provider::{Provider, Rendezvous, cli, digest};
 use support::scratch::Scratch;
-use support::store::{seed, stage, stage_amendment};
+use support::store::{seed, seed_at, stage, stage_amendment, stage_fresh};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 
@@ -3897,4 +3899,346 @@ async fn resume_budget_change() {
     assert_eq!((calls[1].1.index, calls[1].1.count), (3, 3));
     let second_reqs: Vec<&str> = calls[1].1.requirements.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(second_reqs, ["REQ-010", "REQ-011"]);
+}
+
+// --- settling the basis and scoping a change build ---
+
+const GRANDPARENT: &str = "0123456789abcdef0123456789abcdef01234567";
+
+// Builds an amended revision over `parent` from `plan_bytes`, rewriting
+// `REQ-003`'s statement when `order_statement` is given.
+fn amended_documents(
+    parent: &str, plan_bytes: &[u8], order_statement: Option<&str>,
+) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+    let mut spec: Value = serde_json::from_slice(SPEC).expect("spec fixture");
+    spec["parent"] = json!(parent);
+    if let Some(statement) = order_statement {
+        spec["requirements"][2]["body"] = json!([statement]);
+    }
+    let mut design: Value = serde_json::from_slice(DESIGN).expect("design fixture");
+    design["parent"] = json!(parent);
+    let mut plan: Value = serde_json::from_slice(plan_bytes).expect("plan fixture");
+    plan["parent"] = json!(parent);
+    (
+        serde_json::to_vec(&spec).expect("spec"),
+        serde_json::to_vec(&design).expect("design"),
+        serde_json::to_vec(&plan).expect("plan"),
+    )
+}
+
+// Seeds a three-part parent revision (`WIDE_PLAN`) as built at `LABELLED`
+// and seeds a child revision over it whose `orders` part (`PART-003`) has a
+// changed requirement.
+fn wide_lineage() -> (Provider, String, String) {
+    let provider = Provider::idle();
+    let parent = seed_at(&provider.files, LABELLED, SPEC, DESIGN, WIDE_PLAN);
+    let (spec, design, plan) = amended_documents(
+        &parent,
+        WIDE_PLAN,
+        Some("A signed-in user places an order with a discount."),
+    );
+    let child = seed(&provider.files, &spec, &design, &plan);
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry(
+                "m:SLICE-003",
+                &message(&parent, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+            ),
+            entry("m:SLICE-002", &message(&parent, WIDE_SESSIONS, "REQ-002", "REQ-002", HEAD, 2)),
+            entry("m:SLICE-001", &message(&parent, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+        ]),
+    );
+    (provider, parent, child)
+}
+
+// Over a complete built parent, `Basis::settle` computes the minimum scope
+// and carried parts, puts `Task::Scope` once in a working copy cut at the
+// built commit, removes the copy, and reports `change` in the envelope.
+#[tokio::test]
+async fn build_change_reported() {
+    let (provider, parent, child) = wide_lineage();
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], child, "{envelope}");
+    assert!(envelope.get("whole").is_none(), "change and whole are mutually exclusive: {envelope}");
+    assert_eq!(
+        envelope["change"],
+        json!({
+            "from": parent,
+            "commit": LABELLED,
+            "rebuilt": [
+                {"id": "PART-003", "name": "orders", "reasons": ["requirements"]}
+            ],
+            "carried": ["PART-001", "PART-002"],
+            "retiring": []
+        }),
+        "{envelope}"
+    );
+
+    let scopes = provider.target.scopes();
+    let [(adapter, scoped_change, root)] = scopes.as_slice() else {
+        panic!("one scope call expected: {scopes:?}");
+    };
+    assert_eq!(adapter, BUILDER_ID);
+    assert_eq!(root, SCOPE);
+    assert_eq!(scoped_change.built, parent);
+    assert_eq!(scoped_change.commit, LABELLED);
+    assert_eq!(
+        scoped_change.parts,
+        [
+            PartReach {
+                id: "PART-001".to_owned(),
+                name: "authentication".to_owned(),
+                requirements: vec!["REQ-001".to_owned()],
+                reasons: Vec::new(),
+            },
+            PartReach {
+                id: "PART-002".to_owned(),
+                name: "sessions".to_owned(),
+                requirements: vec!["REQ-002".to_owned()],
+                reasons: Vec::new(),
+            },
+            PartReach {
+                id: "PART-003".to_owned(),
+                name: "orders".to_owned(),
+                requirements: vec!["REQ-003".to_owned(), "REQ-004".to_owned()],
+                reasons: vec!["requirements".to_owned()],
+            },
+        ]
+    );
+    let calls = provider.vcs.calls();
+    assert!(calls.contains(&format!("add . {SCOPE} {LABELLED}")), "{calls:?}");
+    assert!(calls.contains(&format!("pending {SCOPE}")), "{calls:?}");
+    assert!(calls.contains(&format!("remove {SCOPE}")), "{calls:?}");
+    provider.vcs.assert_exhausted();
+}
+
+// The adapter's `Scoped` answer unions with the minimum scope, marking
+// adapter-widened parts with `adapter`; an id that is no plan part, or a
+// pending change left in the scope working copy, is refused as `server_error`.
+#[tokio::test]
+async fn build_change_scope() {
+    let (provider, parent, _) = wide_lineage();
+    provider.target.scope(Ok(vec!["PART-002".to_owned(), "PART-003".to_owned()]));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["change"],
+        json!({
+            "from": parent,
+            "commit": LABELLED,
+            "rebuilt": [
+                {"id": "PART-002", "name": "sessions", "reasons": ["adapter"]},
+                {"id": "PART-003", "name": "orders", "reasons": ["requirements"]}
+            ],
+            "carried": ["PART-001"],
+            "retiring": []
+        }),
+        "{envelope}"
+    );
+    provider.vcs.assert_exhausted();
+
+    // an id outside the plan is `server_error`
+    let (provider, _, _) = wide_lineage();
+    provider.target.scope(Ok(vec!["PART-099".to_owned()]));
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 3, "server_error").await;
+    assert_message(
+        &envelope,
+        "scoped `PART-099` is not a part of the plan; its parts are PART-001, PART-002, PART-003",
+    );
+    assert!(provider.vcs.calls().contains(&format!("remove {SCOPE}")), "scope copy removed");
+    assert!(provider.target.calls().is_empty(), "no slice built");
+    provider.vcs.assert_exhausted();
+
+    // a pending change in the scope working copy violates W^X and is `server_error`
+    let (provider, _, _) = wide_lineage();
+    provider.vcs.pending.script(SCOPE, Ok(vec![change("src/orders.rs", ChangeKind::Modified)]));
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 3, "server_error").await;
+    assert_message(&envelope, "modified the scope working copy: src/orders.rs");
+    assert!(provider.vcs.calls().contains(&format!("remove {SCOPE}")), "scope copy removed");
+    assert!(provider.target.calls().is_empty(), "no slice built");
+    provider.vcs.assert_exhausted();
+}
+
+// When the nearest ancestor with slice commits on its label has an incomplete
+// build, `Basis::settle` falls back to a whole build with `parent-unbuilt`
+// without asking `scope`.
+#[tokio::test]
+async fn build_change_unbuilt_parent() {
+    let provider = Provider::idle();
+    let parent = seed_at(&provider.files, LABELLED, SPEC, DESIGN, PLAN);
+    let (spec, design, plan) = amended_documents(&parent, PLAN, Some("Updated order creation."));
+    let child = seed(&provider.files, &spec, &design, &plan);
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![entry(
+            "m:SLICE-001",
+            &message(&parent, AUTHENTICATION, "REQ-001, REQ-002", "REQ-001, REQ-002", HEAD, 1),
+        )]),
+    );
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], child, "{envelope}");
+    assert!(envelope.get("change").is_none(), "{envelope}");
+    assert_eq!(envelope["whole"], json!({"reason": "parent-unbuilt"}), "{envelope}");
+    assert!(provider.target.scopes().is_empty(), "scope is not asked for an unbuilt parent");
+    assert_eq!(provider.target.calls().len(), 2, "every slice of the plan builds");
+    provider.vcs.assert_exhausted();
+}
+
+// A parent revision that was sealed and never built (`merged_under` empty) is
+// stepped past to its own parent when that grandparent has a complete build.
+#[tokio::test]
+async fn build_change_unbuilt_grandparent_skipped() {
+    let provider = Provider::idle();
+    let grandparent = seed_at(&provider.files, GRANDPARENT, SPEC, DESIGN, PLAN);
+    let (parent_spec, parent_design, parent_plan) =
+        amended_documents(&grandparent, PLAN, Some("Intermediate order wording."));
+    let parent = seed_at(&provider.files, LABELLED, &parent_spec, &parent_design, &parent_plan);
+    let (child_spec, child_design, child_plan) =
+        amended_documents(&parent, PLAN, Some("Final order wording."));
+    let child = seed(&provider.files, &child_spec, &child_design, &child_plan);
+
+    let grandparent_log = vec![
+        entry(
+            "m:SLICE-002",
+            &message(&grandparent, ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 2),
+        ),
+        entry(
+            "m:SLICE-001",
+            &message(&grandparent, AUTHENTICATION, "REQ-001, REQ-002", "REQ-001, REQ-002", HEAD, 1),
+        ),
+    ];
+
+    // parent label holds no slice commits; grandparent label holds a complete build
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(Vec::new()));
+    provider.vcs.labelleds.script(".", Ok(GRANDPARENT.to_owned()));
+    provider.vcs.logs.script(".", Ok(grandparent_log.clone()));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], child, "{envelope}");
+    assert!(envelope.get("whole").is_none(), "{envelope}");
+    assert_eq!(
+        envelope["change"],
+        json!({
+            "from": grandparent,
+            "commit": GRANDPARENT,
+            "rebuilt": [
+                {"id": "PART-002", "name": "orders", "reasons": ["requirements"]}
+            ],
+            "carried": ["PART-001"],
+            "retiring": []
+        }),
+        "the unbuilt parent is stepped past to the built grandparent: {envelope}"
+    );
+    let scopes = provider.target.scopes();
+    assert_eq!(scopes.len(), 1);
+    assert_eq!(scopes[0].1.built, grandparent);
+    assert_eq!(scopes[0].1.commit, GRANDPARENT);
+    provider.vcs.assert_exhausted();
+
+    // when the parent was itself a change build (only `orders` committed on its
+    // label, `authentication` carried from the grandparent), its carried set is
+    // recomputed from `grandparent -> parent` so `parent` is recognised as complete
+    let provider = Provider::idle();
+    seed_at(&provider.files, GRANDPARENT, SPEC, DESIGN, PLAN);
+    seed_at(&provider.files, LABELLED, &parent_spec, &parent_design, &parent_plan);
+    seed(&provider.files, &child_spec, &child_design, &child_plan);
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![entry(
+            "m:SLICE-002",
+            &message(&parent, ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+        )]),
+    );
+    provider.vcs.labelleds.script(".", Ok(GRANDPARENT.to_owned()));
+    provider.vcs.logs.script(".", Ok(grandparent_log));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["change"]["from"], parent, "{envelope}");
+    assert_eq!(envelope["change"]["commit"], LABELLED, "{envelope}");
+    let scopes = provider.target.scopes();
+    assert_eq!(
+        scopes.len(),
+        2,
+        "scoped once for grandparent -> parent and once for parent -> child"
+    );
+    assert_eq!(scopes[0].1.built, grandparent);
+    assert_eq!(scopes[1].1.built, parent);
+    provider.vcs.assert_exhausted();
+}
+
+// A parentless revision (`no-parent`), a revision sealed from a `--fresh`
+// candidate over a lineage (`no-parent`), and a `--whole` invocation over a
+// built parent (`requested`) each report `whole` and never ask `scope`.
+#[tokio::test]
+async fn build_whole() {
+    // parentless baseline (`no-parent`)
+    let (provider, _) = planned();
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope.get("change").is_none(), "{envelope}");
+    assert_eq!(envelope["whole"], json!({"reason": "no-parent"}), "{envelope}");
+    assert!(provider.target.scopes().is_empty(), "no scope for no-parent");
+    provider.vcs.assert_exhausted();
+
+    // `--whole` over a lineage with a built parent (`requested`)
+    let provider = Provider::idle();
+    let parent = seed(&provider.files, SPEC, DESIGN, WIDE_PLAN);
+    let (spec, design, plan) = amended_documents(&parent, WIDE_PLAN, Some("Updated orders."));
+    seed(&provider.files, &spec, &design, &plan);
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--whole", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope.get("change").is_none(), "{envelope}");
+    assert_eq!(envelope["whole"], json!({"reason": "requested"}), "{envelope}");
+    assert!(provider.target.scopes().is_empty(), "`--whole` never asks `scope`");
+    provider.vcs.assert_exhausted();
+
+    // a candidate staged `--fresh` and sealed over a lineage has no parent (`no-parent`)
+    let provider = Provider::idle();
+    seed(&provider.files, &spec, &design, &plan);
+    let fresh = stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], fresh, "{envelope}");
+    assert!(envelope.get("change").is_none(), "{envelope}");
+    assert_eq!(envelope["whole"], json!({"reason": "no-parent"}), "{envelope}");
+    assert!(provider.target.scopes().is_empty(), "no scope for fresh revision");
+    provider.vcs.assert_exhausted();
 }

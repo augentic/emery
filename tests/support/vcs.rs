@@ -137,6 +137,11 @@ impl VcsScript {
     fn forget(&self, at: &str) {
         self.cut.lock().expect("cut").remove(at);
     }
+
+    // Returns the revision `at` was cut at, while nothing has landed there.
+    pub fn cut_at(&self, at: &str) -> Option<String> {
+        self.cut.lock().expect("cut").get(at).cloned()
+    }
 }
 
 impl Vcs for VcsScript {

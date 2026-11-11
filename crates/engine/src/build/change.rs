@@ -137,8 +137,6 @@ pub enum WholeReason {
     Requested,
     /// The current revision has no parent in its lineage.
     NoParent,
-    /// The current revision started a fresh lineage over an earlier one.
-    Fresh,
     /// No ancestor in the lineage has a complete verified build.
     ParentUnbuilt,
 }
