@@ -14,7 +14,7 @@ use crate::revision;
 
 pub const TYPE: &str = "Type:";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Design {
     pub emery: u32,
@@ -29,6 +29,35 @@ impl Design {
     #[must_use]
     pub fn section(&self, kind: SectionKind) -> Option<&Section> {
         self.sections.iter().find(|section| section.kind == kind)
+    }
+
+    // Returns the prose blocks of `kind` joined by blank lines, or `None`
+    // when the section is absent or holds only type blocks.
+    #[must_use]
+    pub fn prose(&self, kind: SectionKind) -> Option<String> {
+        let prose: Vec<&str> = self
+            .section(kind)?
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Text(text) => Some(text.as_str()),
+                Block::Type { .. } => None,
+            })
+            .collect();
+        (!prose.is_empty()).then(|| prose.join("\n\n"))
+    }
+
+    // Returns the keys of every `Block::Type` in the design, in key order.
+    #[must_use]
+    pub fn type_keys(&self) -> BTreeSet<String> {
+        self.sections
+            .iter()
+            .flat_map(|section| &section.blocks)
+            .filter_map(|block| match block {
+                Block::Type { key, .. } => Some(key.clone()),
+                Block::Text(_) => None,
+            })
+            .collect()
     }
 
     // Returns the keys of the `Role::Data` types, in key order: the types a
@@ -114,7 +143,7 @@ impl Display for Design {
 ///
 /// `B` allows the same section shape to hold either draft blocks or stored
 /// [`Block`] values.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "Section")]
 pub struct Section<B = Block> {

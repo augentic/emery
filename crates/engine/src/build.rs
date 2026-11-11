@@ -7,6 +7,7 @@
 //! wave, and labels the verified head `emery/<revision>`. Interrupted runs
 //! resume from the existing label and integration working copy.
 
+pub mod change;
 pub(crate) mod merge;
 mod schedule;
 

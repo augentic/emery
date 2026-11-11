@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use super::{Design, Part, PartId, Plan, ReqId, Requirement, Revision, SectionKind, Spec};
 
 /// Changes from a displaced revision to a newly committed revision.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Diff {
     /// The identifier of the displaced revision.
@@ -46,6 +46,21 @@ impl Diff {
         }
     }
 
+    /// Returns the changes from `outgoing` to `incoming` within one lineage.
+    ///
+    /// `from` must identify `outgoing`. Requirements pair by identifier alone
+    /// whatever `incoming`'s `parent` names, and any `outgoing` requirement
+    /// left out is [`retired`](SpecDiff::retired).
+    #[must_use]
+    pub fn within(from: &str, outgoing: &Revision, incoming: &Revision) -> Self {
+        Self {
+            from: from.to_string(),
+            spec: SpecDiff::within(&outgoing.spec, &incoming.spec),
+            design: DesignDiff::between(&outgoing.design, &incoming.design),
+            plan: PlanDiff::between(&outgoing.plan, &incoming.plan),
+        }
+    }
+
     /// Returns whether the two revisions differ in nothing.
     #[must_use]
     pub const fn is_empty(&self) -> bool {
@@ -54,7 +69,7 @@ impl Diff {
 }
 
 /// Changes to the specification portion of a revision.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct SpecDiff {
     /// Whether the preamble changed.
@@ -85,7 +100,14 @@ impl SpecDiff {
     // A requirement paired under another id reads as a change of `id`, with
     // `was` naming the one it carried.
     fn between(from: &str, outgoing: &Spec, incoming: &Spec) -> Self {
-        let pairing = Pairing::between(from, outgoing, incoming);
+        Self::from_pairing(outgoing, incoming, Pairing::between(from, outgoing, incoming))
+    }
+
+    fn within(outgoing: &Spec, incoming: &Spec) -> Self {
+        Self::from_pairing(outgoing, incoming, Pairing::by_id(outgoing, incoming))
+    }
+
+    fn from_pairing(outgoing: &Spec, incoming: &Spec, pairing: Pairing<'_>) -> Self {
         Self {
             preamble: outgoing.preamble != incoming.preamble,
             added: pairing.added.into_iter().map(Entry::from).collect(),
@@ -111,7 +133,7 @@ impl SpecDiff {
 
 // Destructured whole, so a field added to the record is compared here or
 // fails to compile.
-fn differences(before: &Requirement, after: &Requirement) -> Vec<&'static str> {
+fn differences(before: &Requirement, after: &Requirement) -> Vec<String> {
     let Requirement {
         id,
         subject,
@@ -135,7 +157,8 @@ fn differences(before: &Requirement, after: &Requirement) -> Vec<&'static str> {
         ("scenarios", *scenarios != after.scenarios),
     ]
     .into_iter()
-    .filter_map(|(name, differs)| differs.then_some(name))
+    .filter(|&(_, differs)| differs)
+    .map(|(name, _)| name.to_owned())
     .collect()
 }
 
@@ -152,8 +175,21 @@ impl<'a> Pairing<'a> {
     // histories ids are positional in source order, so the pair sharing the
     // most anchors under one stem is taken first, ties broken in id order.
     fn between(from: &str, outgoing: &'a Spec, incoming: &'a Spec) -> Self {
-        let amends = incoming.parent.as_deref() == Some(from);
-        let anchored = if amends { Vec::new() } else { Self::anchored(outgoing, incoming) };
+        if incoming.parent.as_deref() == Some(from) {
+            Self::by_id(outgoing, incoming)
+        } else {
+            Self::pair(outgoing, incoming, Self::anchored(outgoing, incoming), false)
+        }
+    }
+
+    fn by_id(outgoing: &'a Spec, incoming: &'a Spec) -> Self {
+        Self::pair(outgoing, incoming, Vec::new(), true)
+    }
+
+    fn pair(
+        outgoing: &'a Spec, incoming: &'a Spec, anchored: Vec<(&'a Requirement, &'a Requirement)>,
+        within_lineage: bool,
+    ) -> Self {
         let by_id = incoming
             .requirements
             .iter()
@@ -169,7 +205,7 @@ impl<'a> Pairing<'a> {
         }
 
         let unpaired = outgoing.requirements.iter().filter(|before| !taken.contains(&before.id));
-        let (removed, retired) = if amends {
+        let (removed, retired) = if within_lineage {
             (Vec::new(), unpaired.collect())
         } else {
             (unpaired.collect(), Vec::new())
@@ -202,7 +238,7 @@ impl<'a> Pairing<'a> {
 }
 
 /// A requirement the new revision withdraws from the one it amends.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Retired {
     /// The requirement's identity in the displaced revision.
@@ -223,7 +259,7 @@ impl From<&Requirement> for Retired {
 }
 
 /// A requirement identified in a revision diff.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Entry {
     /// The stable requirement identifier.
@@ -249,14 +285,14 @@ impl From<&Requirement> for Entry {
 /// A record changed between revisions.
 ///
 /// `E` identifies the record: a requirement [`Entry`] or a [`PartEntry`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Changed<E = Entry> {
     /// The record's identity in the new revision.
     #[serde(flatten)]
     pub entry: E,
     /// Names of the differing fields, in declaration order.
-    pub fields: Vec<&'static str>,
+    pub fields: Vec<String>,
 }
 
 /// Changes to the design portion of a revision.
@@ -309,7 +345,7 @@ impl DesignDiff {
 }
 
 /// Changes to the plan portion of a revision.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PlanDiff {
     /// Whether the preamble changed.
@@ -370,7 +406,7 @@ impl PlanDiff {
 // The field name a changed part's `fields` carries where its brief differs.
 pub const BRIEF: &str = "brief";
 
-fn part_differences(before: &Part, after: &Part) -> Vec<&'static str> {
+fn part_differences(before: &Part, after: &Part) -> Vec<String> {
     let Part {
         id: _,
         name,
@@ -389,12 +425,13 @@ fn part_differences(before: &Part, after: &Part) -> Vec<&'static str> {
         (BRIEF, *brief != after.brief),
     ]
     .into_iter()
-    .filter_map(|(name, differs)| differs.then_some(name))
+    .filter(|&(_, differs)| differs)
+    .map(|(name, _)| name.to_owned())
     .collect()
 }
 
 /// A part identified in a revision diff.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PartEntry {
     /// The stable part identifier.

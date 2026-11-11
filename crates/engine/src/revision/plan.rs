@@ -16,7 +16,7 @@ pub const TYPES: &str = "Types:";
 pub const USES: &str = "Uses:";
 pub const DEPENDS_ON: &str = "Depends on:";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
     pub emery: u32,
@@ -30,6 +30,12 @@ impl Plan {
     #[must_use]
     pub fn part(&self, id: PartId) -> Option<&Part> {
         self.parts.iter().find(|part| part.id == id)
+    }
+
+    // Returns the part that places `id`.
+    #[must_use]
+    pub fn part_for(&self, id: ReqId) -> Option<&Part> {
+        self.parts.iter().find(|part| part.requirements.contains(&id))
     }
 
     // The ids a new part takes in an amendment of this plan, from the first
@@ -198,7 +204,7 @@ impl<T: Display> Display for Waves<T> {
 
 const HEADING: &str = "## Part:";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Part {
     pub id: PartId,
@@ -219,6 +225,12 @@ impl Part {
     #[must_use]
     pub fn holds(&self, spec: &Spec, matches: impl Fn(&Requirement) -> bool) -> bool {
         self.requirements.iter().any(|id| spec.requirement(*id).is_some_and(&matches))
+    }
+
+    // Whether the part owns or uses the design type `key`.
+    #[must_use]
+    pub fn references_type(&self, key: &str) -> bool {
+        self.types.iter().chain(&self.uses).any(|held| held == key)
     }
 
     // Writes the lists and the brief: everything after the `ID:` line, with

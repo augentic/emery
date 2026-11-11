@@ -93,7 +93,7 @@ pub trait Document: Serialize + DeserializeOwned + Display {
 pub type Documents = [(&'static str, String); 3];
 
 // The specification, design, and plan committed as one unit.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Revision {
     pub spec: Spec,
     pub design: Design,

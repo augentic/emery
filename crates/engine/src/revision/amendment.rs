@@ -420,7 +420,7 @@ impl PartChange {
             .iter()
             .map(|added| entry(added, PartClass::Added, BriefState::Redrafted))
             .chain(diff.changed.iter().map(|changed| {
-                let brief = if changed.fields.contains(&revision::BRIEF) {
+                let brief = if changed.fields.iter().any(|field| field == revision::BRIEF) {
                     BriefState::Redrafted
                 } else {
                     BriefState::Kept

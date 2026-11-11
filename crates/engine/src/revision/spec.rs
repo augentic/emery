@@ -4,6 +4,7 @@
 //! records. Each requirement combines reconciled source facts with drafted
 //! acceptance scenarios.
 
+use std::collections::BTreeSet;
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::Trigger;
@@ -22,7 +23,7 @@ pub const MESSAGE: &str = "Message:";
 pub const NOTE: &str = "Note:";
 pub const HEADING: &str = "### Requirement:";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
     pub emery: u32,
@@ -36,6 +37,12 @@ impl Spec {
     #[must_use]
     pub fn requirement(&self, id: ReqId) -> Option<&Requirement> {
         self.requirements.iter().find(|requirement| requirement.id == id)
+    }
+
+    // Returns the stems the specification's requirements lead with, sorted.
+    #[must_use]
+    pub fn stems(&self) -> BTreeSet<String> {
+        self.requirements.iter().map(|requirement| requirement.stem().to_owned()).collect()
     }
 
     // The preamble, then the requirements `ids` name in the specification's
@@ -59,7 +66,7 @@ impl Display for Spec {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Requirement {
     pub id: ReqId,
