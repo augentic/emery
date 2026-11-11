@@ -5,6 +5,7 @@
 //! [`Outcome`]:
 //!
 //! - [`Task::Init`] scaffolds the layout's initial files without a model turn.
+//! - [`Task::Scope`] names the plan parts a [`Change`] reaches without a model turn.
 //! - [`Task::Build`] runs [`build`] to implement one [`Slice`] and return a
 //!   validated [`Report`].
 //! - [`Task::Verify`] runs [`verify`] to check and repair the integrated tree
@@ -12,16 +13,16 @@
 //!
 //! # Examples
 //!
-//! This adapter initialises every repository with one manifest, builds every
-//! slice, and verifies every wave through the SDK's turns, holding each
-//! report to one rule of its layout's own:
+//! This adapter initialises every repository with one manifest, scopes a change
+//! conservatively, builds every slice, and verifies every wave through the
+//! SDK's turns, holding each report to one rule of its layout's own:
 //!
 //! ```
 //! use std::fs::OpenOptions;
 //! use std::io::{ErrorKind, Write as _};
 //! use std::path::Path;
 //!
-//! use emery_sdk::target::{Grant, Metadata, Outcome, TargetAdapter, Task};
+//! use emery_sdk::target::{Grant, Metadata, Outcome, TargetAdapter, Task, scope};
 //! use emery_sdk::{Doc, Error, Model, server_error};
 //!
 //! // cargo fetches from crates.io's sparse index and its download host
@@ -65,6 +66,7 @@
 //!                 }
 //!                 Ok(Outcome::Initialised)
 //!             }
+//!             Task::Scope(ctx) => Ok(Outcome::Scoped(scope::conservative(ctx.change))),
 //!             Task::Build(ctx) => emery_sdk::target::build(&ctx, PROSE, |report| {
 //!                 let stray = report.written.iter().filter(|path| !path.starts_with("crates/"));
 //!                 Ok(stray.map(|path| format!("`{path}` lies outside `crates/`")).collect())
@@ -95,6 +97,7 @@
 //! ```
 
 mod design;
+pub mod scope;
 mod write;
 
 use std::fmt::{self, Display, Formatter};
@@ -105,8 +108,9 @@ use std::path::Path;
 #[doc(inline)]
 pub use emery_adapter::target::export;
 pub use emery_adapter::target::{
-    DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
-    TargetMetadata, Verdict,
+    Change, Departure, DesignType, MergeRule, MergeStrategy, Outcome, PartReach, Report,
+    Requirement, Scenario, SectionChange, Slice, SliceChange, Standing, TargetMetadata, TypeChange,
+    Verdict, scoped_findings,
 };
 use emery_prose::Doc;
 use omnia_sdk::model::{Question, WorkerGrant};
@@ -118,10 +122,10 @@ use crate::{BUILD, VERIFY, prompt, quoted, reference, unique};
 /// The engine's side of the contract, for a guest that dispatches to a target adapter.
 ///
 /// [`Target`](capability::Target) is the capability the engine puts a
-/// [`Task`](capability::Task) through, `init`, `build(slice)`, or `verify`,
-/// each answered by the [`Outcome`] of its kind. On `wasm32` its methods
-/// dispatch through the component's import, so a guest implements it on a
-/// unit type to call the adapter the host registered under an id.
+/// [`Task`](capability::Task) through, `init`, `scope(change)`, `build(slice)`,
+/// or `verify`, each answered by the [`Outcome`] of its kind. On `wasm32` its
+/// methods dispatch through the component's import, so a guest implements it
+/// on a unit type to call the adapter the host registered under an id.
 pub mod capability {
     pub use emery_adapter::target::{Target, Task};
 }
@@ -282,6 +286,22 @@ pub struct InitContext<'a> {
     /// The deployment-local path of the tree root the layout is scaffolded
     /// beneath. The deployment's grant decides whether it may be written.
     pub workspace: &'a str,
+}
+
+/// The adapter addressed, the read-only tree at the built head, and the change it scopes.
+///
+/// [`Task::Scope`] carries no model: it is the adapter's own code naming the
+/// plan parts [`change`](Self::change) reaches beyond its typed reasons, so a
+/// resume over the same tree and revisions answers the same scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScopeContext<'a> {
+    /// The identifier used to address the adapter.
+    pub adapter_id: &'a str,
+    /// The deployment-local path of the read-only tree root at the built
+    /// commit.
+    pub workspace: &'a str,
+    /// The [`Change`] between the built revision and the current revision.
+    pub change: &'a Change,
 }
 
 /// The adapter addressed, the slice it builds, the tree it builds into, and the model.
@@ -465,6 +485,7 @@ impl<P> Copy for VerifyContext<'_, P> {}
 /// [`TargetAdapter::run`] takes one and answers the matching [`Outcome`]:
 ///
 /// - [`Init`](Self::Init) answers [`Outcome::Initialised`].
+/// - [`Scope`](Self::Scope) answers [`Outcome::Scoped`].
 /// - [`Build`](Self::Build) answers [`Outcome::Built`].
 /// - [`Verify`](Self::Verify) answers [`Outcome::Verified`].
 #[derive(Debug)]
@@ -474,6 +495,9 @@ pub enum Task<'a, P> {
     /// slice; the engine seals what the tree then holds as its
     /// `Initialise` commit.
     Init(InitContext<'a>),
+    /// Name the plan parts the change reaches beyond its typed reasons, in a
+    /// read-only copy at the built commit, with no model turn.
+    Scope(ScopeContext<'a>),
     /// Build one slice of the plan into the tree, through
     /// [`build`](fn@build).
     Build(BuildContext<'a, P>),
@@ -746,6 +770,11 @@ pub async fn call<A: TargetAdapter>(
         emery_adapter::target::Task::Init => Task::Init(InitContext {
             adapter_id: &id,
             workspace: &workspace,
+        }),
+        emery_adapter::target::Task::Scope(change) => Task::Scope(ScopeContext {
+            adapter_id: &id,
+            workspace: &workspace,
+            change,
         }),
         emery_adapter::target::Task::Build(slice) => Task::Build(BuildContext {
             adapter_id: &id,

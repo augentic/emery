@@ -1,10 +1,10 @@
 //! Defines the [`Target`] capability and the records supplied to an adapter.
 //!
 //! The engine uses [`Target`] to query a loaded adapter's metadata and to
-//! run one [`Task`] in a workspace: an init, a slice's build, or a wave's
-//! verify, each answered by its [`Outcome`]. WebAssembly builds dispatch
-//! through the imported adapter interface; native builds require an
-//! implementation.
+//! run one [`Task`] in a workspace: an init, a change's scope, a slice's
+//! build, or a wave's verify, each answered by its [`Outcome`]. WebAssembly
+//! builds dispatch through the imported adapter interface; native builds
+//! require an implementation.
 
 use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
@@ -13,7 +13,7 @@ use std::future::Future;
 use omnia_sdk::Error;
 
 use crate::Trigger;
-use crate::target::{Report, Verdict};
+use crate::target::{Change, Report, SliceChange, Verdict};
 
 /// The engine capability for querying and invoking target adapters.
 ///
@@ -40,6 +40,7 @@ use crate::target::{Report, Verdict};
 ///     ) -> impl Future<Output = Result<Outcome, Error>> + Send {
 ///         ready(Ok(match task {
 ///             Task::Init => Outcome::Initialised,
+///             Task::Scope(_) => Outcome::Scoped(Vec::new()),
 ///             Task::Build(slice) => Outcome::Built(Report {
 ///                 covered: slice
 ///                     .requirements
@@ -117,6 +118,11 @@ pub enum Task {
     /// turn expected: the engine seals what the tree then holds as its
     /// `Initialise` commit.
     Init,
+    /// Name the parts [`Change`] reaches beyond its typed reasons.
+    ///
+    /// Run in a read-only copy at the built head before any slice, with no
+    /// model turn expected.
+    Scope(Change),
     /// Build one slice of the plan into the tree.
     Build(Slice),
     /// Run the checks over the integrated tree once a wave has merged into
@@ -128,6 +134,7 @@ impl Display for Task {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Init => f.write_str("init"),
+            Self::Scope(_) => f.write_str("scope"),
             Self::Build(slice) => write!(f, "slice `{}`", slice.id),
             Self::Verify => f.write_str("verify"),
         }
@@ -137,6 +144,7 @@ impl Display for Task {
 /// The answer to a [`Task`].
 ///
 /// [`Initialised`](Self::Initialised) answers [`Task::Init`],
+/// [`Scoped`](Self::Scoped) answers [`Task::Scope`],
 /// [`Built`](Self::Built) answers [`Task::Build`], and
 /// [`Verified`](Self::Verified) answers [`Task::Verify`]; any other pairing
 /// is the adapter's defect, which [`answers`](Self::answers) tells.
@@ -144,6 +152,8 @@ impl Display for Task {
 pub enum Outcome {
     /// The tree holds the layout's initial files.
     Initialised,
+    /// The change reaches these plan part ids (`PART-NNN`).
+    Scoped(Vec<String>),
     /// The slice is built, and this is what the build reports beyond the tree.
     Built(Report),
     /// The tree is verified, and this is what the checks found.
@@ -157,6 +167,7 @@ impl Outcome {
         matches!(
             (self, task),
             (Self::Initialised, Task::Init)
+                | (Self::Scoped(_), Task::Scope(_))
                 | (Self::Built(_), Task::Build(_))
                 | (Self::Verified(_), Task::Verify)
         )
@@ -167,6 +178,7 @@ impl Display for Outcome {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Initialised => "an initialised tree",
+            Self::Scoped(_) => "a scope",
             Self::Built(_) => "a report",
             Self::Verified(_) => "a verdict",
         })
@@ -210,6 +222,9 @@ pub struct Slice {
     pub design: String,
     /// The part's entry in the plan.
     pub plan: String,
+    /// What the slice changes against the built revision; `None` for a
+    /// whole build.
+    pub change: Option<SliceChange>,
 }
 
 /// One requirement a slice builds, typed beside its rendering in the

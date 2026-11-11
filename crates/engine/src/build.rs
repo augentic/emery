@@ -578,6 +578,7 @@ impl<'a> Run<'a> {
             design: self.rendered.to_owned(),
             plan: part.to_string(),
             base: head.to_owned(),
+            change: None,
         };
         tracing::info!(requirements = input.requirements.len(), wave, "building slice");
 

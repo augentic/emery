@@ -10,7 +10,7 @@ use emery_adapter::source::{
     Backing, Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind, SourceMetadata,
 };
 use emery_adapter::target::{
-    MergeRule, Outcome, Report, Slice, Target, TargetMetadata, Task, Verdict,
+    Change, MergeRule, Outcome, Report, Slice, Target, TargetMetadata, Task, Verdict,
 };
 use emery_engine::{Axis, Entry, Files};
 use omnia_sdk::api::command::Response;
@@ -32,6 +32,7 @@ const GREETING: &str = "GET /greeting returns the static string 'hello'.";
 const RENDEZVOUS: Duration = Duration::from_secs(1);
 
 type Recorded = Vec<(String, SourceInput)>;
+type ScopedOutcome = Result<Vec<String>, Error>;
 
 // A scripted `Source` with a record of every dispatch.
 //
@@ -133,6 +134,9 @@ pub struct TargetScript {
     // Failures queued per slice id, each consumed by one build ahead of
     // the slice's report.
     pub failures: Arc<Mutex<BTreeMap<String, VecDeque<Error>>>>,
+    // Scope outcomes, consumed in call order; an unscripted scope answers no
+    // extra parts.
+    pub scoped: Arc<Mutex<VecDeque<ScopedOutcome>>>,
     // Verify outcomes, consumed in wave order.
     pub verdicts: Arc<Mutex<VecDeque<Result<Verdict, Error>>>>,
     // Minimum `emery` versions keyed by adapter id, the guest name each
@@ -144,6 +148,9 @@ pub struct TargetScript {
     pub budget: Option<u32>,
     // Every init dispatch, recorded in dispatch order: the workspace root.
     pub inits: Arc<Mutex<Vec<String>>>,
+    // Every scope dispatch, recorded in dispatch order: the adapter id, the
+    // change, and the workspace root.
+    pub scopes: Arc<Mutex<Vec<(String, Change, String)>>>,
     // Every build dispatch, recorded in dispatch order: the adapter id, the
     // slice, and the workspace root.
     pub calls: Arc<Mutex<Vec<(String, Slice, String)>>>,
@@ -163,6 +170,12 @@ impl TargetScript {
         self.inits.lock().expect("inits").clone()
     }
 
+    // Returns every scope dispatch so far: the adapter id, the change, and the
+    // workspace root, in dispatch order.
+    pub fn scopes(&self) -> Vec<(String, Change, String)> {
+        self.scopes.lock().expect("scopes").clone()
+    }
+
     // Returns every build dispatch so far: the adapter id, the slice, and the
     // workspace root, in dispatch order.
     pub fn calls(&self) -> Vec<(String, Slice, String)> {
@@ -172,6 +185,11 @@ impl TargetScript {
     // Returns the workspace root of every verify dispatch so far, in dispatch order.
     pub fn verifies(&self) -> Vec<String> {
         self.verifies.lock().expect("verifies").clone()
+    }
+
+    // Queues `scoped` for the next scope dispatch.
+    pub fn scope(&self, scoped: Result<Vec<String>, Error>) {
+        self.scoped.lock().expect("scoped").push_back(scoped);
     }
 
     // Queues `verdict` for the next verify.
@@ -397,6 +415,20 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
             Task::Init => {
                 self.target.inits.lock().expect("inits").push(workspace.to_string());
                 Ok(Outcome::Initialised)
+            }
+            Task::Scope(change) => {
+                self.target.scopes.lock().expect("scopes").push((
+                    id.to_string(),
+                    change.clone(),
+                    workspace.to_string(),
+                ));
+                self.target
+                    .scoped
+                    .lock()
+                    .expect("scoped")
+                    .pop_front()
+                    .unwrap_or_else(|| Ok(Vec::new()))
+                    .map(Outcome::Scoped)
             }
             Task::Build(slice) => {
                 self.target.calls.lock().expect("calls").push((

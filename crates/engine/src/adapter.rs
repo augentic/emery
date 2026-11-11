@@ -34,7 +34,7 @@ pub enum Axis {
 impl Axis {
     /// The interface each axis's component exports, source first.
     pub const INTERFACES: [&'static str; 2] =
-        ["emery:adapter/source@0.1.0", "emery:adapter/target@0.1.0"];
+        ["emery:adapter/source@0.2.0", "emery:adapter/target@0.2.0"];
 
     /// Returns the interface a component of this axis exports.
     #[must_use]

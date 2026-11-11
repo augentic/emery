@@ -22,7 +22,7 @@ mod generated {
         // the shared `types` are the source generation's, so one Rust type
         // stands for each of them on both axes
         with: {
-            "emery:adapter/types@0.1.0": crate::source::bindings::types,
+            "emery:adapter/types@0.2.0": crate::source::bindings::types,
         },
         // the world imports and exports one interface, so the export's
         // records alias the import's and one Rust type stands for each
@@ -35,8 +35,9 @@ use omnia_sdk::{Error, bad_gateway, bad_request};
 use self::generated::emery::adapter::target as wit;
 use crate::source::bindings::types;
 use crate::target::{
-    DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
-    TargetMetadata, Task, Verdict,
+    Change, Departure, DesignType, MergeRule, MergeStrategy, Outcome, PartReach, Report,
+    Requirement, Scenario, SectionChange, Slice, SliceChange, Standing, TargetMetadata, Task,
+    TypeChange, Verdict,
 };
 use crate::{Route, Trigger};
 
@@ -141,6 +142,7 @@ impl From<Slice> for wit::Slice {
             spec: slice.spec,
             design: slice.design,
             plan: slice.plan,
+            change: slice.change.map(Into::into),
         }
     }
 }
@@ -160,6 +162,165 @@ impl From<wit::Slice> for Slice {
             spec: slice.spec,
             design: slice.design,
             plan: slice.plan,
+            change: slice.change.map(Into::into),
+        }
+    }
+}
+
+impl From<Standing> for wit::Standing {
+    fn from(standing: Standing) -> Self {
+        match standing {
+            Standing::Added => Self::Added,
+            Standing::Changed => Self::Changed,
+            Standing::Unchanged => Self::Unchanged,
+        }
+    }
+}
+
+impl From<wit::Standing> for Standing {
+    fn from(standing: wit::Standing) -> Self {
+        match standing {
+            wit::Standing::Added => Self::Added,
+            wit::Standing::Changed => Self::Changed,
+            wit::Standing::Unchanged => Self::Unchanged,
+        }
+    }
+}
+
+impl From<Departure> for wit::Departure {
+    fn from(departure: Departure) -> Self {
+        Self {
+            requirement: departure.requirement.into(),
+            moved_to: departure.moved_to,
+        }
+    }
+}
+
+impl From<wit::Departure> for Departure {
+    fn from(departure: wit::Departure) -> Self {
+        Self {
+            requirement: departure.requirement.into(),
+            moved_to: departure.moved_to,
+        }
+    }
+}
+
+impl From<TypeChange> for wit::TypeChange {
+    fn from(change: TypeChange) -> Self {
+        Self {
+            key: change.key,
+            before: change.before,
+            after: change.after,
+        }
+    }
+}
+
+impl From<wit::TypeChange> for TypeChange {
+    fn from(change: wit::TypeChange) -> Self {
+        Self {
+            key: change.key,
+            before: change.before,
+            after: change.after,
+        }
+    }
+}
+
+impl From<SectionChange> for wit::SectionChange {
+    fn from(change: SectionChange) -> Self {
+        Self {
+            kind: change.kind,
+            before: change.before,
+            after: change.after,
+        }
+    }
+}
+
+impl From<wit::SectionChange> for SectionChange {
+    fn from(change: wit::SectionChange) -> Self {
+        Self {
+            kind: change.kind,
+            before: change.before,
+            after: change.after,
+        }
+    }
+}
+
+impl From<SliceChange> for wit::SliceChange {
+    fn from(change: SliceChange) -> Self {
+        Self {
+            built: change.built,
+            commit: change.commit,
+            standing: change.standing.into_iter().map(Into::into).collect(),
+            prior: change.prior.into_iter().map(Into::into).collect(),
+            departed: change.departed.into_iter().map(Into::into).collect(),
+            built_before: change.built_before,
+            vanished: change.vanished,
+            types: change.types.into_iter().map(Into::into).collect(),
+            sections: change.sections.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<wit::SliceChange> for SliceChange {
+    fn from(change: wit::SliceChange) -> Self {
+        Self {
+            built: change.built,
+            commit: change.commit,
+            standing: change.standing.into_iter().map(Into::into).collect(),
+            prior: change.prior.into_iter().map(Into::into).collect(),
+            departed: change.departed.into_iter().map(Into::into).collect(),
+            built_before: change.built_before,
+            vanished: change.vanished,
+            types: change.types.into_iter().map(Into::into).collect(),
+            sections: change.sections.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<PartReach> for wit::PartReach {
+    fn from(part: PartReach) -> Self {
+        Self {
+            id: part.id,
+            name: part.name,
+            requirements: part.requirements,
+            reasons: part.reasons,
+        }
+    }
+}
+
+impl From<wit::PartReach> for PartReach {
+    fn from(part: wit::PartReach) -> Self {
+        Self {
+            id: part.id,
+            name: part.name,
+            requirements: part.requirements,
+            reasons: part.reasons,
+        }
+    }
+}
+
+impl From<Change> for wit::Change {
+    fn from(change: Change) -> Self {
+        Self {
+            built: change.built,
+            commit: change.commit,
+            parts: change.parts.into_iter().map(Into::into).collect(),
+            retired: change.retired.into_iter().map(Into::into).collect(),
+            types: change.types.into_iter().map(Into::into).collect(),
+            sections: change.sections.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<wit::Change> for Change {
+    fn from(change: wit::Change) -> Self {
+        Self {
+            built: change.built,
+            commit: change.commit,
+            parts: change.parts.into_iter().map(Into::into).collect(),
+            retired: change.retired.into_iter().map(Into::into).collect(),
+            types: change.types.into_iter().map(Into::into).collect(),
+            sections: change.sections.into_iter().map(Into::into).collect(),
         }
     }
 }
@@ -306,6 +467,7 @@ impl From<Task> for wit::Task {
     fn from(task: Task) -> Self {
         match task {
             Task::Init => Self::Init,
+            Task::Scope(change) => Self::Scope(change.into()),
             Task::Build(slice) => Self::Build(slice.into()),
             Task::Verify => Self::Verify,
         }
@@ -316,6 +478,7 @@ impl From<wit::Task> for Task {
     fn from(task: wit::Task) -> Self {
         match task {
             wit::Task::Init => Self::Init,
+            wit::Task::Scope(change) => Self::Scope(change.into()),
             wit::Task::Build(slice) => Self::Build(slice.into()),
             wit::Task::Verify => Self::Verify,
         }
@@ -326,6 +489,7 @@ impl From<Outcome> for wit::Outcome {
     fn from(outcome: Outcome) -> Self {
         match outcome {
             Outcome::Initialised => Self::Initialised,
+            Outcome::Scoped(parts) => Self::Scoped(parts),
             Outcome::Built(report) => Self::Built(report.into()),
             Outcome::Verified(verdict) => Self::Verified(verdict.into()),
         }
@@ -336,6 +500,7 @@ impl From<wit::Outcome> for Outcome {
     fn from(outcome: wit::Outcome) -> Self {
         match outcome {
             wit::Outcome::Initialised => Self::Initialised,
+            wit::Outcome::Scoped(parts) => Self::Scoped(parts),
             wit::Outcome::Built(report) => Self::Built(report.into()),
             wit::Outcome::Verified(verdict) => Self::Verified(verdict.into()),
         }

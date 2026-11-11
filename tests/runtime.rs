@@ -3238,7 +3238,7 @@ async fn build_source_only() {
     assert_message(
         &envelope,
         &format!(
-            "adapter `{SOURCE}` is not a target adapter: it exports no `emery:adapter/target@0.1.0`"
+            "adapter `{SOURCE}` is not a target adapter: it exports no `emery:adapter/target@0.2.0`"
         ),
     );
     assert!(roots.project.read("build/greeting.md").is_none(), "nothing is built");

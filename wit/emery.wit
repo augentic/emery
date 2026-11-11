@@ -4,7 +4,7 @@
 /// An adapter guest exports one axis interface. No resource type crosses
 /// the contract. Dispatch carries plain values, routed by each call's
 /// `adapter-id` first argument.
-package emery:adapter@0.1.0;
+package emery:adapter@0.2.0;
 
 /// The types both axes of the contract share.
 ///
@@ -261,6 +261,110 @@ interface target {
     signature: string,
   }
 
+  /// What a requirement of a change slice is against the built revision.
+  enum standing {
+    /// A requirement the built revision does not hold.
+    added,
+    /// A requirement of the built revision whose statement, scenarios, or
+    /// trigger changed.
+    changed,
+    /// A requirement of the built revision that stands as it was built.
+    unchanged,
+  }
+
+  /// A requirement the built revision's part held that this part does not.
+  record departure {
+    /// The requirement as the built revision held it.
+    requirement: requirement,
+    /// The part the requirement moved to (`PART-NNN`); `none` when retired.
+    moved-to: option<string>,
+  }
+
+  /// A design type whose signature changed between the built revision and
+  /// the current revision.
+  record type-change {
+    /// The type's key, as the design names it.
+    key: string,
+    /// The built revision's signature; `none` when added.
+    before: option<string>,
+    /// The current revision's signature; `none` when removed.
+    after: option<string>,
+  }
+
+  /// A design section that changed between the built revision and the
+  /// current revision.
+  record section-change {
+    /// The section's key (`overview`, `domain-model`, `apis`,
+    /// `technical-logic`, `ui-layout`, or `observability`).
+    kind: string,
+    /// The built revision's prose blocks, joined; `none` when added.
+    before: option<string>,
+    /// The current revision's prose blocks, joined; `none` when removed.
+    after: option<string>,
+  }
+
+  /// What one slice of a change build changes against the built revision.
+  record slice-change {
+    /// The revision whose verified build the tree holds.
+    built: string,
+    /// The commit the built revision's label stands at.
+    commit: string,
+    /// Each slice requirement's standing against the built revision, in the
+    /// order `slice.requirements` lists them.
+    standing: list<standing>,
+    /// The built form of each `changed` requirement of the slice, in id
+    /// order.
+    prior: list<requirement>,
+    /// The requirements the built revision's part held that this part no
+    /// longer holds, in id order.
+    departed: list<departure>,
+    /// The requirement ids of this part that earlier slices of this build
+    /// already rebuilt, in id order.
+    built-before: list<string>,
+    /// The stems that requirements of the built revision led with and no
+    /// requirement of the current revision leads with, sorted.
+    vanished: list<string>,
+    /// The design types this part owns or uses whose signatures changed, in
+    /// key order.
+    types: list<type-change>,
+    /// The design sections that changed between the built revision and the
+    /// current revision, in document order.
+    sections: list<section-change>,
+  }
+
+  /// One part of the current plan and the typed reasons the change reaches
+  /// it.
+  record part-reach {
+    /// The part's stable identifier, `PART-001`.
+    id: string,
+    /// The part's drafted kebab-case name.
+    name: string,
+    /// The requirement ids the part places, `REQ-001`, in id order.
+    requirements: list<string>,
+    /// The typed reasons the engine's minimum scope reaches the part
+    /// (`requirements`, `departed`, `types`, `plan`); empty when the
+    /// minimum leaves the part carried.
+    reasons: list<string>,
+  }
+
+  /// The change one build makes against the built revision, put to `scope`
+  /// before any slice.
+  record change {
+    /// The revision whose verified build the tree holds.
+    built: string,
+    /// The commit the built revision's label stands at.
+    commit: string,
+    /// Every part of the current plan, in id order, with its requirements
+    /// and the typed reasons the engine's minimum scope reaches it.
+    parts: list<part-reach>,
+    /// The requirements retired across the revision, in id order.
+    retired: list<departure>,
+    /// The design types whose signatures changed, in key order.
+    types: list<type-change>,
+    /// The design sections that changed, in document order.
+    sections: list<section-change>,
+  }
+
   /// One slice of the build schedule, cut from one part of the plan. A
   /// target is value-in; it never reads the revision store.
   record slice {
@@ -295,6 +399,9 @@ interface target {
     /// The part's entry in the plan: the requirements it builds, the design
     /// types it owns, the parts built before it, and its brief.
     plan: string,
+    /// What the slice changes against the built revision; `none` for a
+    /// whole build.
+    change: option<slice-change>,
   }
 
   /// What a build reports beyond the tree it wrote.
@@ -322,6 +429,9 @@ interface target {
     /// Put once per tree the build lands in, before any slice, with no
     /// model turn expected: the engine seals what it finds as `Initialise`.
     init,
+    /// Name the parts the change reaches beyond its typed reasons. Run in a
+    /// read-only copy at the built head, with no model turn expected.
+    scope(change),
     /// Build one slice of the plan into the tree.
     build(slice),
     /// Run the checks over the integrated tree once a wave has merged into
@@ -329,10 +439,12 @@ interface target {
     verify,
   }
 
-  /// The answer to a task: `initialised` to `init`, `built` to `build`,
-  /// `verified` to `verify`. Any other pairing is the adapter's defect.
+  /// The answer to a task: `initialised` to `init`, `scoped` to `scope`,
+  /// `built` to `build`, `verified` to `verify`. Any other pairing is the
+  /// adapter's defect.
   variant outcome {
     initialised,
+    scoped(list<string>),
     built(report),
     verified(verdict),
   }

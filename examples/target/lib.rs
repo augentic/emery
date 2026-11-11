@@ -9,7 +9,7 @@ use std::io::{ErrorKind, Write as _};
 use std::num::NonZeroU32;
 use std::path::Path;
 
-use emery_sdk::target::{InitContext, MergeRule, Metadata, Outcome, TargetAdapter, Task};
+use emery_sdk::target::{InitContext, MergeRule, Metadata, Outcome, TargetAdapter, Task, scope};
 use emery_sdk::{Doc, Error, Model, server_error};
 
 // two slices that list requirements in one index keep both lists
@@ -30,6 +30,7 @@ impl TargetAdapter for Adapter {
     async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
         match task {
             Task::Init(ctx) => init(&ctx).map(|()| Outcome::Initialised),
+            Task::Scope(ctx) => Ok(Outcome::Scoped(scope::conservative(ctx.change))),
             Task::Build(ctx) => {
                 emery_sdk::target::build(&ctx, PROSE, |_| Ok(Vec::new())).await.map(Outcome::Built)
             }
