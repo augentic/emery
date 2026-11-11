@@ -563,10 +563,11 @@ pub fn metadata(rules: &[MergeRule], budget: Option<NonZeroU32>) -> TargetMetada
 /// Builds the slice of `ctx` into its workspace through one gated model turn.
 ///
 /// `docs` must contain `build.md`, which becomes the system prompt. The brief
-/// carries the slice's plan entry, its specification cut, the design cut to the
-/// slice (omitting data types owned by other slices that the slice's text does
-/// not mention), and any [`Scaffold`] set on `ctx`. The workspace is lent with
-/// the [`Grant::union`] of `ctx`'s [`grants`](BuildContext::grants).
+/// carries the slice's plan entry, any [`SliceChange`] on the slice, its
+/// specification cut, the design cut to the slice (omitting data types owned
+/// by other slices that the slice's text does not mention), and any
+/// [`Scaffold`] set on `ctx`. The workspace is lent with the [`Grant::union`]
+/// of `ctx`'s [`grants`](BuildContext::grants).
 ///
 /// The turn serves `docs` through `list_docs` and `read_doc`, and modifies the
 /// workspace through two tools:
@@ -871,13 +872,20 @@ impl Display for Brief<'_> {
             base = slice.base,
         )?;
 
+        write!(f, "The slice's entry in the plan:\n\n{plan}\n\n", plan = slice.plan.trim_end())?;
+        if let Some(change) = &slice.change {
+            self.write_change(f, change)?;
+        }
+        if !slice.spec.trim().is_empty() {
+            write!(
+                f,
+                "The specification, cut to the slice's requirements:\n\n{spec}\n\n",
+                spec = slice.spec.trim_end(),
+            )?;
+        }
         write!(
             f,
-            "The slice's entry in the plan:\n\n{plan}\n\n\
-             The specification, cut to the slice's requirements:\n\n{spec}\n\n\
-             The design, cut to this slice:\n\n{design}\n\n",
-            plan = slice.plan.trim_end(),
-            spec = slice.spec.trim_end(),
+            "The design, cut to this slice:\n\n{design}\n\n",
             design = design::cut(slice, self.scaffold.as_ref()),
         )?;
 
@@ -918,11 +926,18 @@ impl Display for Brief<'_> {
         }
 
         // the requirements and the report rules
-        write!(
-            f,
-            "Implement every requirement the specification above holds — {ids} — and no \
-             other.\n\n\
-             The prompt's references are available through this call's `read_doc` tool \
+        if slice.requirements.is_empty() {
+            f.write_str("This slice holds no requirements; leave `covered` empty.\n\n")?;
+        } else {
+            write!(
+                f,
+                "Implement every requirement the specification above holds — {ids} — and no \
+                 other.\n\n",
+                ids = quoted(slice.requirements.iter().map(|requirement| &requirement.id)),
+            )?;
+        }
+        f.write_str(
+            "The prompt's references are available through this call's `read_doc` tool \
              (`list_docs` enumerates them); load referenced bodies on demand.\n\n\
              Answer with one JSON object matching the report schema: `covered` lists each of \
              those requirement ids the tree now implements, once each and no other id; \
@@ -930,9 +945,147 @@ impl Display for Brief<'_> {
              relative to `$WORKSPACE`, and only a file the tree now holds; a file you wrote and \
              leave out is added for you. Leave a requirement out of `covered` rather than \
              claim what the tree does not hold.",
-            ids = quoted(slice.requirements.iter().map(|requirement| &requirement.id)),
         )
     }
+}
+
+impl Brief<'_> {
+    fn write_change(&self, f: &mut Formatter<'_>, change: &SliceChange) -> fmt::Result {
+        let slice = self.slice;
+        write!(
+            f,
+            "## The change\n\nBuilt revision: `{built}` at commit `{commit}`.\n\n",
+            built = change.built,
+            commit = change.commit,
+        )?;
+
+        if slice.is_retiring() {
+            write!(
+                f,
+                "This slice retires part `{name}` ({part}): it holds no requirements, and every \
+                 requirement the built part held is listed under departed below.\n\n",
+                name = slice.name,
+                part = slice.part,
+            )?;
+        } else if !slice.requirements.is_empty() {
+            f.write_str("Requirements in this slice:\n\n")?;
+            for requirement in &slice.requirements {
+                let standing = slice.standing(&requirement.id).unwrap_or(Standing::Added);
+                writeln!(f, "- `{}` `{}` [{standing}]", requirement.id, requirement.subject)?;
+                if standing == Standing::Changed {
+                    if let Some(prior) = change.prior(&requirement.id) {
+                        writeln!(f, "  - Prior: {}", prior.summary())?;
+                    }
+                    writeln!(f, "  - Current: {}", requirement.summary())?;
+                }
+            }
+            f.write_str("\n")?;
+        }
+
+        if !change.departed.is_empty() {
+            f.write_str("Departed from this part:\n\n")?;
+            for departure in &change.departed {
+                let req = &departure.requirement;
+                match &departure.moved_to {
+                    Some(part) => writeln!(
+                        f,
+                        "- `{}` `{}` [moved to `{part}`]: {}",
+                        req.id,
+                        req.subject,
+                        req.summary(),
+                    )?,
+                    None => writeln!(
+                        f,
+                        "- `{}` `{}` [retired]: {}",
+                        req.id,
+                        req.subject,
+                        req.summary(),
+                    )?,
+                }
+            }
+            f.write_str("\n")?;
+        }
+
+        if !change.built_before.is_empty() {
+            writeln!(
+                f,
+                "Built before in earlier slices of this part: {}.\n",
+                quoted(&change.built_before),
+            )?;
+        }
+
+        if !change.vanished.is_empty() {
+            writeln!(f, "Vanished stems: {}.\n", quoted(&change.vanished))?;
+        }
+
+        if !change.types.is_empty() {
+            write_type_changes(f, &change.types)?;
+        }
+
+        if !change.sections.is_empty() {
+            write_section_changes(f, &change.sections)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn write_type_changes(f: &mut Formatter<'_>, types: &[TypeChange]) -> fmt::Result {
+    f.write_str("Design types changed:\n\n")?;
+    for change in types {
+        match (&change.before, &change.after) {
+            (Some(before), Some(after)) => write!(
+                f,
+                "Type `{key}` [changed]:\nBefore:\n```\n{before}\n```\nAfter:\n```\n{after}\n```\n\n",
+                key = change.key,
+                before = before.trim_end(),
+                after = after.trim_end(),
+            )?,
+            (None, Some(after)) => write!(
+                f,
+                "Type `{key}` [added]:\nAfter:\n```\n{after}\n```\n\n",
+                key = change.key,
+                after = after.trim_end(),
+            )?,
+            (Some(before), None) => write!(
+                f,
+                "Type `{key}` [removed]:\nBefore:\n```\n{before}\n```\n\n",
+                key = change.key,
+                before = before.trim_end(),
+            )?,
+            (None, None) => writeln!(f, "Type `{}` [changed].\n", change.key)?,
+        }
+    }
+    Ok(())
+}
+
+fn write_section_changes(f: &mut Formatter<'_>, sections: &[SectionChange]) -> fmt::Result {
+    f.write_str("Design sections changed:\n\n")?;
+    for section in sections {
+        match (&section.before, &section.after) {
+            (Some(before), Some(after)) => write!(
+                f,
+                "Section `{kind}` [changed]:\nBefore:\n{before}\n\nAfter:\n{after}\n\n",
+                kind = section.kind,
+                before = before.trim_end(),
+                after = after.trim_end(),
+            )?,
+            (None, Some(after)) => write!(
+                f,
+                "Section `{kind}` [added]:\nAfter:\n{after}\n\n",
+                kind = section.kind,
+                after = after.trim_end(),
+            )?,
+            (Some(before), None) => write!(
+                f,
+                "Section `{kind}` [removed]:\nBefore:\n{before}\n\n",
+                kind = section.kind,
+                before = before.trim_end(),
+            )?,
+            (None, None) => writeln!(f, "Section `{}` [changed].\n", section.kind)?,
+        }
+    }
+    Ok(())
 }
 
 // The user turn of a verification. The lend carries the root, so the brief

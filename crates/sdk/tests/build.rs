@@ -6,8 +6,9 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use emery_sdk::target::{
-    BuildContext, DesignType, Grant, Guarded, Marker, MergeRule, Metadata, Report, Requirement,
-    Scaffold, Scenario, Slice, TargetMetadata, metadata,
+    BuildContext, Change, Departure, DesignType, Grant, Guarded, Marker, MergeRule, Metadata,
+    PartReach, Report, Requirement, Scaffold, Scenario, SectionChange, Slice, SliceChange,
+    Standing, TargetMetadata, TypeChange, metadata, scope,
 };
 use emery_sdk::{Doc, Error};
 use omnia_sdk::model::ToolCall;
@@ -2290,4 +2291,316 @@ async fn check_error() {
     assert_eq!(exchanges.len(), 1, "one candidate, no correction: {exchanges:?}");
     assert!(exchanges[0].outcome.is_ok(), "the candidate ends the turn: {exchanges:?}");
     model.assert_exhausted();
+}
+
+// A change slice with added, changed, and unchanged requirements, departures,
+// `built_before`, vanished stems, type changes, and a section change.
+fn changed_slice(prior: Requirement) -> Slice {
+    let mut slice = slice();
+    slice.requirements.push(requirement(
+        "REQ-003",
+        "billing.charge",
+        "Charges are captured.",
+        "an order is billed",
+        "it is charged",
+    ));
+    let retired = requirement(
+        "REQ-004",
+        "orders.cancel",
+        "Orders are cancelled before shipment.",
+        "cancellation is requested",
+        "the order is cancelled",
+    );
+    let moved = requirement(
+        "REQ-005",
+        "returns.open",
+        "Returns are opened for delivered orders.",
+        "a return is requested",
+        "it is opened",
+    );
+    slice.change = Some(SliceChange {
+        built: "rev-001".to_owned(),
+        commit: "0000111122223333444455556666777788889999".to_owned(),
+        standing: vec![Standing::Changed, Standing::Added, Standing::Unchanged],
+        prior: vec![prior],
+        departed: vec![
+            Departure {
+                requirement: retired,
+                moved_to: None,
+            },
+            Departure {
+                requirement: moved,
+                moved_to: Some("PART-002".to_owned()),
+            },
+        ],
+        built_before: vec!["REQ-000".to_owned()],
+        vanished: vec!["legacy".to_owned()],
+        types: vec![
+            TypeChange {
+                key: "orders.order".to_owned(),
+                before: Some("interface Order { id: string }".to_owned()),
+                after: Some("interface Order { id: string; total: number }".to_owned()),
+            },
+            TypeChange {
+                key: "orders.line".to_owned(),
+                before: None,
+                after: Some("interface Line { sku: string }".to_owned()),
+            },
+            TypeChange {
+                key: "draft.Draft (src/draft.ts#L1)".to_owned(),
+                before: Some("interface Draft { id: string }".to_owned()),
+                after: None,
+            },
+        ],
+        sections: vec![SectionChange {
+            kind: "apis".to_owned(),
+            before: Some("Old upstream.".to_owned()),
+            after: Some("New upstream.".to_owned()),
+        }],
+    });
+    slice
+}
+
+fn assert_change_helpers(slice: &Slice, prior: &Requirement) {
+    let change = slice.change.as_ref().expect("change slice");
+    assert_eq!(change.prior("REQ-001"), Some(prior));
+    assert_eq!(change.prior("REQ-002"), None);
+    assert_eq!(change.departed().len(), 2);
+
+    assert_eq!(slice.standing("REQ-001"), Some(Standing::Changed));
+    assert_eq!(slice.standing("REQ-002"), Some(Standing::Added));
+    assert_eq!(slice.standing("REQ-003"), Some(Standing::Unchanged));
+    assert_eq!(slice.standing("REQ-999"), None);
+    assert_eq!(slice.prior("REQ-001"), Some(prior));
+    assert_eq!(slice.departed().len(), 2);
+    assert_eq!(
+        slice.reached_stems(),
+        ["draft", "orders", "returns"],
+        "unchanged `billing` is left out; changed/added `orders`, departed `returns`, and removed `draft` are reached"
+    );
+    assert!(!slice.is_retiring());
+
+    let mut type_only = Slice {
+        requirements: vec![requirement(
+            "REQ-001",
+            "orders.create",
+            "Orders are created.",
+            "an order is placed",
+            "it is created",
+        )],
+        types: vec![DesignType {
+            key: "pricing.Quote (src/pricing.ts#L2)".to_owned(),
+            signature: "interface Quote { cents: number }".to_owned(),
+        }],
+        change: Some(SliceChange {
+            standing: vec![Standing::Unchanged],
+            types: vec![
+                TypeChange {
+                    key: "pricing.Quote (src/pricing.ts#L2)".to_owned(),
+                    before: Some("interface Quote { total: number }".to_owned()),
+                    after: Some("interface Quote { cents: number }".to_owned()),
+                },
+                TypeChange {
+                    key: "customers.Customer".to_owned(),
+                    before: Some("interface Customer { id: string }".to_owned()),
+                    after: Some("interface Customer { id: string; tier: string }".to_owned()),
+                },
+            ],
+            ..SliceChange::default()
+        }),
+        ..slice.clone()
+    };
+    assert_eq!(
+        type_only.reached_stems(),
+        ["pricing"],
+        "an owned type's stem is reached while an unowned used type's is not"
+    );
+    type_only.change = None;
+    assert_eq!(type_only.reached_stems(), [] as [&str; 0]);
+}
+
+// A change slice renders `## The change` between the plan entry and the
+// specification cut, naming the built revision and commit, each requirement's
+// standing, prior and current statements for changed ones, departures with
+// `moved_to`, `built_before`, vanished stems, type changes, and section
+// changes; the `Slice` and `SliceChange` helpers answer the same typed facts.
+#[tokio::test]
+async fn build_change_brief() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    seed(tmp.path(), ["src/orders.rs", "Cargo.toml"]);
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001","REQ-002","REQ-003"],"written":["src/orders.rs","Cargo.toml"]}"#,
+    ]);
+    let prior = requirement(
+        "REQ-001",
+        "orders.create",
+        "Orders are created from a cart.",
+        "an order is placed",
+        "it is created",
+    );
+    let slice = changed_slice(prior.clone());
+    assert_change_helpers(&slice, &prior);
+
+    ask(&model, &slice, root).await.expect("accepted");
+
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "The slice's entry in the plan:\n\n\
+             ## SLICE-001 orders\n\n\
+             Build the orders module.\n\n\
+             ## The change\n\n\
+             Built revision: `rev-001` at commit `0000111122223333444455556666777788889999`.\n\n\
+             Requirements in this slice:\n\n\
+             - `REQ-001` `orders.create` [changed]\n  \
+             - Prior: Orders are created from a cart.\n  \
+             - Current: Orders are created.\n\
+             - `REQ-002` `orders.list` [added]\n\
+             - `REQ-003` `billing.charge` [unchanged]\n\n\
+             Departed from this part:\n\n\
+             - `REQ-004` `orders.cancel` [retired]: Orders are cancelled before shipment.\n\
+             - `REQ-005` `returns.open` [moved to `PART-002`]: Returns are opened for delivered orders.\n\n\
+             Built before in earlier slices of this part: `REQ-000`.\n\n\
+             Vanished stems: `legacy`.\n\n\
+             Design types changed:\n\n\
+             Type `orders.order` [changed]:\n\
+             Before:\n```\ninterface Order { id: string }\n```\n\
+             After:\n```\ninterface Order { id: string; total: number }\n```\n\n\
+             Type `orders.line` [added]:\n\
+             After:\n```\ninterface Line { sku: string }\n```\n\n\
+             Type `draft.Draft (src/draft.ts#L1)` [removed]:\n\
+             Before:\n```\ninterface Draft { id: string }\n```\n\n\
+             Design sections changed:\n\n\
+             Section `apis` [changed]:\n\
+             Before:\nOld upstream.\n\n\
+             After:\nNew upstream.\n\n\
+             The specification, cut to the slice's requirements:"
+        ),
+        "{user}"
+    );
+    model.assert_exhausted();
+}
+
+// A retiring slice holds no requirements and lists the removed part's
+// requirements under departed; the report gate refuses any covered id and
+// accepts an empty `covered`.
+#[tokio::test]
+async fn build_retiring_brief() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-004"],"written":[]}"#,
+        r#"{"covered":[],"written":[]}"#,
+    ]);
+    let mut slice = slice();
+    slice.id = "SLICE-002".to_owned();
+    slice.part = "PART-002".to_owned();
+    slice.name = "returns".to_owned();
+    slice.requirements.clear();
+    slice.types.clear();
+    slice.spec.clear();
+    slice.change = Some(SliceChange {
+        built: "rev-001".to_owned(),
+        commit: "0000111122223333444455556666777788889999".to_owned(),
+        departed: vec![Departure {
+            requirement: requirement(
+                "REQ-004",
+                "returns.open",
+                "Returns are opened for delivered orders.",
+                "a return is requested",
+                "it is opened",
+            ),
+            moved_to: None,
+        }],
+        vanished: vec!["returns".to_owned()],
+        ..SliceChange::default()
+    });
+
+    assert!(slice.is_retiring());
+    assert_eq!(slice.reached_stems(), ["returns"]);
+    assert_eq!(slice.departed().len(), 1);
+
+    let report = ask(&model, &slice, root).await.expect("corrected");
+    assert_eq!(report.covered, [] as [String; 0]);
+    assert_eq!(report.written, [] as [String; 0]);
+
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("a retiring slice covers no id");
+    assert!(
+        correction.contains(
+            "- covered `REQ-004` is not a requirement of slice `SLICE-002`; the slice has no \
+             requirements"
+        ),
+        "{correction}"
+    );
+    assert_eq!(exchanges[1].outcome, Ok(String::new()));
+
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "## The change\n\n\
+             Built revision: `rev-001` at commit `0000111122223333444455556666777788889999`.\n\n\
+             This slice retires part `returns` (PART-002): it holds no requirements, and every \
+             requirement the built part held is listed under departed below.\n\n\
+             Departed from this part:\n\n\
+             - `REQ-004` `returns.open` [retired]: Returns are opened for delivered orders.\n\n\
+             Vanished stems: `returns`.\n\n\
+             The design, cut to this slice:"
+        ),
+        "an empty specification cut is omitted: {user}"
+    );
+    assert!(user.contains("This slice holds no requirements; leave `covered` empty."), "{user}");
+    model.assert_exhausted();
+}
+
+// `scope::conservative` returns the parts with typed reasons when no
+// non-overview design section changed, and widens to every part when any
+// other section changed.
+#[test]
+fn scope_conservative() {
+    let mut change = Change {
+        built: "rev-001".to_owned(),
+        commit: "00001111".to_owned(),
+        parts: vec![
+            PartReach {
+                id: "PART-001".to_owned(),
+                name: "auth".to_owned(),
+                requirements: vec!["REQ-001".to_owned()],
+                reasons: Vec::new(),
+            },
+            PartReach {
+                id: "PART-002".to_owned(),
+                name: "orders".to_owned(),
+                requirements: vec!["REQ-002".to_owned()],
+                reasons: vec!["requirements".to_owned()],
+            },
+            PartReach {
+                id: "PART-003".to_owned(),
+                name: "billing".to_owned(),
+                requirements: vec!["REQ-003".to_owned()],
+                reasons: Vec::new(),
+            },
+        ],
+        ..Change::default()
+    };
+    assert_eq!(scope::conservative(&change), ["PART-002"]);
+
+    change.sections.push(SectionChange {
+        kind: "overview".to_owned(),
+        before: Some("Before.".to_owned()),
+        after: Some("After.".to_owned()),
+    });
+    assert_eq!(
+        scope::conservative(&change),
+        ["PART-002"],
+        "an overview change alone does not widen the scope"
+    );
+
+    change.sections.push(SectionChange {
+        kind: "technical-logic".to_owned(),
+        before: Some("Old rule.".to_owned()),
+        after: Some("New rule.".to_owned()),
+    });
+    assert_eq!(scope::conservative(&change), ["PART-001", "PART-002", "PART-003"]);
 }

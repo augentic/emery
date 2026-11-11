@@ -8,7 +8,7 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
-use crate::target::Requirement;
+use crate::target::{DesignType, Requirement};
 
 /// What a requirement of a change slice is against the built revision.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, strum::Display)]
@@ -83,6 +83,83 @@ pub struct SliceChange {
     /// The design sections that changed between the built revision and the
     /// current revision, in document order.
     pub sections: Vec<SectionChange>,
+}
+
+impl TypeChange {
+    /// Returns the stem the type's [`key`](Self::key) leads with, when dotted.
+    #[must_use]
+    pub fn stem(&self) -> Option<&str> {
+        type_stem(&self.key)
+    }
+}
+
+impl SliceChange {
+    /// Returns the built form of the [`Standing::Changed`] requirement `id`.
+    #[must_use]
+    pub fn prior(&self, id: &str) -> Option<&Requirement> {
+        self.prior.iter().find(|requirement| requirement.id == id)
+    }
+
+    /// Returns the requirements the built revision's part held that this part does not.
+    #[must_use]
+    pub fn departed(&self) -> &[Departure] {
+        &self.departed
+    }
+
+    /// Returns the [`Standing`] of requirement `id` in `requirements`.
+    #[must_use]
+    pub fn standing(&self, requirements: &[Requirement], id: &str) -> Option<Standing> {
+        let index = requirements.iter().position(|requirement| requirement.id == id)?;
+        self.standing.get(index).copied()
+    }
+
+    /// Returns whether `requirements` and this change describe a retiring slice.
+    ///
+    /// A retiring slice has no current requirements and lists every
+    /// requirement of the removed part in [`departed`](Self::departed).
+    #[must_use]
+    pub const fn is_retiring(&self, requirements: &[Requirement]) -> bool {
+        requirements.is_empty() && !self.departed.is_empty()
+    }
+
+    /// Returns the stems this change reaches across `requirements` and `owned` types, sorted.
+    ///
+    /// Includes the stems of [`Standing::Added`] and [`Standing::Changed`]
+    /// requirements, [`departed`](Self::departed) requirements, and `owned`
+    /// or removed types in [`types`](Self::types).
+    #[must_use]
+    pub fn reached_stems<'a>(
+        &'a self, requirements: &'a [Requirement], owned: &'a [DesignType],
+    ) -> Vec<&'a str> {
+        let mut stems = BTreeSet::new();
+        for (requirement, standing) in requirements.iter().zip(&self.standing) {
+            if matches!(standing, Standing::Added | Standing::Changed) {
+                stems.insert(requirement.stem());
+            }
+        }
+        for departure in &self.departed {
+            stems.insert(departure.requirement.stem());
+        }
+        let fallback = || requirements.first().map(Requirement::stem);
+        for design_type in owned {
+            if self.types.iter().any(|changed| changed.key == design_type.key)
+                && let Some(stem) = design_type.stem().or_else(fallback)
+            {
+                stems.insert(stem);
+            }
+        }
+        for removed in self.types.iter().filter(|changed| changed.after.is_none()) {
+            if let Some(stem) = removed.stem().or_else(fallback) {
+                stems.insert(stem);
+            }
+        }
+        stems.into_iter().collect()
+    }
+}
+
+pub fn type_stem(key: &str) -> Option<&str> {
+    let dotted = key.split(" (").next().unwrap_or(key).trim();
+    dotted.split_once('.').map(|(stem, _)| stem)
 }
 
 /// One part of the current plan and the typed reasons the change reaches it.

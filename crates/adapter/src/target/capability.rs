@@ -13,7 +13,7 @@ use std::future::Future;
 use omnia_sdk::Error;
 
 use crate::Trigger;
-use crate::target::{Change, Report, SliceChange, Verdict};
+use crate::target::{Change, Departure, Report, SliceChange, Standing, Verdict};
 
 /// The engine capability for querying and invoking target adapters.
 ///
@@ -227,6 +227,48 @@ pub struct Slice {
     pub change: Option<SliceChange>,
 }
 
+impl Slice {
+    /// Returns the [`Standing`] of requirement `id` when [`change`](Self::change) is present.
+    #[must_use]
+    pub fn standing(&self, id: &str) -> Option<Standing> {
+        self.change.as_ref()?.standing(&self.requirements, id)
+    }
+
+    /// Returns the built form of requirement `id` when [`change`](Self::change) records it.
+    #[must_use]
+    pub fn prior(&self, id: &str) -> Option<&Requirement> {
+        self.change.as_ref()?.prior(id)
+    }
+
+    /// Returns the requirements that left this part in [`change`](Self::change).
+    #[must_use]
+    pub fn departed(&self) -> &[Departure] {
+        self.change.as_ref().map_or(&[], SliceChange::departed)
+    }
+
+    /// Returns the stems [`change`](Self::change) reaches in this slice, sorted.
+    ///
+    /// Includes the stems of [`Standing::Added`] and [`Standing::Changed`]
+    /// requirements, [`SliceChange::departed`] requirements, and owned
+    /// [`types`](Self::types) or removed types in [`SliceChange::types`].
+    /// Returns an empty vector when [`change`](Self::change) is `None`.
+    #[must_use]
+    pub fn reached_stems(&self) -> Vec<&str> {
+        self.change
+            .as_ref()
+            .map_or_else(Vec::new, |change| change.reached_stems(&self.requirements, &self.types))
+    }
+
+    /// Returns whether this slice retires a removed part of the plan.
+    ///
+    /// A retiring slice has no [`requirements`](Self::requirements) and
+    /// lists the removed part's requirements in [`SliceChange::departed`].
+    #[must_use]
+    pub fn is_retiring(&self) -> bool {
+        self.change.as_ref().is_some_and(|change| change.is_retiring(&self.requirements))
+    }
+}
+
 /// One requirement a slice builds, typed beside its rendering in the
 /// specification.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -250,6 +292,16 @@ impl Requirement {
     #[must_use]
     pub fn stem(&self) -> &str {
         self.subject.split('.').next().unwrap_or(&self.subject)
+    }
+
+    /// Returns the statement's paragraphs joined as one line, or `"[conflict]"` when empty.
+    #[must_use]
+    pub fn summary(&self) -> Cow<'_, str> {
+        match self.statement.as_slice() {
+            [] => Cow::Borrowed("[conflict]"),
+            [only] => Cow::Borrowed(only.as_str()),
+            many => Cow::Owned(many.join(" ")),
+        }
     }
 }
 
@@ -275,6 +327,14 @@ pub struct DesignType {
     pub key: String,
     /// The source's signature, verbatim.
     pub signature: String,
+}
+
+impl DesignType {
+    /// Returns the stem the type's [`key`](Self::key) leads with, when dotted.
+    #[must_use]
+    pub fn stem(&self) -> Option<&str> {
+        crate::target::change::type_stem(&self.key)
+    }
 }
 
 /// Metadata declared by a target adapter.
