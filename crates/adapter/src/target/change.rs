@@ -2,8 +2,8 @@
 //!
 //! [`Change`] describes the revision-wide change put to [`Task::Scope`](super::Task::Scope),
 //! and [`SliceChange`] describes the slice-level change carried by [`Slice::change`](super::Slice::change).
-//! [`Change::findings`] and [`scoped_findings`] validate the part ids returned
-//! in [`Outcome::Scoped`](super::Outcome::Scoped).
+//! [`Change::findings`] validates the part ids returned in
+//! [`Outcome::Scoped`](super::Outcome::Scoped).
 
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
@@ -32,7 +32,7 @@ pub struct Departure {
     pub moved_to: Option<String>,
 }
 
-/// A design type whose signature changed between the built revision and the current revision.
+/// A design type whose signature changed between the built and current revisions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TypeChange {
     /// The type's key, as the design names it.
@@ -43,7 +43,7 @@ pub struct TypeChange {
     pub after: Option<String>,
 }
 
-/// A design section that changed between the built revision and the current revision.
+/// A design section that changed between the built and current revisions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SectionChange {
     /// The section's key (`overview`, `domain-model`, `apis`,
@@ -122,8 +122,8 @@ impl Change {
     /// Returns every rule `scoped` breaks against this change, one line each.
     ///
     /// An empty result means `scoped` passes the gate: every id is a
-    /// well-formed `PART-NNN` identifier, listed once, and (when
-    /// [`parts`](Self::parts) is non-empty) names one of the plan's parts.
+    /// canonical `PART-NNN` identifier naming one of [`parts`](Self::parts)
+    /// at most once.
     ///
     /// # Examples
     ///
@@ -156,7 +156,11 @@ impl Change {
         for id in scoped {
             if !is_part_id(id) {
                 findings.push(format!("- scoped `{id}` is not a part id (`PART-NNN`)"));
-            } else if !ids.is_empty() && !ids.contains(&id.as_str()) {
+            } else if ids.is_empty() {
+                findings.push(format!(
+                    "- scoped `{id}` is not a part of the plan; the plan has no parts"
+                ));
+            } else if !ids.contains(&id.as_str()) {
                 findings.push(format!(
                     "- scoped `{id}` is not a part of the plan; its parts are {}",
                     ids.join(", ")
@@ -169,39 +173,8 @@ impl Change {
     }
 }
 
-/// Returns every shape rule `scoped` breaks, one line each.
-///
-/// An empty result means every entry is a canonical `PART-NNN` identifier
-/// listed at most once.
-///
-/// # Examples
-///
-/// ```
-/// use emery_adapter::target::scoped_findings;
-///
-/// assert!(scoped_findings(&["PART-001".into(), "PART-002".into()]).is_empty());
-/// assert_eq!(scoped_findings(&["PART-1".into(), "PART-001".into(), "PART-001".into()]).len(), 2);
-/// ```
-#[must_use]
-pub fn scoped_findings(scoped: &[String]) -> Vec<String> {
-    let mut findings = Vec::new();
-    let mut seen = BTreeSet::new();
-    for id in scoped {
-        if !is_part_id(id) {
-            findings.push(format!("- scoped `{id}` is not a part id (`PART-NNN`)"));
-        } else if !seen.insert(id.as_str()) {
-            findings.push(format!("- scoped `{id}` is listed twice"));
-        }
-    }
-    findings
-}
-
 fn is_part_id(id: &str) -> bool {
-    let Some(digits) = id.strip_prefix("PART-") else {
-        return false;
-    };
-    let Ok(number) = digits.parse::<NonZeroU32>() else {
-        return false;
-    };
-    format!("PART-{number:03}") == id
+    id.strip_prefix("PART-")
+        .and_then(|digits| digits.parse::<NonZeroU32>().ok())
+        .is_some_and(|number| format!("PART-{number:03}") == id)
 }

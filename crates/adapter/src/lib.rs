@@ -4,8 +4,8 @@
 //!
 //! Supplies the shared Rust types and `wasm32` guest bindings for the
 //! `emery:adapter` WIT package: [`source`] for claim extraction and
-//! [`target`] for workspace initialisation, slice builds, and wave
-//! verification.
+//! [`target`] for workspace initialisation, change scoping, slice builds, and
+//! wave verification.
 //!
 //! # Examples
 //!

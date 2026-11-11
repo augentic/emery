@@ -6,8 +6,8 @@
 //! [`export_source!`], surveying a [`SourceInput`] into [`Seam`]s and calling
 //! [`extract`](fn@extract) to return validated [`Evidence`]. A target adapter
 //! implements [`target::TargetAdapter`] and exports it with [`export_target!`],
-//! handling each [`target::Task`] through [`target::build`] and
-//! [`target::verify`].
+//! handling each [`target::Task`] through [`target::scope::conservative`],
+//! [`target::build`], and [`target::verify`].
 //!
 //! Contract types, [`Doc`] / [`prose!`] prompt helpers, [`Error`],
 //! [`serde_json`], and [`tracing`] are re-exported so an adapter can depend on

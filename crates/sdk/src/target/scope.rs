@@ -46,10 +46,7 @@ const OVERVIEW: &str = "overview";
 /// ```
 #[must_use]
 pub fn conservative(change: &Change) -> Vec<String> {
-    let widens = change
-        .sections
-        .iter()
-        .any(|section| section.kind != OVERVIEW && section.before != section.after);
+    let widens = change.sections.iter().any(|section| section.kind != OVERVIEW);
     unique(
         change
             .parts

@@ -20,8 +20,6 @@ pub use capability::{
     DesignType, MergeRule, MergeStrategy, Outcome, Requirement, Scenario, Slice, Target,
     TargetMetadata, Task,
 };
-pub use change::{
-    Change, Departure, PartReach, SectionChange, SliceChange, Standing, TypeChange, scoped_findings,
-};
+pub use change::{Change, Departure, PartReach, SectionChange, SliceChange, Standing, TypeChange};
 pub use report::Report;
 pub use verdict::Verdict;

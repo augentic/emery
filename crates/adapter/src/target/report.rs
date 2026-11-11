@@ -76,7 +76,13 @@ impl Report {
             slice.requirements.iter().map(|requirement| requirement.id.as_str()).collect();
         let mut seen = BTreeSet::new();
         for id in &self.covered {
-            if !ids.contains(&id.as_str()) {
+            if ids.is_empty() {
+                findings.push(format!(
+                    "- covered `{id}` is not a requirement of slice `{}`; the slice has no \
+                     requirements",
+                    slice.id,
+                ));
+            } else if !ids.contains(&id.as_str()) {
                 findings.push(format!(
                     "- covered `{id}` is not a requirement of slice `{}`; its requirements are {}",
                     slice.id,

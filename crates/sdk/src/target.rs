@@ -110,7 +110,7 @@ pub use emery_adapter::target::export;
 pub use emery_adapter::target::{
     Change, Departure, DesignType, MergeRule, MergeStrategy, Outcome, PartReach, Report,
     Requirement, Scenario, SectionChange, Slice, SliceChange, Standing, TargetMetadata, TypeChange,
-    Verdict, scoped_findings,
+    Verdict,
 };
 use emery_prose::Doc;
 use omnia_sdk::model::{Question, WorkerGrant};
@@ -506,7 +506,7 @@ pub enum Task<'a, P> {
     Verify(VerifyContext<'a, P>),
 }
 
-/// A target adapter that initialises, builds, and verifies a workspace.
+/// A target adapter that initialises, scopes changes, builds, and verifies a workspace.
 ///
 /// Implement it on a unit struct and hand that type to
 /// [`export_target!`](crate::export_target), which exports the
@@ -531,9 +531,11 @@ pub trait TargetAdapter {
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::BadRequest`] when the tree refuses [`Task::Init`], such
-    ///   as when a directory or symlink occupies a layout file's path.
-    /// - Returns [`Error::ServerError`] when [`Task::Init`] cannot write the tree.
+    /// - Returns [`Error::BadRequest`] when the tree refuses [`Task::Init`] or
+    ///   [`Task::Scope`], such as when a directory or symlink occupies a layout
+    ///   file's path.
+    /// - Returns [`Error::ServerError`] when [`Task::Init`] or [`Task::Scope`]
+    ///   cannot access the tree.
     /// - Returns what [`build`](fn@build) or [`verify`](fn@verify) returns.
     fn run<P: Model>(task: Task<'_, P>) -> impl Future<Output = Result<Outcome, Error>>;
 }
