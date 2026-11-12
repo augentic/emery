@@ -8,7 +8,7 @@
 //! resume from the existing label and integration working copy.
 
 mod basis;
-pub mod change;
+mod change;
 pub(crate) mod merge;
 mod schedule;
 

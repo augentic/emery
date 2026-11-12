@@ -18,13 +18,14 @@ use serde_json::Value;
 use strum::{AsRefStr, EnumString, VariantArray};
 
 use crate::adapter::AdapterRef;
-pub use crate::build::{BudgetSource, ScheduledSlice};
-use crate::revision::{self, Document, ID, REQUIREMENTS, Revision, TYPES};
+use crate::build::Basis;
+pub use crate::build::{BudgetSource, Change as ScheduleChange, ScheduledSlice};
+use crate::revision::{self, Document, ID, PartId, REQUIREMENTS, Revision, TYPES};
 pub use crate::revision::{
     Amendment, AmendmentBase, BriefState, Change, ChangeClass, DesignDiff, PartChange, PartClass,
     SliceId, Waves,
 };
-use crate::vcs::TargetRef;
+use crate::vcs::{BuildRepo, MergedIds, TargetRef};
 use crate::{Files, store};
 
 /// Returns one document from the current revision, the staged candidate, or the staged amendment.
@@ -64,29 +65,36 @@ pub async fn show<P: Target + Plugins + StateStore + BlobStore + Vcs + Files>(
         tracing::debug!(amendment = %staged.id, "amendment read");
         return ShowOutput::new(&staged.amendment, staged.id);
     }
-    if input.artifact == Artifact::Schedule && input.staged {
-        return Err(bad_request!(
-            "`emery show schedule` cuts the sealed plan `emery build` reads, not the staged \
-             candidate; inspect the staged parts with `emery show plan --staged`"
-        ));
+    if input.staged {
+        if input.artifact == Artifact::Schedule {
+            return Err(bad_request!(
+                "`emery show schedule` cuts the sealed plan `emery build` reads, not the staged \
+                 candidate; inspect the staged parts with `emery show plan --staged`"
+            ));
+        }
+        let candidate = store::staged(store).await?.ok_or_else(store::nothing_staged)?;
+        tracing::debug!(
+            revision = %candidate.id,
+            staged = true,
+            artifact = input.artifact.as_ref(),
+            "revision read"
+        );
+        return match input.artifact {
+            Artifact::Spec => ShowOutput::new(&candidate.revision.spec, candidate.id),
+            Artifact::Design => ShowOutput::new(&candidate.revision.design, candidate.id),
+            Artifact::Plan => ShowOutput::new(&candidate.revision.plan, candidate.id),
+            Artifact::Schedule | Artifact::Amendment => unreachable!("handled above"),
+        };
     }
 
-    let (id, revision) = input.revision(store).await?;
+    let current = input.revision(store).await?;
     match input.artifact {
-        Artifact::Spec => ShowOutput::new(&revision.spec, id),
-        Artifact::Design => ShowOutput::new(&revision.design, id),
-        Artifact::Plan => ShowOutput::new(&revision.plan, id),
+        Artifact::Spec => ShowOutput::new(&current.revision.spec, current.id),
+        Artifact::Design => ShowOutput::new(&current.revision.design, current.id),
+        Artifact::Plan => ShowOutput::new(&current.revision.plan, current.id),
         Artifact::Schedule => {
-            let (budget, source) = BudgetSource::resolve_with(
-                store,
-                input.budget,
-                input.budget_source,
-                input.adapter.as_ref(),
-                input.digest.as_ref(),
-            )
-            .await?;
-            let schedule = Schedule::new(&revision, budget, source);
-            ShowOutput::new(&schedule, id)
+            let schedule = Schedule::resolve(store, &input, &current).await?;
+            ShowOutput::new(&schedule, current.id)
         }
         Artifact::Amendment => unreachable!("handled above"),
     }
@@ -130,6 +138,11 @@ pub struct ShowInput {
     /// The `sha256:` digest the target adapter's component must resolve to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub digest: Option<Digest>,
+    /// Whether to cut the [`Schedule`](Artifact::Schedule) for every part of
+    /// the plan from the base, ignoring any built ancestor in the lineage
+    /// (`--whole`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub whole: bool,
 }
 
 impl ShowInput {
@@ -144,36 +157,44 @@ impl ShowInput {
             budget_source: None,
             adapter: None,
             digest: None,
+            whole: false,
         }
     }
 
-    // The revision a document of `self.artifact` is read from, with its id:
-    // the staged candidate, or the current revision of `self.target`'s
-    // repository.
+    // The current revision of `self.target`'s repository, with its id,
+    // repository, and base commit.
     async fn revision<P: StateStore + BlobStore + Vcs + Files>(
         &self, store: &P,
-    ) -> Result<(String, Revision), Error> {
-        let (id, revision) = if self.staged {
-            let candidate = store::staged(store).await?.ok_or_else(store::nothing_staged)?;
-            (candidate.id, candidate.revision)
-        } else {
-            let target =
-                self.target.as_ref().ok_or_else(|| store::target_required("`emery show`"))?;
-            let repo = target.repo()?;
-            let standing = store::current(store, &repo).await?;
-            let Some(current) = standing.current else {
-                return Err(store::not_generated(store, &standing).await);
-            };
-            (current.id, current.revision?)
+    ) -> Result<CurrentRevision, Error> {
+        let target = self.target.as_ref().ok_or_else(|| store::target_required("`emery show`"))?;
+        let repo = target.repo()?;
+        let standing = store::current(store, &repo).await?;
+        let Some(current) = standing.current else {
+            return Err(store::not_generated(store, &standing).await);
         };
+        let base = standing.head.unwrap_or(current.commit);
+        let id = current.id;
+        let revision = current.revision?;
         tracing::debug!(
             revision = %id,
-            staged = self.staged,
+            staged = false,
             artifact = self.artifact.as_ref(),
             "revision read"
         );
-        Ok((id, revision))
+        Ok(CurrentRevision {
+            id,
+            revision,
+            repo,
+            base,
+        })
     }
+}
+
+struct CurrentRevision {
+    id: String,
+    revision: Revision,
+    repo: BuildRepo,
+    base: String,
 }
 
 /// A document available from a specification revision, or the staged amendment.
@@ -218,6 +239,8 @@ const SLICE_HEADING: &str = "## Slice:";
 const PART_KEY: &str = "Part:";
 const WAVE_KEY: &str = "Wave:";
 const OVER_BUDGET_KEY: &str = "Over budget:";
+const CHANGE_KEY: &str = "Change:";
+const DEPARTED_KEY: &str = "Departed:";
 
 /// The build schedule projected by [`show`] for [`Artifact::Schedule`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -227,6 +250,15 @@ pub struct Schedule {
     pub budget: usize,
     /// Where [`budget`](Self::budget) came from.
     pub source: BudgetSource,
+    /// What a change build would rebuild, carry, and retire against the built
+    /// ancestor; `None` when the schedule is for a whole build.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<ScheduleChange>,
+    /// Whether [`change`](Self::change) was resolved with the target adapter's
+    /// `scope` task (`true`) or from the engine's minimum scope alone because
+    /// no target adapter was configured (`false`); `None` for a whole build.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scoped: Option<bool>,
     /// Every slice of the schedule, in schedule order.
     pub slices: Vec<ScheduledSlice>,
     /// The schedule's slices grouped into the sets ready to build at once.
@@ -236,17 +268,62 @@ pub struct Schedule {
 }
 
 impl Schedule {
-    fn new(revision: &Revision, budget: NonZeroUsize, source: BudgetSource) -> Self {
-        let schedule = crate::build::Schedule::for_revision(revision, budget);
+    async fn resolve<P: Target + Plugins + Vcs + Files>(
+        store: &P, input: &ShowInput, current: &CurrentRevision,
+    ) -> Result<Self, Error> {
+        let load = !input.whole && current.revision.spec.parent.is_some();
+        let (budget, source, adapter) = BudgetSource::resolve_with(
+            store,
+            input.budget,
+            input.budget_source,
+            input.adapter.as_ref(),
+            input.digest.as_ref(),
+            load,
+        )
+        .await?;
+        let basis = Basis::settle(
+            store,
+            &current.repo,
+            adapter.as_deref(),
+            &current.base,
+            &current.revision,
+            budget,
+            input.whole,
+        )
+        .await?;
+        Ok(Self::new(&current.revision, budget, source, &basis, adapter.is_some()))
+    }
+
+    fn new(
+        revision: &Revision, budget: NonZeroUsize, source: BudgetSource, basis: &Basis,
+        has_adapter: bool,
+    ) -> Self {
+        let carried = basis.carried();
+        let schedule = crate::build::Schedule::new(
+            revision,
+            budget,
+            &MergedIds::default(),
+            &[],
+            &carried,
+            basis.removed_parts(),
+        );
         let waves = schedule.waves();
         let over_budget = schedule.over_budget().map(|slice| slice.id).collect();
+        let (change, _) = basis.outcome(schedule.retiring().collect());
+        let scoped = change.is_some().then_some(has_adapter);
         Self {
             budget: budget.get(),
             source,
+            change,
+            scoped,
             slices: schedule.into_slices(),
             waves,
             over_budget,
         }
+    }
+
+    fn is_carried(&self, part: PartId) -> bool {
+        self.change.as_ref().is_some_and(|change| change.carried.contains(&part))
     }
 }
 
@@ -264,10 +341,21 @@ impl Display for Schedule {
             f.write_str("\n")?;
             revision::write_list(f, OVER_BUDGET_KEY, &self.over_budget)?;
         }
+        if let Some(change) = &self.change {
+            write!(f, "\n{CHANGE_KEY} {} at {}", change.from, change.commit)?;
+            if self.scoped == Some(false) {
+                f.write_str(" (minimum scope; no target adapter)")?;
+            }
+        }
         for slice in &self.slices {
             write!(f, "\n\n{SLICE_HEADING} {}", slice.name)?;
             if slice.count > 1 {
                 write!(f, " ({}/{})", slice.index, slice.count)?;
+            }
+            if slice.is_retiring() {
+                f.write_str(" [retiring]")?;
+            } else if self.is_carried(slice.part) {
+                f.write_str(" [carried]")?;
             }
             let wave = self.waves.wave_of(&slice.id).unwrap_or(0);
             write!(
@@ -276,6 +364,10 @@ impl Display for Schedule {
                 slice.id, slice.part, slice.index, slice.count
             )?;
             revision::write_list(f, REQUIREMENTS, &slice.requirements)?;
+            if !slice.departed.is_empty() {
+                f.write_str("\n")?;
+                revision::write_list(f, DEPARTED_KEY, &slice.departed)?;
+            }
             if !slice.types.is_empty() {
                 f.write_str("\n")?;
                 revision::write_list(f, TYPES, &slice.types)?;

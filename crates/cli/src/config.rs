@@ -139,23 +139,25 @@ pub fn target(config: Option<&Path>, repository: Option<&str>) -> Result<Option<
 }
 
 // Resolves `ShowInput` from the `[target]` table of `config` (or the
-// discovered project-root file) and `--budget`: the staged candidate and
-// the amendment read no file, while a current-revision artifact carries the
-// target's repository, adapter, digest, and budget.
+// discovered project-root file), `--budget`, and `--whole`: the staged
+// candidate and the amendment read no file, while a current-revision
+// artifact carries the target's repository, adapter, digest, and budget.
 pub fn show(
     artifact: Artifact, staged: bool, config: Option<&Path>, flag_budget: Option<NonZeroUsize>,
+    whole: bool,
 ) -> Result<ShowInput, Error> {
     if !staged
         && !matches!(artifact, Artifact::Amendment)
         && let Some(entry) = ConfigFile::load(config)?.and_then(|file| file.target)
     {
-        return Ok(entry.into_show(artifact, flag_budget));
+        return Ok(entry.into_show(artifact, flag_budget, whole));
     }
     let (budget, budget_source) = resolve_budget(flag_budget, None);
     Ok(ShowInput {
         staged,
         budget,
         budget_source,
+        whole,
         ..ShowInput::new(artifact, None)
     })
 }
@@ -216,14 +218,14 @@ impl TargetCarriers<'_> {
 
         // the flags, each in the place of the file's key
         if let Some(reference) = adapter {
-            target.adapter = AdapterRef::from_str(reference)?;
+            target.adapter = Some(AdapterRef::from_str(reference)?);
             target.digest = None;
         }
         if let Some(repository) = repository {
             target.repository = Some(repository.to_owned());
         }
 
-        let input = target.into_input(jobs, budget, whole);
+        let input = target.into_input(jobs, budget, whole)?;
         tracing::debug!(
             carrier = %carrier_label(path.as_deref()),
             adapter = %input.adapter,
@@ -373,7 +375,7 @@ impl SourceEntry {
 struct TargetEntry {
     // Omitted, the adapter's package name, as on the command line.
     name: Option<String>,
-    adapter: AdapterRef,
+    adapter: Option<AdapterRef>,
     digest: Option<Digest>,
     repository: Option<String>,
     budget: Option<NonZeroUsize>,
@@ -383,55 +385,64 @@ impl TargetEntry {
     fn argv(reference: &str) -> Result<Self, Error> {
         Ok(Self {
             name: None,
-            adapter: AdapterRef::from_str(reference)?,
+            adapter: Some(AdapterRef::from_str(reference)?),
             digest: None,
             repository: None,
             budget: None,
         })
     }
 
+    fn resolved_name(&self) -> String {
+        self.name
+            .clone()
+            .or_else(|| self.adapter.as_ref().map(|adapter| adapter.name().to_owned()))
+            .unwrap_or_else(|| "target".to_owned())
+    }
+
     fn into_input(
         self, jobs: Option<NonZeroUsize>, flag_budget: Option<NonZeroUsize>, whole: bool,
-    ) -> BuildInput {
-        let name = self.name.unwrap_or_else(|| self.adapter.name().to_owned());
+    ) -> Result<BuildInput, Error> {
+        let adapter = self.adapter.ok_or_else(|| target_required("no target adapter"))?;
+        let name = self.name.unwrap_or_else(|| adapter.name().to_owned());
         let (budget, budget_source) = resolve_budget(flag_budget, self.budget);
-        BuildInput {
+        Ok(BuildInput {
             name,
-            adapter: self.adapter,
+            adapter,
             digest: self.digest,
             repository: self.repository,
             jobs,
             budget,
             budget_source,
             whole,
-        }
+        })
     }
 
     fn into_ref(self) -> TargetRef {
         TargetRef {
-            name: self.name.unwrap_or_else(|| self.adapter.name().to_owned()),
+            name: self.resolved_name(),
             repository: self.repository,
         }
     }
 
-    fn into_show(self, artifact: Artifact, flag_budget: Option<NonZeroUsize>) -> ShowInput {
+    fn into_show(
+        self, artifact: Artifact, flag_budget: Option<NonZeroUsize>, whole: bool,
+    ) -> ShowInput {
+        let name = self.resolved_name();
         let Self {
-            name,
             adapter,
             digest,
             repository,
             budget,
+            ..
         } = self;
         let (budget, budget_source) = resolve_budget(flag_budget, budget);
-        let target = TargetRef {
-            name: name.unwrap_or_else(|| adapter.name().to_owned()),
-            repository,
-        };
+        let target = TargetRef { name, repository };
         ShowInput {
             budget,
             budget_source,
-            adapter: Some(adapter),
+            adapter,
             digest,
+            whole,
             ..ShowInput::new(artifact, Some(target))
         }
     }

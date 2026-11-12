@@ -100,13 +100,14 @@ Used by [`emery specify`](cli/specify.md) and [`emery amend`](cli/amend.md):
 
 ### Target adapter contract (`emery:adapter/target`)
 
-Used by [`emery build`](cli/build.md):
+Used by [`emery build`](cli/build.md) and [`emery show schedule`](cli/show.md):
 
 | Export / Task | Purpose |
 | --- | --- |
-| `metadata() -> TargetMetadata` | Returns the adapter's `emery-version`, path-glob `merge_rules` (`union`, `ours`, `theirs`) used when merging slice commits into `.emery/vcs/integration`, and optional default requirement `budget` per slice. |
-| `run(..., Task::Init)` | Runs once per repository before the first slice builds. Deterministically scaffolds missing project layout files with `create_new` (no model turn) and returns `Outcome::Initialised`. |
-| `run(..., Task::Build(Slice))` | Runs once per slice in `.emery/vcs/worktrees/<slice-id>`, carrying its part (`part`, `name`, `brief`), position (`index` of `count`), typed requirements, and owned data types. Implements the slice and returns `Outcome::Built(Report)` (`covered` requirement IDs and `written` file paths). |
+| `metadata() -> TargetMetadata` | Returns the adapter's `emery-version`, path-glob `merge_rules` (`union`, `ours`, `theirs`) used when merging slice commits into `.emery/vcs/integration`, worker sandbox `grants`, and optional default requirement `budget` per slice. |
+| `run(..., Task::Init)` | Runs once per repository before the first slice of a whole build. Deterministically scaffolds missing project layout files with `create_new` (no model turn) and returns `Outcome::Initialised`. |
+| `run(..., Task::Scope(Change))` | Runs once before a change build (and during `emery show schedule`) in a read-only worktree at `.emery/vcs/scope` checked out at the built ancestor's commit. Deterministically returns `Outcome::Scoped(Vec<String>)` naming `PART-NNN` IDs the change reaches beyond the engine's minimum scope (no model turn; leaving pending changes in `.emery/vcs/scope` is a `server_error`). |
+| `run(..., Task::Build(Slice))` | Runs once per slice in `.emery/vcs/worktrees/<slice-id>`, carrying its part (`part`, `name`, `brief`), position (`index` of `count`), typed requirements, owned data types, and optional `change: Option<SliceChange>` (requirement `standing`, `prior` statements, `departed`, `built_before`, `vanished` stems, changed `types` and `sections`). Implements the slice and returns `Outcome::Built(Report)` (`covered` requirement IDs and `written` file paths). |
 | `run(..., Task::Verify)` | Runs once per wave in `.emery/vcs/integration`. Runs workspace-wide checks (compiler, linter, tests), repairs issues, and returns `Outcome::Verified(Verdict)` (`passed` and `failures`). |
 
 ---

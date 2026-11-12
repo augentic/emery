@@ -4,8 +4,8 @@ A Rust workspace producing the `emery` binary:
 
 - `emery specify <adapter>...` extracts typed claims from source adapters, derives requirements under authority rank, drafts a specification, a design, and a build plan of logical parts, and stages them as one content-addressed candidate. `--apply` also seals it; `--fresh` starts a parentless history over an existing lineage.
 - `emery apply` seals the staged candidate or amendment as the current revision: one commit in the target's repository holding `spec/`, labelled `emery/<id>`.
-- `emery build [<adapter>]` cuts the current plan's parts into budget-sized slices (`--budget` / `[target] budget` / adapter metadata) and builds them in waves through one target adapter. Each slice is built in its own working copy and merged under the adapter's merge rules, with conflicts resolved by the model. Each wave is verified and labelled `emery/<revision>`, so a re-run resumes by committed requirements.
-- `emery show <spec|design|plan|schedule|amendment> [--staged] [--budget <N>]` prints a Markdown projection of the current revision, the build schedule cut from its plan, the staged candidate, or the staged amendment.
+- `emery build [<adapter>]` cuts the current plan's parts into budget-sized slices (`--budget` / `[target] budget` / adapter metadata) and builds them in waves through one target adapter (over a built ancestor in the lineage, only the parts the change and the adapter's `scope` task reach are rebuilt, carried parts stand, and removed parts run as retiring slices; `--whole` builds every part from the base). Each slice is built in its own working copy and merged under the adapter's merge rules, with conflicts resolved by the model. Each wave is verified and labelled `emery/<revision>`, so a re-run resumes by committed requirements and departed ids.
+- `emery show <spec|design|plan|schedule|amendment> [--staged] [--budget <N>] [--whole]` prints a Markdown projection of the current revision, the build schedule cut from its plan, the staged candidate, or the staged amendment.
 - `emery amend <adapter>...` stages an `Amendment` against the current revision. `--apply` also seals it.
 - `emery completions <shell>` generates shell completions.
 
@@ -18,7 +18,7 @@ Never `git commit`, `git push`, open or close a pull request, or delete a branch
 ## Vocabulary
 
 - **source adapter** — a WebAssembly component exporting the WIT `source-adapter` world (`metadata` + `extract`): a `SourceInput` in, an `Evidence` document of typed claims out. See [wit/emery.wit](wit/emery.wit).
-- **target adapter** — a component exporting the `target-adapter` world (`metadata` + `run`): given the writable tree and a task (`init`, `build(slice)`, or `verify`), it answers the outcome of that kind (`initialised`, `built(report)`, or `verified(verdict)`).
+- **target adapter** — a component exporting the `target-adapter` world (`metadata` + `run`): given the tree and a task (`init`, `scope(change)`, `build(slice)`, or `verify`), it answers the outcome of that kind (`initialised`, `scoped(parts)`, `built(report)`, or `verified(verdict)`).
 - **engine** — this product: the engine guest and the crates behind it.
 - **capability** — an engine-side trait a provider carries: `Model`, `Source`, `Target`, `Plugins`, `StateStore`, `BlobStore`, `Vcs`, and `Files`, which the engine answers itself beneath a working copy and which follows no symbolic link.
 - **contract** — a typed agreement: WIT, CLI grammar, JSON envelope.
@@ -39,7 +39,7 @@ When authoritative inputs are incomplete, preserve the gap as `[unknown]` rather
 | `crates/lexicon` | `Lexicon`, the technology names specification text is held against, and the `words` splitter |
 | `crates/sdk` | The guest-only adapter SDK: `SourceAdapter` / `export_source!`, `TargetAdapter` / `export_target!`, the gated extraction and survey turns, the code survey model, and the build and verify turns with their `write_files` / `edit_files` tools. It re-exports what an adapter needs, so an adapter depends on it and its parser alone. Nothing in production depends on it |
 | `crates/engine` | Transport-neutral `specify` / `apply` / `amend` / `build` / `show` over a capability `Provider`; the typed `Revision` (`Spec`, `Design`, `Plan`) and `Amendment` with their Markdown projections; the build schedule (`build/schedule.rs`), the revision store (`store.rs`), briefs (`brief.rs`), version control (`vcs.rs`), and the secret gate (`secrets.rs`). No clap, toml, terminal text, or exit codes |
-| `crates/cli` | The clap grammar (`--apply`, `--fresh`, `--staged`, `--repository`, `--jobs`, `--budget`), the `emery.toml` carriers (`[[source]]`, `[target]`) and their layering with argv, the text renderers, and the hint table keyed by recovery code. `run(provider, argv)` drives omnia's command façade |
+| `crates/cli` | The clap grammar (`--apply`, `--fresh`, `--staged`, `--repository`, `--jobs`, `--budget`, `--whole`), the `emery.toml` carriers (`[[source]]`, `[target]`) and their layering with argv, the text renderers, and the hint table keyed by recovery code. `run(provider, argv)` drives omnia's command façade |
 | `crates/precompile` | `emery-precompile`, which `build.rs` runs under `--release` to precompile the engine guest |
 | `src/` | `lib.rs` is the wasm32 engine guest (empty natively). `main.rs` is the one runtime binary (`omnia::runtime!`) and its compiled-in policy: the mount `.`, the package store `~/.emery/adapters`, the registry route `emery = "augentic.io"`, and the model backend (Cursor, or `omnia-genai` under the never-released `genai` feature) |
 | `build.rs` | Builds the wasm32 guest and the two mocks under `examples/`. A check-only invocation (clippy, rust-analyzer, or `EMERY_SKIP_GUEST` set) builds nothing |

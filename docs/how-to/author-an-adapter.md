@@ -116,10 +116,11 @@ See [`examples/source/lib.rs`](../../examples/source/lib.rs) in the `emery` repo
 
 ## Author a target adapter (`TargetAdapter`)
 
-A target adapter handles three tasks for `emery build`:
+A target adapter handles four tasks for `emery build`:
 
 - **`Task::Init(InitContext)`:** Deterministically scaffolds missing project layout files with `create_new` (no model turn) and returns `Outcome::Initialised`.
-- **`Task::Build(BuildContext)`:** Optionally scaffolds slice files (`ctx.with_scaffold(..)`), runs one gated turn via `emery_sdk::target::build` under `prose/build.md`, and returns `Outcome::Built(Report)`.
+- **`Task::Scope(ScopeContext)`:** Deterministically inspects `ctx.change` (and optionally the read-only tree at `ctx.workspace`) without a model turn and returns `Outcome::Scoped(Vec<String>)` with `PART-NNN` IDs to rebuild. `emery_sdk::target::scope::conservative(ctx.change)` provides the default implementation (returning the minimum scope plus every plan part whenever any non-`overview` design prose section changed).
+- **`Task::Build(BuildContext)`:** Optionally scaffolds slice files (`ctx.with_scaffold(..)`), runs one gated turn via `emery_sdk::target::build` under `prose/build.md` (which automatically renders `## The change` when `ctx.slice.change` is `Some(SliceChange)`), and returns `Outcome::Built(Report)`.
 - **`Task::Verify(VerifyContext)`:** Runs one gated turn via `emery_sdk::target::verify` under `prose/verify.md` to run workspace-wide checks and repairs, returning `Outcome::Verified(Verdict)`.
 
 ### 1. Write `prose/build.md` and `prose/verify.md`
@@ -135,7 +136,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 
 use emery_sdk::target::{
-    Grant, InitContext, MergeRule, Metadata, Outcome, TargetAdapter, Task,
+    Grant, InitContext, MergeRule, Metadata, Outcome, TargetAdapter, Task, scope,
 };
 use emery_sdk::{Doc, Error, Model, server_error};
 
@@ -155,6 +156,7 @@ impl TargetAdapter for Adapter {
     async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
         match task {
             Task::Init(ctx) => init(&ctx).map(|()| Outcome::Initialised),
+            Task::Scope(ctx) => Ok(Outcome::Scoped(scope::conservative(ctx.change))),
             Task::Build(ctx) => emery_sdk::target::build(&ctx, PROSE, |_| Ok(Vec::new()))
                 .await
                 .map(Outcome::Built),

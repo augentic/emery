@@ -7,7 +7,9 @@ use omnia_sdk::api::command::Render;
 
 use crate::amend::{AmendOutput, PartChange, PartClass};
 use crate::apply::ApplyOutput;
-use crate::build::{BuildOutput, BuiltSlice, Candidate, ScheduledSlice, StagedKind};
+use crate::build::{
+    BuildOutput, BuiltSlice, Candidate, ScheduledSlice, SliceId, StagedKind, WholeReason,
+};
 use crate::show::ShowOutput;
 use crate::specify::{Diff, RepositorySource, SectionKind, SpecifyOutput, Waves};
 
@@ -208,6 +210,7 @@ fn build(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
     if over.peek().is_some() {
         writeln!(w, "  over budget: {}", comma_separated(over.map(over_slice)))?;
     }
+    build_basis(output, w)?;
     match &output.candidate {
         Some(Candidate {
             id,
@@ -274,6 +277,44 @@ fn build_plan(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
         counted(waves.len(), "wave"),
         waves.widest()
     )
+}
+
+fn build_basis(output: &BuildOutput, w: &mut dyn fmt::Write) -> fmt::Result {
+    if let Some(change) = &output.change {
+        write!(w, "  change from {}: ", change.from)?;
+        let mut clauses = Vec::new();
+        if !change.rebuilt.is_empty() {
+            clauses.push(format!("rebuilds {}", comma_separated(&change.rebuilt)));
+        }
+        if !change.carried.is_empty() {
+            clauses.push(format!("carries {}", comma_separated(&change.carried)));
+        }
+        if !change.retiring.is_empty() {
+            clauses.push(format!(
+                "retires {}",
+                comma_separated(
+                    change.retiring.iter().map(|id| retiring_slice(*id, &output.schedule))
+                )
+            ));
+        }
+        return writeln!(w, "{}", clauses.join("; "));
+    }
+    if let Some(whole) = &output.whole {
+        let reason = match whole.reason {
+            WholeReason::Requested => "requested (--whole)",
+            WholeReason::NoParent => "no parent revision",
+            WholeReason::ParentUnbuilt => "parent is partly built",
+        };
+        writeln!(w, "  whole build: {reason}")?;
+    }
+    Ok(())
+}
+
+fn retiring_slice(id: SliceId, schedule: &[ScheduledSlice]) -> impl fmt::Display + '_ {
+    fmt::from_fn(move |f| match schedule.iter().find(|slice| slice.id == id) {
+        Some(slice) => write!(f, "{} {}", slice.part, slice.name),
+        None => write!(f, "{id}"),
+    })
 }
 
 fn over_slice(slice: &ScheduledSlice) -> impl fmt::Display {

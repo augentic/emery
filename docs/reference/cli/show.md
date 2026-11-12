@@ -25,6 +25,7 @@ emery show design
 emery show plan
 emery show schedule                  # preview build slices under adapter/config budget
 emery show schedule --budget 8       # preview build slices under an explicit budget
+emery show schedule --whole          # preview a whole-build schedule, ignoring any built ancestor
 emery show spec --staged             # read the candidate staged by emery specify
 emery show spec --config [<path>]    # specify config file for [target] repository
 emery show amendment                 # read the amendment staged by emery amend
@@ -59,6 +60,13 @@ For `spec`, `design`, and `plan`, `emery show` operates in two modes:
 4. The engine fallback (`12`) — reported as `default`.
 
 Because a schedule cuts the sealed plan that `emery build` reads, `--staged` is refused for `schedule` (use `emery show plan --staged` to inspect staged parts).
+
+When the current revision has a complete built ancestor in the target repository (and `--whole` is not passed), `emery show schedule` settles the change basis:
+
+- It prints `Change: <built-revision> at <commit>` in the `# Schedule` header. When a target adapter is configured in `[target]`, it invokes `Task::Scope` in a read-only worktree at `<commit>` so adapter-widened parts are unmarked; when no target adapter is configured, it uses the engine's minimum scope and suffixes `(minimum scope; no target adapter)`.
+- Slices belonging to carried parts are marked `## Slice: <name> [carried]`.
+- Parts removed since the built ancestor appear as `## Slice: <name> [retiring]` with `Requirements: []` and `Departed: [REQ-…]`.
+- Pass `--whole` to preview the schedule as a whole build from the base.
 
 ### Reviewing a staged amendment (`emery show amendment`)
 
@@ -97,6 +105,7 @@ revision: 9f8e7d6c…
 | `--staged` | — | Read `spec`, `design`, or `plan` from the staged candidate in `.emery/storage/` instead of the target repository (refused for `schedule`; ignored for `amendment`). |
 | `--config [<path>]` | `-c` | Configuration file containing `[target]` for reading the current revision (defaults to `emery.toml` when `<path>` is omitted; discovered automatically for bare `show`). |
 | `--budget <N>` | `-b` | Maximum number of requirements per build slice for `schedule` (env: `EMERY_BUDGET`); overrides `[target] budget` and the target adapter's default. |
+| `--whole` | — | Cut `schedule` for every part of the plan from the base, ignoring any built ancestor in the lineage. |
 | `--format <text\|json>` | — | Output format (`text` outputs raw Markdown; `json` wraps the Markdown and typed document in a JSON object). |
 
 ---

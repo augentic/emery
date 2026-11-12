@@ -20,6 +20,7 @@ This glossary defines the core concepts and terminology used across the `emery` 
   - [Budget, schedule, and over-budget slice](#budget-schedule-and-over-budget-slice)
   - [Slice](#slice)
   - [Wave](#wave)
+  - [Change build, built ancestor, carried part, and retiring slice](#change-build-built-ancestor-carried-part-and-retiring-slice)
 - [Adapters, extraction, and execution](#adapters-extraction-and-execution)
   - [Source adapter and target adapter](#source-adapter-and-target-adapter)
   - [Seam](#seam)
@@ -118,6 +119,15 @@ A single budget-sized unit of build work (`SLICE-001`, `SLICE-002`, ...) cut fro
 
 A group of build slices whose dependency parts and earlier intra-part slices have all been merged. [`emery build`](reference/cli/build.md) executes all ready slices in a wave concurrently (bounded by `--jobs`), merges their commits in slice ID order into `.emery/vcs/integration`, and runs a single verification pass over the integrated tree before moving to the next wave.
 
+### Change build, built ancestor, carried part, and retiring slice
+
+When [`emery build`](reference/cli/build.md) runs on an amended revision (unless `--whole` is passed), Emery builds only what the change reaches:
+
+- **Built ancestor:** The nearest revision in the current revision's `parent` lineage whose label (`emery/<id>`) holds a complete, verified build that the current revision was sealed over (stepping past any intermediate revision that was sealed and never built).
+- **Change build:** A build settled against a built ancestor (`BuildOutput.change`). The engine derives a minimum scope of parts from typed revision differences and asks the target adapter's `scope` task in a read-only worktree at the built ancestor's commit whether any additional parts should be rebuilt.
+- **Carried part:** A part of the current plan outside the change build's scope (`change.carried`). Its requirements are seeded into `done` so its slices are skipped (`[carried]` in `emery show schedule`) and its committed code in the repository stands untouched.
+- **Retiring slice:** A slice cut in wave 1 for a part that existed in the built ancestor's plan and was removed from the current plan (`change.retiring`, `[retiring]` in `emery show schedule`). It carries `requirements: []`, lists all of the removed part's former requirements in `departed`, and records a `Departed:` trailer on its commit so interrupted runs can resume.
+
 ---
 
 ## Adapters, extraction, and execution
@@ -127,9 +137,10 @@ A group of build slices whose dependency parts and earlier intra-part slices hav
 Sandboxed WebAssembly (Wasm) components compiled against the `emery:adapter` WIT (WebAssembly Interface Types) contract and executed under WASI (WebAssembly System Interface):
 
 - **Source adapter:** Implements the `source-adapter` world (`metadata` + `extract`). It reads files from your project directory (read-only) or an inline `--description` string and emits an `Evidence` document of typed claims (`requirement`, `criterion`, `retire`, `decision`, `contract`, `type`, `call`, `excerpt`). Prose sources may include ADRs (Architecture Decision Records), Markdown runbooks, or short intent notes.
-- **Target adapter:** Implements the `target-adapter` world (`metadata` + `run`). It declares file merge rules and worker sandbox grants, and executes three task kinds against a writable Git worktree:
+- **Target adapter:** Implements the `target-adapter` world (`metadata` + `run`). It declares file merge rules and worker sandbox grants, and executes four task kinds against a Git worktree:
   - `init`: Scaffolds missing project layout files deterministically without calling the language model.
-  - `build(slice)`: Implements one slice's requirements and owned data types.
+  - `scope(change)`: Inspects the typed `Change` (and a read-only worktree at the built ancestor's commit) without calling the language model, returning `Outcome::Scoped(Vec<String>)` with any extra `PART-NNN` IDs the change reaches.
+  - `build(slice)`: Implements one slice's requirements and owned data types (carrying `slice.change` on a change build).
   - `verify`: Runs the workspace build, linter, and test suite across the integrated wave, repairing any failures before returning a `Verdict`.
 
 Adapters are loaded from `~/.emery/adapters/` under a strict W^X (Write XOR Execute) boundary: the project directory is writable by the engine and build workers, while the adapter store is read-only and unreachable by guests. See [Adapters](reference/adapters.md).

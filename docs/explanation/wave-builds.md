@@ -24,6 +24,10 @@ This page explains how Emery partitions a specification into logical build parts
   - [Resuming by committed requirements on `emery/<id>`](#resuming-by-committed-requirements-on-emeryid)
   - [Resuming staged slices from `.emery/vcs/integration`](#resuming-staged-slices-from-emeryvcsintegration)
   - [Changing `--budget` mid-build](#changing---budget-mid-build)
+- [Building a change](#building-a-change)
+  - [Settling the built ancestor (`Basis::settle`)](#settling-the-built-ancestor-basissettle)
+  - [Minimum scope and the target adapter's `Task::Scope`](#minimum-scope-and-the-target-adapters-taskscope)
+  - [Carried parts, retiring slices, and `SliceChange`](#carried-parts-retiring-slices-and-slicechange)
 - [See also](#see-also)
 
 ---
@@ -221,8 +225,46 @@ Because resume tracks committed `Requirements:` rather than fixed slice IDs, you
 - When you re-run at the **same budget**, every slice of a part's cut aligns with `done`, so slice numbering and `(index/count)` positions stay identical.
 - When you re-run at a **different budget** mid-part, `Schedule::new` keeps the part's already-committed requirements together as one resumed slice (`SLICE-NNN`) and packs only the part's remaining unbuilt requirements into fresh slices under the new budget. No requirement is ever built twice.
 
-> [!NOTE]
-> Resume applies only within the **same revision**. When you seal an amendment with `emery apply`, the amended specification has a new revision ID (`emery/<new-id>`), so the next `emery build` builds the slices of the new revision over the existing repository tree.
+---
+
+## Building a change
+
+When you evolve a specification with [`emery amend`](../reference/cli/amend.md) and seal the amendment with [`emery apply`](../reference/cli/apply.md), the new revision records its predecessor in `spec.parent` and seals `spec/` directly over the predecessor's verified build commit. On the next [`emery build`](../reference/cli/build.md), Emery performs a **change build** rather than rebuilding the entire plan from scratch (unless you pass `--whole`).
+
+### Settling the built ancestor (`Basis::settle`)
+
+Before cutting the schedule, `Basis::settle` (`crates/engine/src/build/basis.rs`) walks the revision's `parent` lineage in the target repository to locate the **built ancestor**:
+
+1. Starting at `current.spec.parent`, Emery looks up `emery/<parent>` and checks that its head is an ancestor of the repository's base commit.
+2. If an ancestor revision was sealed and never built (`merged_under` holds no slice commits), Emery steps past it to its own `parent` (since its seal commit changed only `spec/`).
+3. Once it reaches an ancestor whose label holds slice commits, Emery verifies that the ancestor's build is complete—recomputing any carried set across earlier change-built hops in the lineage.
+4. If the ancestor is complete, it becomes the built ancestor (`Basis::Change`). Otherwise (if `--whole` was passed, `spec.parent` is `null` as on a first revision or `--fresh`, or the nearest built ancestor is only partly built), Emery falls back to a whole build (`Basis::Whole` with `reason`: `requested`, `no-parent`, or `parent-unbuilt`).
+
+### Minimum scope and the target adapter's `Task::Scope`
+
+Between the built ancestor and the current revision, `ChangeSet::between` (`crates/engine/src/build/change.rs`) computes the typed differences using `Diff::within` (pairing requirements by ID across one lineage) and derives the engine's **minimum scope** of parts (`PartReach` reasons):
+
+- `requirements`: The part places an `added` or `changed` requirement.
+- `departed`: A requirement that the built ancestor's part held was retired or moved to another part.
+- `types`: A design type that the part owns (`types`) or compiles against (`uses`) changed signature.
+- `plan`: The part's name, brief, `depends-on`, or requirement/type membership changed.
+
+Because a prose edit in a design section (such as an updated `APIs and integrations` decision) may affect parts without touching any requirement or type signature, Emery next cuts a read-only working copy at the built ancestor's commit (`.emery/vcs/scope`) and invokes the target adapter with **`Task::Scope(Change)`**:
+
+- The adapter inspects the typed `Change` (and optionally the read-only tree at `.emery/vcs/scope`) in deterministic code without a model turn, returning `Outcome::Scoped(Vec<String>)` with any additional `PART-NNN` IDs the change reaches.
+- `emery_sdk::target::scope::conservative` provides the SDK default: the minimum scope plus every plan part whenever any non-`overview` design prose section changed.
+- Emery verifies that `.emery/vcs/scope` has no pending file changes (enforcing W^X), removes the working copy, validates that every returned ID is a plan part, and unions the adapter's answer with the minimum scope (marking adapter-widened parts with reason `adapter`).
+
+### Carried parts, retiring slices, and `SliceChange`
+
+Once the part scope is settled:
+
+- **Carried parts:** Every part of the current plan outside `scope` is **carried** (`change.carried`). Its requirements are seeded into `done` before `Schedule::new` runs, so its slices are not dispatched, `Task::Init` is skipped, and its existing code in the repository tree stands untouched.
+- **Rebuilt parts:** Every part inside `scope` (`change.rebuilt`) is cut into budget-sized slices as usual, with owned data types on the part's first slice.
+- **Retiring slices:** Each part that existed in the built ancestor's plan and was removed from the current plan is cut as a **retiring slice** (`change.retiring`) in wave 1 with the removed part's ID, name, and brief, `requirements: []`, and all of the part's former requirements in `departed`. Its commit records a `Departed:` trailer alongside `Change: <built-revision>`, allowing interrupted change builds to resume retiring slices just like regular slices.
+- **Typed `SliceChange` per slice:** Every dispatched `Slice` carries `change: Some(SliceChange)` (rendered in the SDK build brief under `## The change`), giving the adapter the built revision ID and commit, each slice requirement's `standing` (`added`, `changed`, `unchanged`), the `prior` form of changed requirements, `departed` requirements (with `moved_to`), `built_before` requirements from earlier slices of the same part, `vanished` stems, changed `types`, and changed design `sections`.
+
+You can preview which slices will be rebuilt, `[carried]`, or `[retiring]` before running a build with [`emery show schedule`](../reference/cli/show.md#previewing-the-build-schedule-emery-show-schedule).
 
 ---
 

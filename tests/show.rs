@@ -6,10 +6,11 @@ mod support;
 
 use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::api::command::USAGE_EXIT;
+use omnia_sdk::vcs::Entry;
 use serde_json::{Value, json};
 use support::provider::{Provider, cli};
 use support::scratch::Scratch;
-use support::store::{seed, stage, stage_amendment, stage_fresh};
+use support::store::{seed, seed_at, stage, stage_amendment, stage_fresh};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 
@@ -18,6 +19,8 @@ use support::{cli_ok, fail};
 const SOURCE: &str = "acme:source@1.0.0";
 // The target every revision verb reads through, into the project checkout.
 const PROJECT_CONFIG: &str = "tests/build/project.toml";
+const BUILDER: &str = "acme:builder@2.1.0";
+const LABELLED: &str = "fedcba9876543210fedcba9876543210fedcba98";
 
 const AMENDMENT: &[u8] = include_bytes!("specify/6-amendment.json");
 const AMENDMENT_RENDERED: &str = include_str!("specify/6-amendment.md");
@@ -25,6 +28,7 @@ const AMENDMENT_RENDERED: &str = include_str!("specify/6-amendment.md");
 const SPEC: &[u8] = include_bytes!("build/spec.json");
 const DESIGN: &[u8] = include_bytes!("build/design.json");
 const PLAN: &[u8] = include_bytes!("build/plan.json");
+const WIDE_PLAN: &[u8] = include_bytes!("build/wide-plan.json");
 
 // A staged amendment renders as `amendment.md`: the front matter names its
 // id, the counts lead, and each class with entries follows in the fixed
@@ -424,4 +428,210 @@ async fn schedule_staged_flag() {
     );
     assert!(provider.vcs.calls().is_empty(), "refused before touching the repository");
     assert!(provider.target.metadata.lock().expect("metadata").is_empty());
+}
+
+fn slice_entry(
+    commit: &str, revision: &str, (slice, part, name): (&str, &str, &str), reqs: &str, wave: usize,
+) -> Entry {
+    Entry {
+        id: commit.to_owned(),
+        message: format!(
+            "{slice} {name}\n\nSlice: {slice}\nPart: {part}\nRevision: {revision}\nBudget: \
+             12\nRequirements: {reqs}\nCovered: {reqs}\nAdapter: {BUILDER}\nBase: {HEAD}\nWave: \
+             {wave}"
+        ),
+    }
+}
+
+// Seeds a built three-part parent (`WIDE_PLAN`) and a child that leaves
+// `PART-001` (`authentication`) carried, changes `PART-002` (`sessions`), and
+// removes `PART-003` (`orders`).
+fn change_schedule_lineage() -> (Provider, String, String, Vec<Entry>) {
+    let provider = Provider::idle();
+    let parent = seed_at(&provider.files, LABELLED, SPEC, DESIGN, WIDE_PLAN);
+
+    let mut child_spec: Value = serde_json::from_slice(SPEC).expect("spec");
+    child_spec["parent"] = json!(parent);
+    child_spec["requirements"].as_array_mut().expect("requirements").truncate(2);
+    child_spec["requirements"][1]["body"] = json!(["Sessions expire after 15 minutes."]);
+
+    let mut child_design: Value = serde_json::from_slice(DESIGN).expect("design");
+    child_design["parent"] = json!(parent);
+    child_design["sections"].as_array_mut().expect("sections").truncate(1);
+
+    let mut child_plan: Value = serde_json::from_slice(WIDE_PLAN).expect("wide-plan");
+    child_plan["parent"] = json!(parent);
+    child_plan["parts"].as_array_mut().expect("parts").truncate(2);
+
+    let child = seed(
+        &provider.files,
+        &serde_json::to_vec(&child_spec).expect("spec"),
+        &serde_json::to_vec(&child_design).expect("design"),
+        &serde_json::to_vec(&child_plan).expect("plan"),
+    );
+
+    let parent_log = vec![
+        slice_entry(
+            "m:SLICE-003",
+            &parent,
+            ("SLICE-003", "PART-003", "orders"),
+            "REQ-003, REQ-004",
+            1,
+        ),
+        slice_entry("m:SLICE-002", &parent, ("SLICE-002", "PART-002", "sessions"), "REQ-002", 2),
+        slice_entry(
+            "m:SLICE-001",
+            &parent,
+            ("SLICE-001", "PART-001", "authentication"),
+            "REQ-001",
+            1,
+        ),
+    ];
+    (provider, parent, child, parent_log)
+}
+
+// Over a built ancestor, `show schedule` settles the change basis, asks
+// `Task::Scope` when a target adapter is configured (or uses the minimum
+// scope and says so when none is), and marks `[carried]` and `[retiring]`
+// slices in the projection.
+#[tokio::test]
+async fn show_schedule_change() {
+    let (provider, parent, child, parent_log) = change_schedule_lineage();
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(parent_log.clone()));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "show", "schedule", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], child, "{envelope}");
+    assert_eq!(envelope["document"]["scoped"], json!(true), "{envelope}");
+    assert_eq!(
+        envelope["document"]["change"],
+        json!({
+            "from": parent,
+            "commit": LABELLED,
+            "rebuilt": [{"id": "PART-002", "name": "sessions", "reasons": ["requirements"]}],
+            "carried": ["PART-001"],
+            "retiring": ["SLICE-003"],
+        }),
+        "{envelope}"
+    );
+    let expected = format!(
+        "---\nemery: 10\nrevision: {child}\n---\n\n# Schedule\n\nBudget: 12 (default)\nWaves: \
+         [SLICE-001, SLICE-003], [SLICE-002]\nChange: {parent} at {LABELLED}\n\n## Slice: \
+         authentication [carried]\n\nID: SLICE-001\nPart: PART-001 (1/1)\nWave: 1\nRequirements: \
+         [REQ-001]\n\n## Slice: sessions\n\nID: SLICE-002\nPart: PART-002 (1/1)\nWave: \
+         2\nRequirements: [REQ-002]\n\n## Slice: orders [retiring]\n\nID: SLICE-003\nPart: \
+         PART-003 (1/1)\nWave: 1\nRequirements: []\nDeparted: [REQ-003, REQ-004]\n"
+    );
+    assert_eq!(envelope["body"], expected, "{envelope}");
+    assert_eq!(provider.target.scopes().len(), 1, "`Task::Scope` asked once");
+    provider.vcs.assert_exhausted();
+
+    // when the target adapter widens the scope, the widened part is unmarked
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(parent_log.clone()));
+    provider.target.scope(Ok(vec!["PART-001".to_owned(), "PART-002".to_owned()]));
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "show", "schedule", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["document"]["change"]["rebuilt"],
+        json!([
+            {"id": "PART-001", "name": "authentication", "reasons": ["adapter"]},
+            {"id": "PART-002", "name": "sessions", "reasons": ["requirements"]},
+        ]),
+        "{envelope}"
+    );
+    assert_eq!(envelope["document"]["change"]["carried"], json!([]), "{envelope}");
+    assert!(
+        envelope["body"].as_str().is_some_and(
+            |body| body.contains("## Slice: authentication\n") && !body.contains("[carried]")
+        ),
+        "{envelope}"
+    );
+    provider.vcs.assert_exhausted();
+
+    // with no target adapter configured, `show schedule` uses the minimum scope and says so
+    let scratch = Scratch::new();
+    let repo_only = scratch.config("[target]\nrepository = \".\"\n");
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(parent_log));
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "show", "schedule", "--config", &repo_only],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["document"]["scoped"], json!(false), "{envelope}");
+    assert_eq!(envelope["document"]["change"]["carried"], json!(["PART-001"]), "{envelope}");
+    assert!(
+        envelope["body"].as_str().is_some_and(|body| {
+            body.contains(&format!(
+                "Change: {parent} at {LABELLED} (minimum scope; no target adapter)\n"
+            )) && body.contains("## Slice: authentication [carried]\n")
+                && body.contains("## Slice: orders [retiring]\n")
+        }),
+        "{envelope}"
+    );
+    assert_eq!(provider.target.scopes().len(), 2, "no scope call without an adapter");
+    provider.vcs.assert_exhausted();
+}
+
+// `show schedule --whole`, or a revision whose parent build is incomplete,
+// projects a whole schedule with no `change` field, no `Change:` header, and
+// no `[carried]` or `[retiring]` slice marks.
+#[tokio::test]
+async fn show_schedule_whole() {
+    let (provider, parent, child, _) = change_schedule_lineage();
+
+    // `--whole` skips lineage inspection and `Task::Scope`
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "show", "schedule", "--whole", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], child, "{envelope}");
+    assert!(envelope["document"].get("change").is_none(), "{envelope}");
+    assert!(envelope["document"].get("scoped").is_none(), "{envelope}");
+    let expected = format!(
+        "---\nemery: 10\nrevision: {child}\n---\n\n# Schedule\n\nBudget: 12 (default)\nWaves: \
+         [SLICE-001], [SLICE-002]\n\n## Slice: authentication\n\nID: SLICE-001\nPart: PART-001 \
+         (1/1)\nWave: 1\nRequirements: [REQ-001]\n\n## Slice: sessions\n\nID: SLICE-002\nPart: \
+         PART-002 (1/1)\nWave: 2\nRequirements: [REQ-002]\n"
+    );
+    assert_eq!(envelope["body"], expected, "{envelope}");
+    assert!(provider.target.scopes().is_empty(), "`--whole` never asks `scope`");
+    provider.vcs.assert_exhausted();
+
+    // an incomplete parent build falls back to the same whole schedule
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![slice_entry(
+            "m:SLICE-001",
+            &parent,
+            ("SLICE-001", "PART-001", "authentication"),
+            "REQ-001",
+            1,
+        )]),
+    );
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "show", "schedule", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope["document"].get("change").is_none(), "{envelope}");
+    assert!(envelope["document"].get("scoped").is_none(), "{envelope}");
+    assert_eq!(envelope["body"], expected, "{envelope}");
+    assert!(provider.target.scopes().is_empty(), "incomplete parent does not ask `scope`");
+    provider.vcs.assert_exhausted();
 }

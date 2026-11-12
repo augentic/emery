@@ -57,19 +57,21 @@ impl BudgetSource {
         (DEFAULT_BUDGET, Self::Default)
     }
 
-    // Resolves the requirement budget, loading `adapter`'s metadata only when
-    // `budget` is `None`.
+    // Resolves the requirement budget and target adapter id, loading `adapter`
+    // only when `budget` is `None` or `load` is set.
     pub(crate) async fn resolve_with<P: Target + Plugins>(
         provider: &P, budget: Option<NonZeroUsize>, source: Option<Self>,
-        adapter: Option<&AdapterRef>, digest: Option<&Digest>,
-    ) -> Result<(NonZeroUsize, Self), Error> {
-        let metadata = match (budget, adapter) {
-            (None, Some(adapter)) => {
-                adapter::load_target(provider, adapter, digest).await?.metadata.budget
+        adapter: Option<&AdapterRef>, digest: Option<&Digest>, load: bool,
+    ) -> Result<(NonZeroUsize, Self, Option<String>), Error> {
+        let (id, metadata) = match adapter {
+            Some(adapter) if budget.is_none() || load => {
+                let loaded = adapter::load_target(provider, adapter, digest).await?;
+                (Some(loaded.id), loaded.metadata.budget)
             }
-            _ => None,
+            _ => (None, None),
         };
-        Ok(Self::resolve(budget, source, metadata))
+        let (budget, source) = Self::resolve(budget, source, metadata);
+        Ok((budget, source, id))
     }
 }
 
@@ -225,13 +227,6 @@ impl<'a> Schedule<'a> {
             slices,
             resumed: resumed.into_iter().collect(),
         }
-    }
-
-    // Cuts `revision`'s plan into slices of at most `budget` requirements,
-    // with nothing resumed, carried, or retiring.
-    #[must_use]
-    pub fn for_revision(revision: &'a Revision, budget: NonZeroUsize) -> Self {
-        Self::new(revision, budget, &MergedIds::default(), &[], &BTreeSet::new(), &[])
     }
 
     #[must_use]

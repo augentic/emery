@@ -1215,12 +1215,12 @@ async fn assert_amended(
     let shown = roots.run_idle(&["show", "schedule"], backends).await;
     assert_ok(&shown);
     assert!(
-        shown.stdout.contains(
-            "# Schedule\n\nBudget: 2 (adapter)\nWaves: [SLICE-001, SLICE-002]\n\n## Slice: \
-             greeting\n\nID: SLICE-001\nPart: PART-001 (1/1)\nWave: 1\nRequirements: [REQ-001]\n\n\
-             ## Slice: farewell\n\nID: SLICE-002\nPart: PART-002 (1/1)\nWave: 1\nRequirements: \
-             [REQ-002]\n"
-        ),
+        shown.stdout.contains(&format!(
+            "# Schedule\n\nBudget: 2 (adapter)\nWaves: [SLICE-001, SLICE-002]\nChange: {parent} \
+             at {over}\n\n## Slice: greeting\n\nID: SLICE-001\nPart: PART-001 (1/1)\nWave: \
+             1\nRequirements: [REQ-001]\n\n## Slice: farewell\n\nID: SLICE-002\nPart: PART-002 \
+             (1/1)\nWave: 1\nRequirements: [REQ-002]\n"
+        )),
         "{}",
         shown.stdout
     );
@@ -1950,8 +1950,8 @@ async fn build_resumed() {
         run.stdout,
         format!(
             "built revision {revision}\n  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in \
-             1 wave, widest 1\n  base {base}\n  resumed: SLICE-001\n  labelled {label} at \
-             {head}\n"
+             1 wave, widest 1\n  whole build: no parent revision\n  base {base}\n  resumed: \
+             SLICE-001\n  labelled {label} at {head}\n"
         )
     );
     assert_eq!(roots.git.run(project, &["rev-parse", &label]), head, "the label stands");
@@ -2235,9 +2235,9 @@ async fn build_resumed_staged() {
         run.stdout,
         format!(
             "built revision {revision}\n  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in \
-             1 wave, widest 1\n  base {base}\n  resumed: SLICE-001\n  wave 1: 1 slice verified at \
-             {}\n    SLICE-001: staged by an earlier run, not built again\n  labelled {label} at \
-             {staged}\n",
+             1 wave, widest 1\n  whole build: no parent revision\n  base {base}\n  resumed: \
+             SLICE-001\n  wave 1: 1 slice verified at {}\n    SLICE-001: staged by an earlier \
+             run, not built again\n  labelled {label} at {staged}\n",
             &staged[..8]
         )
     );
@@ -2740,8 +2740,8 @@ async fn build_laid() {
         run.stdout,
         format!(
             "built revision {revision}\n  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in \
-             1 wave, widest 1\n  base {root}\n  repository ./{TARGET_REPO}\n  resumed: \
-             SLICE-001\n  labelled {label} at {head}\n"
+             1 wave, widest 1\n  whole build: no parent revision\n  base {root}\n  repository \
+             ./{TARGET_REPO}\n  resumed: SLICE-001\n  labelled {label} at {head}\n"
         )
     );
     assert_eq!(roots.git.run(&repo, &["rev-list", "--max-parents=0", &label]), root);

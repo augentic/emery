@@ -1,10 +1,10 @@
 //! Computes the typed change between a built ancestor revision and the current revision.
 //!
-//! [`ChangeSet::between`] pairs requirements, design types, design sections,
-//! and plan parts across one lineage using [`Diff::within`](crate::specify::Diff::within).
-//! It derives the engine's minimum part scope, formats the [`TargetChange`]
-//! record passed to [`Task::Scope`](emery_adapter::target::Task::Scope), and
-//! builds the [`SliceChange`] carried by each slice of a change build.
+//! `ChangeSet::between` pairs requirements, design types, design sections,
+//! and plan parts across one lineage using `Diff::within`. It derives the
+//! engine's minimum part scope, formats the `TargetChange` record passed to
+//! `Task::Scope`, and builds the `SliceChange` carried by each slice of a
+//! change build.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -38,13 +38,9 @@ pub struct Change {
 }
 
 impl Change {
-    /// Summarises `change` for the resolved part `scope` and `retiring` slices.
-    ///
-    /// Parts in `scope` whose minimum [`PartReach::reasons`] are empty carry
-    /// [`Reason::Adapter`]. Parts outside `scope` are listed in
-    /// [`carried`](Self::carried).
+    // Summarises `change` for the resolved part `scope` and `retiring` slices.
     #[must_use]
-    pub fn of(change: &ChangeSet, scope: &BTreeSet<PartId>, retiring: Vec<SliceId>) -> Self {
+    fn of(change: &ChangeSet, scope: &BTreeSet<PartId>, retiring: Vec<SliceId>) -> Self {
         let mut rebuilt = Vec::new();
         let mut carried = Vec::new();
         for part in &change.parts {
@@ -83,6 +79,19 @@ pub struct PartReach {
     pub name: String,
     /// Why the change reaches the part, in declaration order.
     pub reasons: Vec<Reason>,
+}
+
+impl std::fmt::Display for PartReach {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} (", self.id, self.name)?;
+        for (position, reason) in self.reasons.iter().enumerate() {
+            if position > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{reason}")?;
+        }
+        f.write_str(")")
+    }
 }
 
 /// Why a change build reaches a part of the plan.
@@ -141,7 +150,7 @@ pub enum WholeReason {
     ParentUnbuilt,
 }
 
-/// The typed differences between a built ancestor revision and the current revision.
+// The typed differences between a built ancestor revision and the current revision.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangeSet {
     built: String,
@@ -157,7 +166,7 @@ pub struct ChangeSet {
 }
 
 impl ChangeSet {
-    /// Computes the typed change from `outgoing` (identified by `built` at `commit`) to `incoming`.
+    // Computes the typed change from `outgoing` (identified by `built` at `commit`) to `incoming`.
     #[must_use]
     pub fn between(
         built: impl Into<String>, commit: impl Into<String>, outgoing: &Revision,
@@ -217,37 +226,26 @@ impl ChangeSet {
         }
     }
 
-    /// Returns the built ancestor revision identifier.
     #[must_use]
     pub fn built(&self) -> &str {
         &self.built
     }
 
-    /// Returns the commit the built ancestor's label stands at.
     #[must_use]
     pub fn commit(&self) -> &str {
         &self.commit
     }
 
-    /// Returns every part of the current plan with its minimum scope reasons, in id order.
-    #[must_use]
-    pub fn parts(&self) -> &[PartReach] {
-        &self.parts
-    }
-
-    /// Returns the parts of the built plan that the current plan removed, in id order.
     #[must_use]
     pub fn removed_parts(&self) -> &[Part] {
         &self.removed
     }
 
-    /// Returns the part ids the engine's minimum scope reaches from typed facts alone.
     #[must_use]
     pub fn minimum(&self) -> BTreeSet<PartId> {
         self.parts.iter().filter(|part| !part.reasons.is_empty()).map(|part| part.id).collect()
     }
 
-    /// Returns the contract [`TargetChange`] record passed to [`Task::Scope`](emery_adapter::target::Task::Scope).
     #[must_use]
     pub fn as_wit(&self) -> TargetChange {
         TargetChange {
@@ -275,7 +273,6 @@ impl ChangeSet {
         }
     }
 
-    /// Returns the requirements of every current plan part outside `scope`.
     #[must_use]
     pub fn carried(&self, scope: &BTreeSet<PartId>) -> BTreeSet<ReqId> {
         self.parts
@@ -286,10 +283,9 @@ impl ChangeSet {
             .collect()
     }
 
-    /// Returns the [`SliceChange`] for a slice of `part` building `requirements`.
-    ///
-    /// `built_before` lists the requirement ids of `part` that earlier slices
-    /// of this build already rebuilt.
+    // Builds the `SliceChange` for a slice of `part` building `requirements`,
+    // where `built_before` lists the requirement ids of `part` that earlier
+    // slices of this build already rebuilt.
     #[must_use]
     pub fn slice_change(
         &self, part: PartId, requirements: &[ReqId], built_before: &[ReqId],
@@ -319,7 +315,6 @@ impl ChangeSet {
         }
     }
 
-    /// Returns the build output [`Change`] summary for `scope` and `retiring` slices.
     #[must_use]
     pub fn describe(&self, scope: &BTreeSet<PartId>, retiring: Vec<SliceId>) -> Change {
         Change::of(self, scope, retiring)

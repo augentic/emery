@@ -183,6 +183,20 @@ fn requirement(
 // the fixtures.
 fn typed(first: &Slice, second: &Slice) {
     assert_eq!(
+        (first.id.as_str(), first.part.as_str(), first.name.as_str(), first.index, first.count),
+        ("SLICE-001", "PART-001", "authentication", 1, 1)
+    );
+    assert_eq!(
+        (
+            second.id.as_str(),
+            second.part.as_str(),
+            second.name.as_str(),
+            second.index,
+            second.count
+        ),
+        ("SLICE-002", "PART-002", "orders", 1, 1)
+    );
+    assert_eq!(
         first.requirements,
         [
             requirement(
@@ -398,10 +412,11 @@ async fn build_plan() {
         stdout,
         format!(
             "built revision {id}\n  plan: 2 parts in 2 waves; budget 12 (default): 2 slices in 2 \
-             waves, widest 1\n  base {BASE}\n  wave 1: 1 slice verified at 9f8e7d6c\n    \
-             SLICE-001 authentication: covered 2/2, written 1 file, merged m:SLICE-001\n  wave 2: \
-             1 slice verified at 9f8e7d6c\n    SLICE-002 orders: covered 1/2 (uncovered REQ-004), \
-             written 3 files, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
+             waves, widest 1\n  whole build: no parent revision\n  base {BASE}\n  wave 1: 1 slice \
+             verified at 9f8e7d6c\n    SLICE-001 authentication: covered 2/2, written 1 file, \
+             merged m:SLICE-001\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 orders: \
+             covered 1/2 (uncovered REQ-004), written 3 files, merged m:SLICE-002\n  labelled \
+             emery/{id} at {HEAD}\n"
         )
     );
 
@@ -420,18 +435,10 @@ async fn build_plan() {
 
     // each slice carries its own documents, typed beside the renderings, and
     // the head it builds over
-    assert_eq!(first.id, "SLICE-001");
-    assert_eq!(first.part, "PART-001");
-    assert_eq!(first.name, "authentication");
-    assert_eq!((first.index, first.count), (1, 1));
     assert_eq!(first.spec, SPEC_001, "the specification is cut to the slice");
     assert_eq!(first.design, DESIGN_MD, "the design is whole");
     assert_eq!(first.plan, PLAN_001, "the plan entry is the slice's own");
     assert_eq!(first.base, BASE, "the first wave builds over the base");
-    assert_eq!(second.id, "SLICE-002");
-    assert_eq!(second.part, "PART-002");
-    assert_eq!(second.name, "orders");
-    assert_eq!((second.index, second.count), (1, 1));
     assert_eq!(second.spec, SPEC_002);
     assert_eq!(second.design, DESIGN_MD);
     assert_eq!(second.plan, PLAN_002);
@@ -552,11 +559,11 @@ async fn build_waves() {
         stdout,
         format!(
             "built revision {id}\n  plan: 3 parts in 2 waves; budget 12 (default): 3 slices in 2 \
-             waves, widest 2\n  base {BASE}\n  wave 1: 2 slices verified at 9f8e7d6c\n    \
-             SLICE-001 authentication: covered 1/1, written 1 file, merged m:SLICE-001\n    \
-             SLICE-003 orders: covered 2/2, written 1 file, merged m:SLICE-003\n  wave 2: 1 slice \
-             verified at 9f8e7d6c\n    SLICE-002 sessions: covered 1/1, written 1 file, merged \
-             m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
+             waves, widest 2\n  whole build: no parent revision\n  base {BASE}\n  wave 1: 2 \
+             slices verified at 9f8e7d6c\n    SLICE-001 authentication: covered 1/1, written 1 \
+             file, merged m:SLICE-001\n    SLICE-003 orders: covered 2/2, written 1 file, merged \
+             m:SLICE-003\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: \
+             covered 1/1, written 1 file, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
         )
     );
     provider.vcs.assert_exhausted();
@@ -930,11 +937,12 @@ async fn conflict_as_written() {
         String::from_utf8_lossy(&resp.stdout),
         format!(
             "built revision {id}\n  plan: 3 parts in 2 waves; budget 12 (default): 3 slices in 2 \
-             waves, widest 2\n  base {BASE}\n  wave 1: 2 slices verified at 9f8e7d6c\n    \
-             SLICE-001 authentication: covered 1/1, written 2 files, merged m:SLICE-001\n    \
-             SLICE-003 orders: covered 2/2, written 1 file, merged m:SLICE-003, resolved \
-             (src/lib.rs)\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: \
-             covered 1/1, written 1 file, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
+             waves, widest 2\n  whole build: no parent revision\n  base {BASE}\n  wave 1: 2 \
+             slices verified at 9f8e7d6c\n    SLICE-001 authentication: covered 1/1, written 2 \
+             files, merged m:SLICE-001\n    SLICE-003 orders: covered 2/2, written 1 file, merged \
+             m:SLICE-003, resolved (src/lib.rs)\n  wave 2: 1 slice verified at 9f8e7d6c\n    \
+             SLICE-002 sessions: covered 1/1, written 1 file, merged m:SLICE-002\n  labelled \
+             emery/{id} at {HEAD}\n"
         )
     );
     provider.model.assert_exhausted();
@@ -1434,9 +1442,10 @@ async fn build_resumed() {
         stdout,
         format!(
             "built revision {id}\n  plan: 3 parts in 2 waves; budget 12 (default): 3 slices in 2 \
-             waves, widest 2\n  base {HEAD}\n  resumed: SLICE-001, SLICE-003\n  wave 1: 1 slice \
-             verified at 9f8e7d6c\n    SLICE-002 sessions: covered 1/1, written 1 file, merged \
-             m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
+             waves, widest 2\n  whole build: no parent revision\n  base {HEAD}\n  resumed: \
+             SLICE-001, SLICE-003\n  wave 1: 1 slice verified at 9f8e7d6c\n    SLICE-002 \
+             sessions: covered 1/1, written 1 file, merged m:SLICE-002\n  labelled emery/{id} at \
+             {HEAD}\n"
         )
     );
     provider.vcs.assert_exhausted();
@@ -1467,8 +1476,8 @@ async fn build_resumed_complete() {
         stdout,
         format!(
             "built revision {id}\n  plan: 2 parts in 2 waves; budget 12 (default): 2 slices in 2 \
-             waves, widest 1\n  base {HEAD}\n  resumed: SLICE-001, SLICE-002\n  labelled \
-             emery/{id} at {LABELLED}\n"
+             waves, widest 1\n  whole build: no parent revision\n  base {HEAD}\n  resumed: \
+             SLICE-001, SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
         )
     );
     assert!(provider.target.calls().is_empty(), "nothing to build");
@@ -1516,9 +1525,9 @@ async fn build_candidate_staged() {
         stdout,
         format!(
             "built revision {id}\n  plan: 2 parts in 2 waves; budget 12 (default): 2 slices in 2 \
-             waves, widest 1\n  candidate {candidate} is staged and not sealed; `emery apply` \
-             seals it\n  base {HEAD}\n  resumed: SLICE-001, SLICE-002\n  labelled emery/{id} at \
-             {LABELLED}\n"
+             waves, widest 1\n  whole build: no parent revision\n  candidate {candidate} is \
+             staged and not sealed; `emery apply` seals it\n  base {HEAD}\n  resumed: SLICE-001, \
+             SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
         ),
         "the two-slice revision is built, not the three-slice candidate"
     );
@@ -1562,9 +1571,9 @@ async fn build_amendment_staged() {
         String::from_utf8_lossy(&resp.stdout),
         format!(
             "built revision {id}\n  plan: 2 parts in 2 waves; budget 12 (default): 2 slices in 2 \
-             waves, widest 1\n  amendment {amendment} is staged; `emery show amendment` reviews \
-             it\n  base {HEAD}\n  resumed: SLICE-001, SLICE-002\n  labelled emery/{id} at \
-             {LABELLED}\n"
+             waves, widest 1\n  whole build: no parent revision\n  amendment {amendment} is \
+             staged; `emery show amendment` reviews it\n  base {HEAD}\n  resumed: SLICE-001, \
+             SLICE-002\n  labelled emery/{id} at {LABELLED}\n"
         )
     );
     assert_eq!(provider.storage.snapshot(), before, "a build writes nothing to either slot");
@@ -1760,11 +1769,11 @@ async fn build_resumed_staged() {
         stdout,
         format!(
             "built revision {id}\n  plan: 3 parts in 2 waves; budget 12 (default): 3 slices in 2 \
-             waves, widest 2\n  base {HEAD}\n  resumed: SLICE-001, SLICE-003\n  wave 1: 2 slices \
-             verified at 5a6b7c8d\n    SLICE-001: staged by an earlier run, not built again\n    \
-             SLICE-003: staged by an earlier run, not built again\n  wave 2: 1 slice verified at \
-             9f8e7d6c\n    SLICE-002 sessions: covered 1/1, written 1 file, merged m:SLICE-002\n  \
-             labelled emery/{id} at {HEAD}\n"
+             waves, widest 2\n  whole build: no parent revision\n  base {HEAD}\n  resumed: \
+             SLICE-001, SLICE-003\n  wave 1: 2 slices verified at 5a6b7c8d\n    SLICE-001: staged \
+             by an earlier run, not built again\n    SLICE-003: staged by an earlier run, not \
+             built again\n  wave 2: 1 slice verified at 9f8e7d6c\n    SLICE-002 sessions: covered \
+             1/1, written 1 file, merged m:SLICE-002\n  labelled emery/{id} at {HEAD}\n"
         )
     );
     provider.vcs.assert_exhausted();
@@ -4018,6 +4027,18 @@ async fn build_change_reported() {
     assert!(calls.contains(&format!("pending {SCOPE}")), "{calls:?}");
     assert!(calls.contains(&format!("remove {SCOPE}")), "{calls:?}");
     provider.vcs.assert_exhausted();
+
+    let (provider, parent, _) = wide_lineage();
+    let text = cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG]).await;
+    assert!(
+        String::from_utf8_lossy(&text.stdout).contains(&format!(
+            "\n  change from {parent}: rebuilds PART-003 orders (requirements); carries PART-001, \
+             PART-002\n"
+        )),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
+    );
+    provider.vcs.assert_exhausted();
 }
 
 // The adapter's `Scoped` answer unions with the minimum scope, marking
@@ -4101,6 +4122,22 @@ async fn build_change_unbuilt_parent() {
     assert_eq!(envelope["whole"], json!({"reason": "parent-unbuilt"}), "{envelope}");
     assert!(provider.target.scopes().is_empty(), "scope is not asked for an unbuilt parent");
     assert_eq!(provider.target.calls().len(), 2, "every slice of the plan builds");
+    provider.vcs.assert_exhausted();
+
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![entry(
+            "m:SLICE-001",
+            &message(&parent, AUTHENTICATION, "REQ-001, REQ-002", "REQ-001, REQ-002", HEAD, 1),
+        )]),
+    );
+    let text = cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG]).await;
+    assert!(
+        String::from_utf8_lossy(&text.stdout).contains("\n  whole build: parent is partly built\n"),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
+    );
     provider.vcs.assert_exhausted();
 }
 
@@ -4225,6 +4262,14 @@ async fn build_whole() {
     assert!(envelope.get("change").is_none(), "{envelope}");
     assert_eq!(envelope["whole"], json!({"reason": "requested"}), "{envelope}");
     assert!(provider.target.scopes().is_empty(), "`--whole` never asks `scope`");
+    provider.vcs.assert_exhausted();
+
+    let text = cli_ok(&provider, &["emery", "build", "--whole", "--config", PROJECT_CONFIG]).await;
+    assert!(
+        String::from_utf8_lossy(&text.stdout).contains("\n  whole build: requested (--whole)\n"),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
+    );
     provider.vcs.assert_exhausted();
 
     // a candidate staged `--fresh` and sealed over a lineage has no parent (`no-parent`)
@@ -4604,12 +4649,14 @@ async fn build_change_retire() {
     provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
     provider.vcs.logs.script(".", Ok(vec![entry("m:SLICE-003", &commit_msg)]));
 
-    let resp =
-        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
-            .await;
-    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
-    assert_eq!(envelope["resumed"], json!(["SLICE-003"]), "{envelope}");
-    assert!(envelope["slices"].as_array().is_some_and(Vec::is_empty), "{envelope}");
+    let resp = cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG]).await;
+    assert!(
+        String::from_utf8_lossy(&resp.stdout).contains(&format!(
+            "\n  change from {parent}: carries PART-001, PART-002; retires PART-003 orders\n"
+        )),
+        "{}",
+        String::from_utf8_lossy(&resp.stdout)
+    );
     assert_eq!(provider.target.calls().len(), 1, "no slice dispatched on resume");
     provider.vcs.assert_exhausted();
 }

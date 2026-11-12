@@ -387,13 +387,16 @@ struct ShowArgs {
     /// The maximum number of requirements per build slice for `schedule`; over `--config`, it replaces the `[target] budget`.
     #[arg(long, short = 'b', env = "EMERY_BUDGET", value_name = "N")]
     budget: Option<NonZeroUsize>,
+    /// Cut `schedule` for every part of the plan from the base, ignoring any built ancestor in the lineage.
+    #[arg(long)]
+    whole: bool,
 }
 
 impl TryFrom<ShowArgs> for ShowInput {
     type Error = Error;
 
     fn try_from(args: ShowArgs) -> Result<Self, Error> {
-        config::show(args.artifact, args.staged, args.config.as_deref(), args.budget)
+        config::show(args.artifact, args.staged, args.config.as_deref(), args.budget, args.whole)
     }
 }
 

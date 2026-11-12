@@ -185,6 +185,7 @@ Now run [`emery build`](../reference/cli/build.md) to execute the sealed build p
 ```text
 built revision <revision-id>
   plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in 1 wave, widest 1
+  whole build: no parent revision
   base <base-sha>
   initialised <init-sha>, 1 file
   wave 1: 1 slice verified at <head-sha>

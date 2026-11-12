@@ -28,6 +28,7 @@ emery build <adapter> --repository . # build into the project repository
 emery build                          # discovers the project-root emery.toml
 emery build --jobs 2                 # build at most 2 slices concurrently per wave
 emery build --budget 8               # cut parts into slices of at most 8 requirements
+emery build --whole                  # build every part from the base, ignoring any built ancestor
 ```
 
 ---
@@ -92,6 +93,7 @@ budget = 12                                  # optional requirement budget per s
 | `--config [<path>]` | `-c` | Path to configuration file (defaults to `emery.toml` when `<path>` is omitted; discovered automatically when no `<adapter>` is passed). |
 | `--jobs <N>` | `-j` | Maximum number of slices in a wave to build concurrently (positive integer; `0` is exit `64`; env `EMERY_JOBS`). Unset builds all ready slices in a wave concurrently within the backend's agent limit. |
 | `--budget <N>` | `-b` | Maximum number of requirements per build slice (positive integer; `0` is exit `64`; env `EMERY_BUDGET`). Overrides `[target] budget` and the target adapter's metadata default. |
+| `--whole` | — | Build every part of the plan from the base, ignoring any built ancestor in the lineage (`whole.reason = "requested"`). |
 | `--format <text\|json>` | — | Output format (`text` or `json`; env `EMERY_FORMAT`). |
 
 ---
@@ -103,10 +105,12 @@ When `--format json` is passed, `emery build` writes a single JSON object to `st
 | Field | Type | When present | Description |
 | --- | --- | --- | --- |
 | `revision` | `string` | Always | SHA-256 ID of the sealed revision that was built. |
+| `change` | `{ from, commit, rebuilt, carried, retiring }` | On a change build | Summary against the built ancestor revision (`from` and its label `commit`, `rebuilt` `{ id, name, reasons }[]`, `carried` `PART-NNN[]`, and `retiring` `SLICE-NNN[]`). Mutually exclusive with `whole`. |
+| `whole` | `{ reason }` | On a whole build | Why every part was built from the base (`"requested"` \| `"no-parent"` \| `"parent-unbuilt"`). Mutually exclusive with `change`. |
 | `budget` | `number` | Always | Requirement budget per slice the schedule was cut under. |
 | `budget-source` | `"flag"` \| `"config"` \| `"adapter"` \| `"default"` | Always | Where `budget` came from. |
 | `parts` | `string[][]` | Always | Part IDs (`PART-NNN`) grouped into dependency waves. |
-| `schedule` | `object[]` | Always | Scheduled slices in schedule order: `{ id, part, name, index, count, requirements, types, over-budget }`. |
+| `schedule` | `object[]` | Always | Scheduled slices in schedule order: `{ id, part, name, index, count, requirements, departed, types, over-budget }`. |
 | `waves` | `string[][]` | Always | Slice IDs (`SLICE-NNN`) grouped into dependency waves. |
 | `candidate` | `{ id, kind }` | When an unsealed candidate or amendment is staged | Identifies the staged item (`kind` is `"revision"` or `"amendment"`) that was not built. |
 | `base` | `string` | Always | Base Git commit SHA the build started from. |
@@ -127,6 +131,7 @@ When `--format json` is passed, `emery build` writes a single JSON object to `st
 ```text
 built revision 9f8e7d6c…
   plan: 3 parts in 2 waves; budget 12 (adapter): 4 slices in 3 waves, widest 2
+  whole build: no parent revision
   base 1a2b3c4d…
   repository ./.emery/vcs/repos/shop
   initialised 2b3c4d5e, 3 files
@@ -139,6 +144,12 @@ built revision 9f8e7d6c…
   wave 3: 1 slice verified at 9c0d1e2f, repaired
     SLICE-003 orders (2/2): covered 5/6 (uncovered REQ-014), written 3 files, merged 9c0d1e2f…, resolved (src/lib.rs)
   labelled emery/9f8e7d6c… at 9c0d1e2f…
+```
+
+On a change build over a built ancestor, the basis line reports the ancestor revision and which parts are rebuilt, carried, or retired:
+
+```text
+  change from 1a2b3c4d…: rebuilds PART-002 orders (requirements); carries PART-001, PART-003; retires PART-004 returns
 ```
 
 ---
