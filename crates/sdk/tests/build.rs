@@ -2416,7 +2416,7 @@ fn assert_change_helpers(slice: &Slice, prior: &Requirement) {
         "an owned type's stem is reached while an unowned used type's is not"
     );
     type_only.change = None;
-    assert_eq!(type_only.reached_stems(), [] as [&str; 0]);
+    assert_eq!(type_only.reached_stems(), [] as [String; 0]);
 }
 
 // A change slice renders `## The change` between the plan entry and the

@@ -461,7 +461,7 @@ pub(crate) struct Run<'a> {
     design: &'a Design,
     // the design as every slice carries it
     rendered: &'a str,
-    schedule: &'a Schedule<'a>,
+    schedule: &'a Schedule,
     change: Option<&'a ChangeSet>,
     budget: usize,
     repo: &'a BuildRepo,
@@ -983,10 +983,10 @@ impl Progress {
     // recording the slices resumed from the label or `staged` in the
     // integration copy at `head` and seeding carried requirements into
     // `merged`.
-    fn schedule<'a>(
-        &mut self, head: String, staged: Vec<StagedSlice>, revision: &'a Revision,
-        budget: NonZeroUsize, basis: &'a Basis,
-    ) -> Schedule<'a> {
+    fn schedule(
+        &mut self, head: String, staged: Vec<StagedSlice>, revision: &Revision,
+        budget: NonZeroUsize, basis: &Basis,
+    ) -> Schedule {
         let carried = basis.carried();
         let schedule =
             Schedule::new(revision, budget, &self.merged, &staged, &carried, basis.removed_parts());

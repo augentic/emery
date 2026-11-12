@@ -7,7 +7,7 @@ Minimal WebAssembly (Wasm) source and target adapters and a sample project fixtu
 | Path | Description |
 | --- | --- |
 | [`source/`](source/) | Minimal `emery:adapter/source` guest (`example:source@0.1.0`) that extracts claims from Markdown or inline text under `prose/extract.md`. |
-| [`target/`](target/) | Minimal `emery:adapter/target` guest (`example:target@0.1.0`) that scaffolds `build/README.md`, builds slice Markdown files under `build/<slice>/`, union-merges `build/*/index.md`, and verifies waves. |
+| [`target/`](target/) | Minimal `emery:adapter/target` guest (`example:target@0.1.0`) that scaffolds `build/README.md`, scopes change builds conservatively, builds slice Markdown files under `build/<slice>/`, union-merges `build/*/index.md`, and verifies waves. |
 | [`docs/greeting.md`](docs/greeting.md) | Sample Markdown source document used by the tutorials. |
 | [`emery.toml`](emery.toml) | Annotated sample configuration wiring `example:source@0.1.0` and `example:target@0.1.0`. |
 

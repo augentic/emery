@@ -252,7 +252,7 @@ impl Slice {
     /// [`types`](Self::types) or removed types in [`SliceChange::types`].
     /// Returns an empty vector when [`change`](Self::change) is `None`.
     #[must_use]
-    pub fn reached_stems(&self) -> Vec<&str> {
+    pub fn reached_stems(&self) -> Vec<String> {
         self.change
             .as_ref()
             .map_or_else(Vec::new, |change| change.reached_stems(&self.requirements, &self.types))

@@ -103,6 +103,18 @@ Now build the amended revision and fast-forward your branch:
 git merge --ff-only emery/<second-revision-id>
 ```
 
+```text
+built revision <second-revision-id>
+  plan: 1 part in 1 wave; budget 2 (adapter): 1 slice in 1 wave, widest 1
+  change from <first-revision-id>: rebuilds PART-001 greeting (requirements)
+  base <base-sha>
+  wave 1: 1 slice verified at <head-sha>
+    SLICE-001 greeting: covered 1/1, written 1 file, merged <head-sha>
+  labelled emery/<second-revision-id> at <head-sha>
+```
+
+Because `<second-revision-id>` amends `<first-revision-id>` (whose build is already complete on `emery/<first-revision-id>`) and no non-overview design section changed, `emery build` runs a **change build**: it skips `Task::Init`, asks the target adapter's `Task::Scope` in a read-only worktree at `<first-revision-id>`'s commit, and rebuilds only `PART-001` (`greeting`), passing the prior and current statements of `REQ-001` in `Slice.change` and recording `Change: <first-revision-id>` on the slice commit. Any unaffected parts in a multi-part plan are carried without rebuilding (unless you pass `--whole`).
+
 ---
 
 ## 4. Add a new requirement and technology decision

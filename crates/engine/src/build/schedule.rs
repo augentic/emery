@@ -130,14 +130,14 @@ impl ScheduledSlice {
 
 // A plan's parts cut into budget-sized slices for one build.
 #[derive(Debug, Clone)]
-pub struct Schedule<'a> {
-    plan: &'a Plan,
-    retiring: &'a [Part],
+pub struct Schedule {
+    plan: Plan,
+    retiring: Vec<Part>,
     slices: Vec<ScheduledSlice>,
     resumed: Vec<SliceId>,
 }
 
-impl<'a> Schedule<'a> {
+impl Schedule {
     // Cuts `revision`'s plan into slices of at most `budget` requirements.
     //
     // `merged` are the requirements and departed ids already committed on the
@@ -151,8 +151,8 @@ impl<'a> Schedule<'a> {
     // into fresh slices; and each removed part is cut as one retiring slice.
     #[must_use]
     pub fn new(
-        revision: &'a Revision, budget: NonZeroUsize, merged: &MergedIds, staged: &[StagedSlice],
-        carried: &BTreeSet<ReqId>, retiring: &'a [Part],
+        revision: &Revision, budget: NonZeroUsize, merged: &MergedIds, staged: &[StagedSlice],
+        carried: &BTreeSet<ReqId>, retiring: &[Part],
     ) -> Self {
         let plan = &revision.plan;
         let spec = &revision.spec;
@@ -222,8 +222,8 @@ impl<'a> Schedule<'a> {
         }
 
         Self {
-            plan,
-            retiring,
+            plan: plan.clone(),
+            retiring: retiring.to_vec(),
             slices,
             resumed: resumed.into_iter().collect(),
         }
@@ -286,12 +286,12 @@ impl<'a> Schedule<'a> {
     }
 
     #[must_use]
-    pub const fn plan(&self) -> &'a Plan {
-        self.plan
+    pub const fn plan(&self) -> &Plan {
+        &self.plan
     }
 
     #[must_use]
-    pub fn part(&self, id: PartId) -> Option<&'a Part> {
+    pub fn part(&self, id: PartId) -> Option<&Part> {
         self.plan.part(id).or_else(|| self.retiring.iter().find(|part| part.id == id))
     }
 

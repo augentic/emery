@@ -37,38 +37,6 @@ pub struct Change {
     pub retiring: Vec<SliceId>,
 }
 
-impl Change {
-    // Summarises `change` for the resolved part `scope` and `retiring` slices.
-    #[must_use]
-    fn of(change: &ChangeSet, scope: &BTreeSet<PartId>, retiring: Vec<SliceId>) -> Self {
-        let mut rebuilt = Vec::new();
-        let mut carried = Vec::new();
-        for part in &change.parts {
-            if scope.contains(&part.id) {
-                let reasons = if part.reasons.is_empty() {
-                    vec![Reason::Adapter]
-                } else {
-                    part.reasons.clone()
-                };
-                rebuilt.push(PartReach {
-                    id: part.id,
-                    name: part.name.clone(),
-                    reasons,
-                });
-            } else {
-                carried.push(part.id);
-            }
-        }
-        Self {
-            from: change.built.clone(),
-            commit: change.commit.clone(),
-            rebuilt,
-            carried,
-            retiring,
-        }
-    }
-}
-
 /// A plan part reached by a change build and why it is rebuilt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -315,9 +283,34 @@ impl ChangeSet {
         }
     }
 
+    // Summarises this change set for the resolved part `scope` and `retiring` slices.
     #[must_use]
     pub fn describe(&self, scope: &BTreeSet<PartId>, retiring: Vec<SliceId>) -> Change {
-        Change::of(self, scope, retiring)
+        let mut rebuilt = Vec::new();
+        let mut carried = Vec::new();
+        for part in &self.parts {
+            if scope.contains(&part.id) {
+                let reasons = if part.reasons.is_empty() {
+                    vec![Reason::Adapter]
+                } else {
+                    part.reasons.clone()
+                };
+                rebuilt.push(PartReach {
+                    id: part.id,
+                    name: part.name.clone(),
+                    reasons,
+                });
+            } else {
+                carried.push(part.id);
+            }
+        }
+        Change {
+            from: self.built.clone(),
+            commit: self.commit.clone(),
+            rebuilt,
+            carried,
+            retiring,
+        }
     }
 }
 

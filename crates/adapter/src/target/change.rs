@@ -128,29 +128,27 @@ impl SliceChange {
     /// requirements, [`departed`](Self::departed) requirements, and `owned`
     /// or removed types in [`types`](Self::types).
     #[must_use]
-    pub fn reached_stems<'a>(
-        &'a self, requirements: &'a [Requirement], owned: &'a [DesignType],
-    ) -> Vec<&'a str> {
+    pub fn reached_stems(&self, requirements: &[Requirement], owned: &[DesignType]) -> Vec<String> {
         let mut stems = BTreeSet::new();
         for (requirement, standing) in requirements.iter().zip(&self.standing) {
             if matches!(standing, Standing::Added | Standing::Changed) {
-                stems.insert(requirement.stem());
+                stems.insert(requirement.stem().to_owned());
             }
         }
         for departure in &self.departed {
-            stems.insert(departure.requirement.stem());
+            stems.insert(departure.requirement.stem().to_owned());
         }
         let fallback = || requirements.first().map(Requirement::stem);
         for design_type in owned {
             if self.types.iter().any(|changed| changed.key == design_type.key)
                 && let Some(stem) = design_type.stem().or_else(fallback)
             {
-                stems.insert(stem);
+                stems.insert(stem.to_owned());
             }
         }
         for removed in self.types.iter().filter(|changed| changed.after.is_none()) {
             if let Some(stem) = removed.stem().or_else(fallback) {
-                stems.insert(stem);
+                stems.insert(stem.to_owned());
             }
         }
         stems.into_iter().collect()

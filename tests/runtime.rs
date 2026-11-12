@@ -212,6 +212,42 @@ const SPEC_BRANCH: &str = r#"{"preamble": [], "requirements": [
      "given": ["the greeting surface is bound"], "when": "`/greeting` is requested",
      "then": "the response is `hi there`"}]}]}"#;
 
+// An amendment over the two-part serial revision revising `REQ-001` alone,
+// leaving `REQ-002` and `REQ-003` of `greeting` and `REQ-004` of `farewell`
+// untouched and every design section as it stands.
+const DESCRIPTION_SERIAL_AMEND: &str =
+    "acme:source@0.1.0=GET /greeting/morning returns the static string 'top of the morning'.";
+const EXTRACT_SERIAL_AMEND: &str = r#"{"claims": [
+    {"kind": "requirement", "id": "greeting.morning.behaviour",
+     "statement": "GET /greeting/morning returns the static string 'top of the morning'."}]}"#;
+const GROUPING_SERIAL_AMEND: &str = r#"{"groups": [
+    {"claims": [0, 1], "classes": [[0], [1]]},
+    {"claims": [2], "classes": [[2]]},
+    {"claims": [3], "classes": [[3]]},
+    {"claims": [4], "classes": [[4]]}]}"#;
+const SPEC_SERIAL_AMEND: &str = r#"{"preamble": [], "requirements": [
+    {"subject": "greeting.morning.behaviour", "scenarios": [{"name": "Morning greeting",
+     "given": ["the greeting surface is bound"], "when": "`/greeting/morning` is requested",
+     "then": "the response is `top of the morning`"}]}]}"#;
+const WRITE_GREETING_TOP_MORNING: &str = r##"{"files": [{"path": "build/greeting.md", "content": "# Greeting\n\n- top of the morning\n"}]}"##;
+const WRITE_GREETING_TOP_EVENING: &str = r##"{"files": [{"path": "build/greeting.md", "content": "# Greeting\n\n- top of the morning\n- evening\n"}]}"##;
+const WRITE_LEAK_ONLY: &str = r#"{"files": [
+    {"path": "build/leak.pem", "content": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----\n"}]}"#;
+const REPORT_LEAK_ONLY: &str = r#"{"covered": ["REQ-003"], "written": ["build/leak.pem"]}"#;
+
+// An amendment over the two-part revision withdrawing `farewell.behaviour`
+// (`REQ-002`), which empties and removes `PART-002` (`farewell`) while
+// leaving `PART-001` (`greeting`) and the design untouched.
+const DESCRIPTION_RETIRE: &str = "acme:source@0.1.0=Withdraw the farewell endpoint.";
+const EXTRACT_RETIRE: &str = r#"{"claims": [
+    {"kind": "retire", "id": "farewell.behaviour",
+     "statement": "Withdraw the farewell endpoint."}]}"#;
+const GROUPING_RETIRE: &str = r#"{"groups": [
+    {"claims": [0, 2], "classes": [[0], [2]]},
+    {"claims": [1], "classes": [[1]]}]}"#;
+const DELETE_FAREWELL: &str = r#"{"delete": ["build/farewell.md"]}"#;
+const REPORT_RETIRING: &str = r#"{"covered": [], "written": []}"#;
+
 // Git under a scratch configuration: a wrapper exporting `GIT_CONFIG_GLOBAL`
 // and `GIT_CONFIG_NOSYSTEM` before handing over to the `git` on `PATH`, so
 // nothing of the developer's identity, signing, hooks, or default branch
@@ -2071,16 +2107,16 @@ async fn build_budget_serial() {
         (
             &slice1_merge,
             ("SLICE-001", "PART-001", "greeting"),
-            &["REQ-001", "REQ-002"][..],
+            vec!["REQ-001", "REQ-002"],
             &initialised,
             1,
         ),
-        (&wave1_head, ("SLICE-003", "PART-002", "farewell"), &["REQ-004"][..], &initialised, 1),
-        (&head, ("SLICE-002", "PART-001", "greeting"), &["REQ-003"][..], &wave1_head, 2),
+        (&wave1_head, ("SLICE-003", "PART-002", "farewell"), vec!["REQ-004"], &initialised, 1),
+        (&head, ("SLICE-002", "PART-001", "greeting"), vec!["REQ-003"], &wave1_head, 2),
     ] {
         assert_eq!(
             Message::parse(&roots.git.message(project, commit)),
-            Some(slice_message(spec, &revision, 2, reqs, parent, wave))
+            Some(slice_message(spec, &revision, 2, &reqs, parent, wave))
         );
     }
     assert_eq!(
@@ -2179,6 +2215,340 @@ async fn budget_resume_reqs() {
         roots.git.run(project, &["show", &format!("{label}:build/farewell.md")]),
         "# Farewell"
     );
+}
+
+// The two-part serial revision (`greeting` in two slices, `farewell` in one)
+// built and labelled, then amended on `REQ-001` (`greeting.morning.behaviour`)
+// alone and sealed over the parent's built head.
+struct AmendedSerial {
+    roots: Roots,
+    backends: Bundle,
+    base: String,
+    parent: String,
+    parent_head: String,
+    revision: String,
+    label: String,
+    sealed: String,
+}
+
+impl AmendedSerial {
+    async fn new() -> Self {
+        let (roots, backends, base, parent) = specified_serial().await;
+        let project = roots.project.path();
+        let parent_build = ScriptedModel::answering([
+            REPORT_GREETING_MORNING,
+            REPORT_FAREWELL_FOUR,
+            VERDICT_ANSWER,
+            REPORT_GREETING_EVENING,
+            VERDICT_ANSWER,
+        ])
+        .calling(0, [("write_files", WRITE_GREETING_MORNING)])
+        .calling(1, [("write_files", WRITE_FAREWELL)])
+        .calling(3, [("write_files", WRITE_GREETING_EVENING)]);
+        assert_ok(
+            &emery(roots.deployment(&["build", "--jobs", "1"]), &backends, &parent_build).await,
+        );
+        parent_build.assert_exhausted();
+        let parent_head = roots.git.run(project, &["rev-parse", &format!("emery/{parent}")]);
+
+        let amend_model = ScriptedModel::answering([
+            EXTRACT_SERIAL_AMEND,
+            GROUPING_SERIAL_AMEND,
+            SPEC_SERIAL_AMEND,
+        ]);
+        let amended = roots
+            .run(
+                &["amend", "--description", DESCRIPTION_SERIAL_AMEND, "--config", "--apply"],
+                &backends,
+                &amend_model,
+            )
+            .await;
+        assert_ok(&amended);
+        amend_model.assert_exhausted();
+        let revision = sealed_of(&amended);
+        let label = format!("emery/{revision}");
+        let sealed = roots.git.run(project, &["rev-parse", &label]);
+
+        Self {
+            roots,
+            backends,
+            base,
+            parent,
+            parent_head,
+            revision,
+            label,
+            sealed,
+        }
+    }
+}
+
+// Over a built two-part revision where an amendment revises `greeting` alone
+// and touches no non-overview design section, `scope::conservative` stays at
+// the minimum (`PART-001`), so `emery build` skips `Initialise` and carries
+// `PART-002` (`farewell`) with its files untouched, commits only `greeting`'s
+// slices under `Change: <parent>`, prints `change from <parent>:`, and resumes
+// from the new revision's label chain after an interrupted wave.
+#[tokio::test]
+async fn change_build_commits() {
+    let AmendedSerial {
+        roots,
+        backends,
+        base,
+        parent,
+        parent_head,
+        revision,
+        label,
+        sealed,
+    } = AmendedSerial::new().await;
+    let project = roots.project.path();
+
+    // wave 1 builds and verifies `SLICE-001` (`greeting` 1/2) while `PART-002`
+    // (`farewell`) is carried; wave 2 fails at `SLICE-002` (`greeting` 2/2)
+    let killed =
+        ScriptedModel::answering([REPORT_GREETING_MORNING, VERDICT_ANSWER, REPORT_LEAK_ONLY])
+            .calling(0, [("write_files", WRITE_GREETING_TOP_MORNING)])
+            .calling(2, [("write_files", WRITE_LEAK_ONLY)]);
+    let failed =
+        emery(roots.deployment(&["--format", "json", "build", "--jobs", "1"]), &backends, &killed)
+            .await;
+    refused(&failed, 1, "secret-detected");
+    killed.assert_exhausted();
+    assert!(
+        killed.seen()[0].messages[0].contains(&format!(
+            "## The change\n\nBuilt revision: `{parent}` at commit `{parent_head}`.\n\n\
+             Requirements in this slice:\n\n\
+             - `REQ-001` `greeting.morning.behaviour` [changed]\n  \
+             - Prior: GET /greeting/morning returns the static string 'good morning'.\n  \
+             - Current: GET /greeting/morning returns the static string 'top of the morning'.\n\
+             - `REQ-002` `greeting.morning.format` [unchanged]\n"
+        )),
+        "{}",
+        killed.seen()[0].messages[0]
+    );
+    let wave1_head = roots.git.run(project, &["rev-parse", &label]);
+    assert_eq!(roots.git.run(project, &["rev-parse", &format!("{wave1_head}~1")]), sealed);
+
+    // resume from the label chain: `SLICE-001` is resumed, `PART-002` stays
+    // carried, and only `SLICE-002` (`greeting` 2/2) builds
+    let resumed_model = ScriptedModel::answering([REPORT_GREETING_EVENING, VERDICT_ANSWER])
+        .calling(0, [("write_files", WRITE_GREETING_TOP_EVENING)]);
+    let resumed = emery(roots.deployment(&["build"]), &backends, &resumed_model).await;
+    assert_ok(&resumed);
+    resumed_model.assert_exhausted();
+    let resumed_seen = resumed_model.seen();
+    assert_eq!(resumed_seen.len(), 2, "only SLICE-002 builds and verifies");
+    assert!(
+        resumed_seen[0].messages[0].contains(
+            "Requirements in this slice:\n\n\
+             - `REQ-003` `greeting.evening.behaviour` [unchanged]\n\n\
+             Built before in earlier slices of this part: `REQ-001`, `REQ-002`.\n"
+        ),
+        "{}",
+        resumed_seen[0].messages[0]
+    );
+
+    let head = roots.git.run(project, &["rev-parse", &label]);
+    assert!(
+        resumed.stdout.contains(&format!(
+            "\n  change from {parent}: rebuilds PART-001 greeting (requirements); carries PART-002\n"
+        )),
+        "{}",
+        resumed.stdout
+    );
+    assert!(!resumed.stdout.contains("initialised"), "{}", resumed.stdout);
+    assert!(resumed.stdout.contains("\n  resumed: SLICE-001\n"), "{}", resumed.stdout);
+    assert!(
+        resumed.stdout.contains(&format!(
+            "    SLICE-002 greeting (2/2): covered 1/1, written 1 file, merged {head}\n"
+        )),
+        "{}",
+        resumed.stdout
+    );
+    assert_eq!(
+        roots
+            .git
+            .run(project, &["log", "--first-parent", "--format=%s", &format!("{sealed}..{label}")]),
+        "SLICE-002 greeting\nSLICE-001 greeting",
+        "only the scoped part's slices commit over the sealed amendment"
+    );
+    for (commit, slice, reqs, over) in [
+        (&wave1_head, "SLICE-001", vec!["REQ-001", "REQ-002"], &sealed),
+        (&head, "SLICE-002", vec!["REQ-003"], &wave1_head),
+    ] {
+        let mut expected =
+            slice_message((slice, "PART-001", "greeting"), &revision, 2, &reqs, over, 1);
+        expected.change = Some(parent.clone());
+        assert_eq!(Message::parse(&roots.git.message(project, commit)), Some(expected));
+    }
+    assert_eq!(
+        roots.git.run(project, &["diff", "--name-only", &sealed, &label]),
+        "build/greeting.md",
+        "carried part paths stand untouched"
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{label}:build/greeting.md")]),
+        "# Greeting\n\n- top of the morning\n- evening"
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{label}:build/farewell.md")]),
+        "# Farewell"
+    );
+    assert_eq!(roots.git.head(project), base);
+
+    // a completed change build resumes every rebuilt slice with no turn spent
+    let again = roots.run_idle(&["build"], &backends).await;
+    assert_ok(&again);
+    assert!(again.stdout.contains("\n  resumed: SLICE-001, SLICE-002\n"), "{}", again.stdout);
+}
+
+// Retiring a part's requirements cuts a retiring slice in wave 1 over the
+// built ancestor, seals `Departed:` and `Change:` trailers in the real git
+// history while carrying the remaining part, and resumes from `Departed:` on
+// a re-run.
+#[tokio::test]
+async fn change_build_retire_commits() {
+    let roots = Roots::new();
+    roots.stored(SOURCE, MOCK_SOURCE);
+    roots.stored(TARGET, MOCK_TARGET);
+    let backends = roots.backends().await;
+    let base = roots.sealed();
+    let applied = roots.applied(&backends, &specifying_pair()).await;
+    let parent = revision_of(&applied);
+    let project = roots.project.path();
+
+    let parent_build = ScriptedModel::answering([REPORT_ANSWER, REPORT_FAREWELL, VERDICT_ANSWER])
+        .calling(0, [("write_files", WRITE_GREETING)])
+        .calling(1, [("write_files", WRITE_FAREWELL)]);
+    assert_ok(&roots.run(&["build", "--jobs", "1"], &backends, &parent_build).await);
+    parent_build.assert_exhausted();
+    let parent_head = roots.git.run(project, &["rev-parse", &format!("emery/{parent}")]);
+
+    let amend_model = ScriptedModel::answering([EXTRACT_RETIRE, GROUPING_RETIRE]);
+    let amended = roots
+        .run(
+            &["amend", "--description", DESCRIPTION_RETIRE, "--config", "--apply"],
+            &backends,
+            &amend_model,
+        )
+        .await;
+    assert_ok(&amended);
+    amend_model.assert_exhausted();
+    let revision = sealed_of(&amended);
+    let label = format!("emery/{revision}");
+    let sealed = roots.git.run(project, &["rev-parse", &label]);
+
+    let retire_build = ScriptedModel::answering([REPORT_RETIRING, VERDICT_ANSWER])
+        .calling(0, [("write_files", DELETE_FAREWELL)]);
+    let run = roots.run(&["build"], &backends, &retire_build).await;
+    assert_ok(&run);
+    retire_build.assert_exhausted();
+    let seen = retire_build.seen();
+    assert_eq!(seen.len(), 2, "one retiring slice build turn and one verify turn");
+    assert!(
+        seen[0].messages[0].contains(&format!(
+            "## The change\n\nBuilt revision: `{parent}` at commit `{parent_head}`.\n\n\
+             This slice retires part `farewell` (PART-002): it holds no requirements, and every \
+             requirement the built part held is listed under departed below.\n\n\
+             Departed from this part:\n\n\
+             - `REQ-002` `farewell.behaviour` [retired]: GET /farewell returns the static string 'bye'.\n\n\
+             Vanished stems: `farewell`.\n"
+        )),
+        "{}",
+        seen[0].messages[0]
+    );
+
+    let head = roots.git.run(project, &["rev-parse", &label]);
+    assert!(
+        run.stdout.contains(&format!(
+            "\n  change from {parent}: carries PART-001; retires PART-002 farewell\n"
+        )),
+        "{}",
+        run.stdout
+    );
+    assert!(
+        run.stdout.contains(&format!(
+            "    SLICE-002 farewell: covered 0/0, written 1 file, merged {head}\n"
+        )),
+        "{}",
+        run.stdout
+    );
+    assert_eq!(
+        roots
+            .git
+            .run(project, &["log", "--first-parent", "--format=%s", &format!("{sealed}..{label}")]),
+        "SLICE-002 farewell"
+    );
+    let message = roots.git.message(project, &head);
+    assert!(
+        message
+            .contains(&format!("Requirements:\nCovered:\nDeparted: REQ-002\nChange: {parent}\n")),
+        "{message}"
+    );
+    let mut expected =
+        slice_message(("SLICE-002", "PART-002", "farewell"), &revision, 2, &[], &sealed, 1);
+    expected.departed = vec!["REQ-002".parse().expect("req id")];
+    expected.change = Some(parent);
+    assert_eq!(Message::parse(&message), Some(expected));
+    assert_eq!(
+        roots.git.run(project, &["diff", "--name-status", &sealed, &label]),
+        "D\tbuild/farewell.md"
+    );
+    assert_eq!(
+        roots.git.run(project, &["show", &format!("{label}:build/greeting.md")]),
+        "# Greeting"
+    );
+    assert_eq!(roots.git.head(project), base);
+
+    // re-running reads `Departed: REQ-002` from the label and skips the retiring slice
+    let again = roots.run_idle(&["build"], &backends).await;
+    assert_ok(&again);
+    assert!(again.stdout.contains("\n  resumed: SLICE-002\n"), "{}", again.stdout);
+}
+
+// `Basis::settle` replaces any stale `.emery/vcs/scope` working copy, runs
+// `Task::Scope` at the built ancestor's commit, and removes `.emery/vcs/scope`
+// before returning, leaving no worktree and nothing pending in the repository.
+#[tokio::test]
+async fn change_build_scope_copy_removed() {
+    let (roots, backends, parent, base) = built().await;
+    let project = roots.project.path();
+    let over = roots.git.run(project, &["rev-parse", &format!("emery/{parent}")]);
+
+    let amend_model = ScriptedModel::answering([EXTRACT_BRANCH, GROUPING_BRANCH, SPEC_BRANCH]);
+    let amended = roots
+        .run(
+            &["amend", "--description", DESCRIPTION_BRANCH, "--config", "--apply"],
+            &backends,
+            &amend_model,
+        )
+        .await;
+    assert_ok(&amended);
+    amend_model.assert_exhausted();
+
+    // plant a dirty stale worktree at `.emery/vcs/scope` on `base`
+    let scope_copy = project.join(".emery/vcs/scope");
+    let scope_path = scope_copy.to_str().expect("UTF-8 path");
+    roots.git.run(project, &["worktree", "add", "--quiet", "--detach", scope_path, &base]);
+    fs::write(scope_copy.join("stale.txt"), "leftover\n").expect("writing stale file");
+
+    let shown = roots.run_idle(&["show", "schedule"], &backends).await;
+    assert_ok(&shown);
+    assert!(shown.stdout.contains(&format!("Change: {parent} at {over}\n")), "{}", shown.stdout);
+    assert!(!scope_copy.exists(), "`.emery/vcs/scope` is removed after `show schedule`");
+    let listed = roots.git.run(project, &["worktree", "list", "--porcelain"]);
+    assert_eq!(listed.matches("worktree ").count(), 1, "{listed}");
+    assert_eq!(roots.git.run(project, &["status", "--porcelain", "--untracked-files=all"]), "");
+
+    // a change build also removes `.emery/vcs/scope` and leaves nothing pending
+    let build_model = ScriptedModel::answering([REPORT_ANSWER, VERDICT_ANSWER])
+        .calling(0, [("write_files", WRITE_GREETING_AMEND)]);
+    let built = roots.run(&["build"], &backends, &build_model).await;
+    assert_ok(&built);
+    build_model.assert_exhausted();
+    assert!(!scope_copy.exists(), "`.emery/vcs/scope` is removed after `build`");
+    let listed = roots.git.run(project, &["worktree", "list", "--porcelain"]);
+    assert_eq!(listed.matches("worktree ").count(), 1, "{listed}");
+    assert_eq!(roots.git.run(project, &["status", "--porcelain", "--untracked-files=all"]), "");
 }
 
 // A run whose wave the adapter does not verify leaves the slice merged in
@@ -2751,21 +3121,8 @@ async fn build_laid() {
 // The message a build seals `SLICE-001` under for `revision` over `base`,
 // as a forger would copy it.
 fn forged_message(revision: &str, base: &str) -> String {
-    Message {
-        slice: "SLICE-001".parse().expect("a slice id"),
-        part: "PART-001".parse().expect("a part id"),
-        name: "greeting".to_owned(),
-        revision: revision.to_owned(),
-        budget: 2,
-        requirements: vec!["REQ-001".parse().expect("a requirement id")],
-        covered: vec!["REQ-001".parse().expect("a requirement id")],
-        departed: Vec::new(),
-        change: None,
-        adapter: TARGET.to_owned(),
-        base: base.to_owned(),
-        wave: 1,
-    }
-    .to_string()
+    slice_message(("SLICE-001", "PART-001", "greeting"), revision, 2, &["REQ-001"], base, 1)
+        .to_string()
 }
 
 // A tag spelled `emery/<revision>`, which git resolves the bare name to
