@@ -7,7 +7,8 @@ mod support;
 use std::fs;
 
 use emery_adapter::target::{
-    DesignType, MergeRule, PartReach, Report, Requirement, Scenario, Slice, Verdict,
+    Departure, DesignType, MergeRule, PartReach, Report, Requirement, Scenario, SectionChange,
+    Slice, Standing, TypeChange, Verdict,
 };
 use emery_adapter::{Route, Trigger};
 use emery_engine::vcs::{REVISION, SCOPE};
@@ -4240,5 +4241,584 @@ async fn build_whole() {
     assert!(envelope.get("change").is_none(), "{envelope}");
     assert_eq!(envelope["whole"], json!({"reason": "no-parent"}), "{envelope}");
     assert!(provider.target.scopes().is_empty(), "no scope for fresh revision");
+    provider.vcs.assert_exhausted();
+}
+
+// Seeds a three-hop lineage (`grandparent -> mid -> child`) where `mid` is
+// unbuilt and `child` changes `REQ-003`, adds `REQ-005`, and updates design
+// sections.
+fn multi_hop_change_lineage() -> (Provider, String, String) {
+    let mut parent_spec: Value = serde_json::from_slice(SPEC).expect("spec fixture");
+    parent_spec["requirements"][0]["sources"][0]["path"] = json!("src/auth.ts#L1-L10");
+    parent_spec["requirements"][2]["sources"][0]["path"] = json!("src/orders.ts#L1-L20");
+    let mut parent_design: Value = serde_json::from_slice(DESIGN).expect("design fixture");
+    parent_design["sections"].as_array_mut().expect("sections").extend([
+        json!({"kind": "apis", "blocks": [{"text": "First upstream."}, {"text": "Second upstream."}]}),
+        json!({"kind": "observability", "blocks": [{"text": "Metrics."}]}),
+    ]);
+
+    let provider = Provider::idle();
+    let grandparent = seed_at(
+        &provider.files,
+        GRANDPARENT,
+        &serde_json::to_vec(&parent_spec).expect("spec"),
+        &serde_json::to_vec(&parent_design).expect("design"),
+        WIDE_PLAN,
+    );
+    let (mid_spec, mid_design, mid_plan) = amended_documents(&grandparent, WIDE_PLAN, None);
+    let mid = seed_at(&provider.files, LABELLED, &mid_spec, &mid_design, &mid_plan);
+
+    let mut child_spec = parent_spec;
+    child_spec["parent"] = json!(mid);
+    child_spec["requirements"][2]["body"] = json!(["A signed-in user places an order directly."]);
+    child_spec["requirements"][2]["sources"][0]["path"] = json!("src/orders.ts#L50-L60");
+    child_spec["requirements"].as_array_mut().expect("requirements").push(json!({
+        "id": "REQ-005",
+        "subject": "orders.export",
+        "status": "unknown",
+        "covered": false,
+        "trigger": null,
+        "sources": [{"source": "docs", "claim": "orders.export", "path": "src/orders.ts#L1-L20"}],
+        "body": ["A signed-in user exports an order."],
+        "losers": [],
+        "scenarios": [{
+            "name": "Export",
+            "given": [],
+            "when": "a signed-in caller exports an order",
+            "then": "the order is exported",
+            "and": []
+        }]
+    }));
+    let mut child_design: Value = serde_json::from_slice(DESIGN).expect("design fixture");
+    child_design["parent"] = json!(mid);
+    child_design["sections"][0]["blocks"][0]["text"] = json!("Updated overview.");
+    child_design["sections"].as_array_mut().expect("sections").extend([
+        json!({"kind": "apis", "blocks": [{"text": "Updated upstream."}]}),
+        json!({"kind": "technical-logic", "blocks": [{"text": "Validation rules."}]}),
+    ]);
+    let mut child_plan: Value = serde_json::from_slice(WIDE_PLAN).expect("wide-plan fixture");
+    child_plan["parent"] = json!(mid);
+    child_plan["parts"][2]["requirements"] = json!(["REQ-003", "REQ-004", "REQ-005"]);
+    let child = seed(
+        &provider.files,
+        &serde_json::to_vec(&child_spec).expect("spec"),
+        &serde_json::to_vec(&child_design).expect("design"),
+        &serde_json::to_vec(&child_plan).expect("plan"),
+    );
+
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(Vec::new()));
+    provider.vcs.labelleds.script(".", Ok(GRANDPARENT.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry(
+                "m:SLICE-003",
+                &message(
+                    &grandparent,
+                    WIDE_ORDERS,
+                    "REQ-003, REQ-004",
+                    "REQ-003, REQ-004",
+                    HEAD,
+                    1,
+                ),
+            ),
+            entry(
+                "m:SLICE-002",
+                &message(&grandparent, WIDE_SESSIONS, "REQ-002", "REQ-002", HEAD, 2),
+            ),
+            entry(
+                "m:SLICE-001",
+                &message(&grandparent, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1),
+            ),
+        ]),
+    );
+    (provider, grandparent, child)
+}
+
+// A change build dispatches only the slices of parts in scope, skips
+// `Initialise` (carried requirements count as merged, and `resumed` stays
+// empty on a fresh change build), seals `Change:` on each slice commit, and
+// hands each slice its typed `SliceChange` (`standing`, `prior`,
+// `built_before`, `sections`).
+#[tokio::test]
+async fn build_change() {
+    let (provider, grandparent, child) = multi_hop_change_lineage();
+    wrote(&provider, WIDE_ORDERS);
+    wrote(&provider, ("SLICE-004", "orders"));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "2"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], child, "{envelope}");
+    assert!(envelope.get("initialised").is_none(), "Initialise skipped: {envelope}");
+    assert!(envelope.get("resumed").is_none(), "carried slices are not resumed: {envelope}");
+    assert!(provider.target.inits().is_empty(), "Task::Init not called on a change build");
+    assert_eq!(
+        envelope["change"],
+        json!({
+            "from": grandparent,
+            "commit": GRANDPARENT,
+            "rebuilt": [{"id": "PART-003", "name": "orders", "reasons": ["requirements"]}],
+            "carried": ["PART-001", "PART-002"],
+            "retiring": []
+        }),
+        "{envelope}"
+    );
+    assert_eq!(
+        dispatched(&provider),
+        [
+            ("SLICE-003".to_owned(), HEAD.to_owned(), worktree("SLICE-003")),
+            ("SLICE-004".to_owned(), HEAD.to_owned(), worktree("SLICE-004")),
+        ],
+        "carried parts PART-001 and PART-002 are skipped; PART-003 builds in two serial slices"
+    );
+
+    let calls = provider.target.calls();
+    let first_change = calls[0].1.change.as_ref().expect("first slice carries SliceChange");
+    assert_eq!(first_change.built, grandparent);
+    assert_eq!(first_change.commit, GRANDPARENT);
+    assert_eq!(
+        calls[0].1.requirements.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+        ["REQ-003", "REQ-005"],
+        "untriggered REQ-005 packs into the first slice ahead of triggered REQ-003 and REQ-004"
+    );
+    assert_eq!(first_change.standing, [Standing::Changed, Standing::Added]);
+    assert_eq!(first_change.prior.len(), 1);
+    assert_eq!(first_change.prior[0].id, "REQ-003");
+    assert_eq!(first_change.prior[0].statement, ["A signed-in user places an order."]);
+    assert_eq!(first_change.built_before, [] as [String; 0]);
+    assert_eq!(
+        first_change.sections,
+        [
+            SectionChange {
+                kind: "overview".to_owned(),
+                before: Some(
+                    "Sign-in issues a session; orders are placed and cancelled under it."
+                        .to_owned()
+                ),
+                after: Some("Updated overview.".to_owned()),
+            },
+            SectionChange {
+                kind: "apis".to_owned(),
+                before: Some("First upstream.\n\nSecond upstream.".to_owned()),
+                after: Some("Updated upstream.".to_owned()),
+            },
+            SectionChange {
+                kind: "technical-logic".to_owned(),
+                before: None,
+                after: Some("Validation rules.".to_owned()),
+            },
+            SectionChange {
+                kind: "observability".to_owned(),
+                before: Some("Metrics.".to_owned()),
+                after: None,
+            },
+        ]
+    );
+
+    let second_change = calls[1].1.change.as_ref().expect("second slice carries SliceChange");
+    assert_eq!(
+        calls[1].1.requirements.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+        ["REQ-004"]
+    );
+    assert_eq!(second_change.standing, [Standing::Unchanged]);
+    assert_eq!(second_change.prior, [] as [Requirement; 0]);
+    assert_eq!(second_change.built_before, ["REQ-003", "REQ-005"]);
+
+    assert_eq!(
+        provider.vcs.messages(),
+        [
+            format!(
+                "SLICE-003 orders\n\nSlice: SLICE-003\nPart: PART-003\nRevision: {child}\nBudget: \
+                 2\nRequirements: REQ-003, REQ-005\nCovered: REQ-003, REQ-005\nChange: \
+                 {grandparent}\nAdapter: {BUILDER}\nBase: {HEAD}\nWave: 1"
+            ),
+            format!(
+                "SLICE-004 orders\n\nSlice: SLICE-004\nPart: PART-003\nRevision: {child}\nBudget: \
+                 2\nRequirements: REQ-004\nCovered: REQ-004\nChange: {grandparent}\nAdapter: \
+                 {BUILDER}\nBase: {HEAD}\nWave: 2"
+            ),
+        ]
+    );
+    provider.vcs.assert_exhausted();
+}
+
+// Resuming an interrupted change build skips both the carried parts and the
+// slice already committed on the new revision's label, reports only the
+// label's slice in `resumed`, and populates `built_before` on the remaining
+// slice of the part.
+#[tokio::test]
+async fn build_change_resume() {
+    let (provider, parent, child) = wide_lineage();
+    // child's label already holds wave 1 (`SLICE-003` with `REQ-003`) under `--budget 1`
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![entry(
+            "m:SLICE-003",
+            &format!(
+                "SLICE-003 orders\n\nSlice: SLICE-003\nPart: PART-003\nRevision: {child}\nBudget: \
+                 1\nRequirements: REQ-003\nCovered: REQ-003\nChange: {parent}\nAdapter: \
+                 {BUILDER}\nBase: {HEAD}\nWave: 1"
+            ),
+        )]),
+    );
+    wrote(&provider, ("SLICE-004", "orders"));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "1"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["resumed"],
+        json!(["SLICE-003"]),
+        "only the label's slice is resumed: {envelope}"
+    );
+    assert_eq!(
+        dispatched(&provider),
+        [("SLICE-004".to_owned(), LABELLED.to_owned(), worktree("SLICE-004"))],
+        "carried parts and the resumed first slice are skipped; only SLICE-004 builds"
+    );
+    let calls = provider.target.calls();
+    assert!(calls[0].1.types.is_empty(), "types were laid on the part's first slice");
+    let change = calls[0].1.change.as_ref().expect("SliceChange present");
+    assert_eq!(change.standing, [Standing::Unchanged]);
+    assert_eq!(change.built_before, ["REQ-003"]);
+    provider.vcs.assert_exhausted();
+}
+
+// Seeds a parent with three parts (`WIDE_PLAN`) and a child that removes
+// `PART-003` (`orders`), its requirements, and its domain-model types.
+fn retiring_lineage() -> (Provider, String, String, Vec<Entry>) {
+    let provider = Provider::idle();
+    let parent = seed_at(&provider.files, LABELLED, SPEC, DESIGN, WIDE_PLAN);
+
+    let (mut child_spec, mut child_design, mut child_plan): (Value, Value, Value) = (
+        serde_json::from_slice(SPEC).expect("spec"),
+        serde_json::from_slice(DESIGN).expect("design"),
+        serde_json::from_slice(WIDE_PLAN).expect("wide-plan"),
+    );
+    child_spec["parent"] = json!(parent);
+    child_spec["requirements"].as_array_mut().expect("requirements").truncate(2);
+    child_design["parent"] = json!(parent);
+    child_design["sections"].as_array_mut().expect("sections").truncate(1);
+    child_plan["parent"] = json!(parent);
+    child_plan["parts"].as_array_mut().expect("parts").truncate(2);
+    let child = seed(
+        &provider.files,
+        &serde_json::to_vec(&child_spec).expect("spec"),
+        &serde_json::to_vec(&child_design).expect("design"),
+        &serde_json::to_vec(&child_plan).expect("plan"),
+    );
+
+    let parent_log = vec![
+        entry(
+            "m:SLICE-003",
+            &message(&parent, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+        ),
+        entry("m:SLICE-002", &message(&parent, WIDE_SESSIONS, "REQ-002", "REQ-002", HEAD, 2)),
+        entry("m:SLICE-001", &message(&parent, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+    ];
+    (provider, parent, child, parent_log)
+}
+
+// Removing a part from the plan cuts a retiring slice in wave 1 with the
+// removed part's id, name, and brief, `requirements` empty, and every
+// retired requirement in `departed`, seals `Departed:` and `Change:` on its
+// commit, lists the slice in `change.retiring`, and resumes from the
+// `Departed:` trailer on a re-run.
+#[tokio::test]
+async fn build_change_retire() {
+    let (provider, parent, child, parent_log) = retiring_lineage();
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(parent_log.clone()));
+    changed(&provider, "SLICE-003", &[("src/orders.rs", ChangeKind::Deleted)]);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["change"],
+        json!({
+            "from": parent,
+            "commit": LABELLED,
+            "rebuilt": [],
+            "carried": ["PART-001", "PART-002"],
+            "retiring": ["SLICE-003"]
+        }),
+        "{envelope}"
+    );
+    assert_eq!(
+        envelope["schedule"][2],
+        json!({"id": "SLICE-003", "part": "PART-003", "name": "orders", "index": 1, "count": 1, "requirements": [], "departed": ["REQ-003", "REQ-004"], "over-budget": false}),
+        "{envelope}"
+    );
+    assert_eq!(envelope["waves"], json!([["SLICE-001", "SLICE-003"], ["SLICE-002"]]), "{envelope}");
+    assert_eq!(
+        dispatched(&provider),
+        [("SLICE-003".to_owned(), HEAD.to_owned(), worktree("SLICE-003"))],
+        "only the retiring slice runs, in wave 1"
+    );
+
+    let calls = provider.target.calls();
+    let retiring = &calls[0].1;
+    assert_eq!(
+        (retiring.id.as_str(), retiring.part.as_str(), retiring.name.as_str()),
+        ("SLICE-003", "PART-003", "orders")
+    );
+    assert_eq!(retiring.requirements, [] as [Requirement; 0]);
+    assert_eq!(retiring.brief, ["Delivers order creation and cancellation; it waits on nothing."]);
+    let retiring_change = retiring.change.as_ref().expect("SliceChange on retiring slice");
+    assert!(retiring_change.is_retiring(&retiring.requirements));
+    assert_eq!(retiring_change.vanished, ["orders"]);
+    assert_eq!(
+        retiring_change
+            .departed
+            .iter()
+            .map(|d| (d.requirement.id.as_str(), d.moved_to.as_deref()))
+            .collect::<Vec<_>>(),
+        [("REQ-003", None), ("REQ-004", None)]
+    );
+
+    let commit_msg = format!(
+        "SLICE-003 orders\n\nSlice: SLICE-003\nPart: PART-003\nRevision: {child}\nBudget: \
+         12\nRequirements: \nCovered: \nDeparted: REQ-003, REQ-004\nChange: {parent}\nAdapter: \
+         {BUILDER}\nBase: {HEAD}\nWave: 1"
+    );
+    assert_eq!(provider.vcs.messages(), [commit_msg.as_str()]);
+    provider.vcs.assert_exhausted();
+
+    // resuming when the retiring commit is on the label skips the retiring slice too
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(parent_log));
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(vec![entry("m:SLICE-003", &commit_msg)]));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["resumed"], json!(["SLICE-003"]), "{envelope}");
+    assert!(envelope["slices"].as_array().is_some_and(Vec::is_empty), "{envelope}");
+    assert_eq!(provider.target.calls().len(), 1, "no slice dispatched on resume");
+    provider.vcs.assert_exhausted();
+}
+
+// When a requirement leaves a kept part (moving to another part or being
+// retired while its part stays in the plan), no retiring slice is cut; the
+// departure rides on the kept part's own slice with `moved_to` set or `None`.
+#[tokio::test]
+async fn build_change_departed_in_kept_part() {
+    let provider = Provider::idle();
+    let parent = seed_at(&provider.files, LABELLED, SPEC, DESIGN, WIDE_PLAN);
+
+    // REQ-003 moves from PART-003 (`orders`) to PART-002 (`sessions`), and REQ-004 is retired;
+    // PART-003 stays in the plan with a new REQ-005
+    let mut child_spec: Value = serde_json::from_slice(SPEC).expect("spec fixture");
+    child_spec["parent"] = json!(parent);
+    child_spec["requirements"].as_array_mut().expect("requirements").truncate(3);
+    child_spec["requirements"].as_array_mut().expect("requirements").push(json!({
+        "id": "REQ-005",
+        "subject": "orders.archive",
+        "status": "unknown",
+        "covered": false,
+        "trigger": null,
+        "sources": [{"source": "docs", "claim": "orders.archive", "path": null}],
+        "body": ["Archive closed orders."],
+        "losers": [],
+        "scenarios": [{
+            "name": "Archive",
+            "given": [],
+            "when": "an order is closed",
+            "then": "it is archived",
+            "and": []
+        }]
+    }));
+    let mut child_design: Value = serde_json::from_slice(DESIGN).expect("design fixture");
+    child_design["parent"] = json!(parent);
+    let mut child_plan: Value = serde_json::from_slice(WIDE_PLAN).expect("wide-plan fixture");
+    child_plan["parent"] = json!(parent);
+    child_plan["parts"][1]["requirements"] = json!(["REQ-002", "REQ-003"]);
+    child_plan["parts"][2]["requirements"] = json!(["REQ-005"]);
+
+    seed(
+        &provider.files,
+        &serde_json::to_vec(&child_spec).expect("spec"),
+        &serde_json::to_vec(&child_design).expect("design"),
+        &serde_json::to_vec(&child_plan).expect("plan"),
+    );
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry(
+                "m:SLICE-003",
+                &message(&parent, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+            ),
+            entry("m:SLICE-002", &message(&parent, WIDE_SESSIONS, "REQ-002", "REQ-002", HEAD, 2)),
+            entry("m:SLICE-001", &message(&parent, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+        ]),
+    );
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["change"],
+        json!({
+            "from": parent,
+            "commit": LABELLED,
+            "rebuilt": [
+                {"id": "PART-002", "name": "sessions", "reasons": ["plan"]},
+                {"id": "PART-003", "name": "orders", "reasons": ["requirements", "departed"]}
+            ],
+            "carried": ["PART-001"],
+            "retiring": []
+        }),
+        "{envelope}"
+    );
+    let calls = provider.target.calls();
+    assert_eq!(calls.len(), 2);
+    let orders_slice = &calls.iter().find(|(_, s, _)| s.part == "PART-003").expect("orders").1;
+    let orders_change = orders_slice.change.as_ref().expect("SliceChange on orders");
+    assert_eq!(
+        orders_change
+            .departed
+            .iter()
+            .map(|d| (d.requirement.id.as_str(), d.moved_to.as_deref()))
+            .collect::<Vec<_>>(),
+        [("REQ-003", Some("PART-002")), ("REQ-004", None)]
+    );
+    let scopes = provider.target.scopes();
+    assert_eq!(
+        scopes[0].1.retired,
+        [Departure {
+            requirement: orders_change.departed[1].requirement.clone(),
+            moved_to: None,
+        }]
+    );
+    provider.vcs.assert_exhausted();
+}
+
+// A design type signature change reaches every part that owns or uses the
+// type (`reasons: ["types"]`), populates `SliceChange.types` with the before
+// and after signatures, and lays the part's owned types on its first slice
+// alone when the rebuilt part spans multiple slices.
+#[tokio::test]
+async fn build_change_types_on_first_slice() {
+    let mut parent_plan: Value = serde_json::from_slice(WIDE_PLAN).expect("wide-plan fixture");
+    parent_plan["parts"][1]["uses"] = json!(["orders.order"]);
+    parent_plan["parts"][1]["depends-on"] = json!(["PART-001", "PART-003"]);
+    let provider = Provider::idle();
+    let parent = seed_at(
+        &provider.files,
+        LABELLED,
+        SPEC,
+        DESIGN,
+        &serde_json::to_vec(&parent_plan).expect("plan"),
+    );
+
+    let (mut child_spec, mut child_design): (Value, Value) = (
+        serde_json::from_slice(SPEC).expect("spec"),
+        serde_json::from_slice(DESIGN).expect("design"),
+    );
+    child_spec["parent"] = json!(parent);
+    child_design["parent"] = json!(parent);
+    child_design["sections"][1]["blocks"] = json!([
+        {"type": {"key": "orders.order", "signature": "interface Order { id: string; total: number }", "role": "data"}},
+        {"type": {"key": "orders.item", "signature": "interface Item { sku: string }", "role": "data"}}
+    ]);
+    let mut child_plan = parent_plan;
+    child_plan["parent"] = json!(parent);
+    child_plan["parts"][2]["types"] = json!(["orders.item", "orders.order"]);
+    seed(
+        &provider.files,
+        &serde_json::to_vec(&child_spec).expect("spec"),
+        &serde_json::to_vec(&child_design).expect("design"),
+        &serde_json::to_vec(&child_plan).expect("plan"),
+    );
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry("m:SLICE-002", &message(&parent, WIDE_SESSIONS, "REQ-002", "REQ-002", HEAD, 2)),
+            entry(
+                "m:SLICE-003",
+                &message(&parent, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+            ),
+            entry("m:SLICE-001", &message(&parent, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+        ]),
+    );
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "1"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["change"],
+        json!({
+            "from": parent,
+            "commit": LABELLED,
+            "rebuilt": [
+                {"id": "PART-002", "name": "sessions", "reasons": ["types"]},
+                {"id": "PART-003", "name": "orders", "reasons": ["types"]}
+            ],
+            "carried": ["PART-001"],
+            "retiring": []
+        }),
+        "{envelope}"
+    );
+
+    let calls = provider.target.calls();
+    let [(_, orders_first, _), (_, orders_second, _), (_, sessions, _)] = calls.as_slice() else {
+        panic!("two serial slices of orders, then sessions: {calls:?}");
+    };
+    let item_type = DesignType {
+        key: "orders.item".to_owned(),
+        signature: "interface Item { sku: string }".to_owned(),
+    };
+    let order_type = DesignType {
+        key: "orders.order".to_owned(),
+        signature: "interface Order { id: string; total: number }".to_owned(),
+    };
+    assert_eq!(orders_first.types, [item_type, order_type], "owned types on first slice");
+    assert_eq!(orders_second.types, [] as [DesignType; 0], "later slices carry no owned types");
+    let order_change = TypeChange {
+        key: "orders.order".to_owned(),
+        before: Some("interface Order { id: string }".to_owned()),
+        after: Some("interface Order { id: string; total: number }".to_owned()),
+    };
+    assert_eq!(
+        orders_first.change.as_ref().expect("change").types,
+        [
+            TypeChange {
+                key: "orders.item".to_owned(),
+                before: None,
+                after: Some("interface Item { sku: string }".to_owned()),
+            },
+            TypeChange {
+                key: "orders.line".to_owned(),
+                before: Some("interface Line { sku: string }".to_owned()),
+                after: None,
+            },
+            order_change.clone(),
+        ]
+    );
+    assert_eq!(sessions.change.as_ref().expect("change").types, [order_change]);
     provider.vcs.assert_exhausted();
 }

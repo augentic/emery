@@ -20,7 +20,7 @@ use crate::revision::{
     Part, PartId, Plan, ReqId, Requirement, Revision, SliceId, Spec, Waves, ranks,
 };
 use crate::specify::Floors;
-use crate::vcs::StagedSlice;
+use crate::vcs::{MergedIds, StagedSlice};
 
 /// The fallback requirement budget when neither `--budget`, `[target] budget`, nor the adapter's metadata sets one.
 pub const DEFAULT_BUDGET: NonZeroUsize = NonZeroUsize::new(12).expect("positive budget");
@@ -89,6 +89,10 @@ pub struct ScheduledSlice {
     pub count: u32,
     /// The requirements this slice builds, in id order.
     pub requirements: Vec<ReqId>,
+    /// The requirements of a removed part that this retiring slice retires,
+    /// in id order; empty for a slice of the current plan.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub departed: Vec<ReqId>,
     /// The design type keys this slice lays: the part's owned types on its
     /// first slice when nothing of the part was built yet, empty otherwise.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -99,9 +103,26 @@ pub struct ScheduledSlice {
 }
 
 impl ScheduledSlice {
-    // Whether every requirement of this slice is in `done`.
-    fn is_done(&self, done: &BTreeSet<ReqId>) -> bool {
-        self.requirements.iter().all(|id| done.contains(id))
+    /// Whether this slice retires a removed part (`requirements` empty, [`departed`](Self::departed) non-empty).
+    #[must_use]
+    pub const fn is_retiring(&self) -> bool {
+        self.requirements.is_empty() && !self.departed.is_empty()
+    }
+
+    // Whether every requirement or departed id of this slice stands in `done`.
+    fn is_done(&self, done: &MergedIds) -> bool {
+        if self.is_retiring() {
+            self.departed.iter().all(|id| done.departed.contains(id))
+        } else {
+            self.requirements.iter().all(|id| done.requirements.contains(id))
+        }
+    }
+
+    // Whether `staged` is the earlier run's commit for this slice.
+    pub(crate) fn matches_staged(&self, staged: &StagedSlice) -> bool {
+        staged.id == self.id
+            || (!self.requirements.is_empty() && staged.requirements == self.requirements)
+            || (self.is_retiring() && staged.departed == self.departed)
     }
 }
 
@@ -109,39 +130,55 @@ impl ScheduledSlice {
 #[derive(Debug, Clone)]
 pub struct Schedule<'a> {
     plan: &'a Plan,
+    retiring: &'a [Part],
     slices: Vec<ScheduledSlice>,
     resumed: Vec<SliceId>,
 }
 
 impl<'a> Schedule<'a> {
-    // Cuts `plan` into slices of at most `budget` requirements over `spec`.
+    // Cuts `revision`'s plan into slices of at most `budget` requirements.
     //
-    // `merged` are the requirements already committed on the label chain, and
-    // `staged` are the slice commits staged in the integration working copy
-    // by an earlier run. A slice whose requirements are all in `merged` or
-    // `staged` is recorded in `resumed` and not built again; a partially
-    // built part has its remaining requirements cut into fresh slices.
+    // `merged` are the requirements and departed ids already committed on the
+    // label chain, `staged` the slice commits staged in the integration
+    // working copy by an earlier run, `carried` the requirements of parts
+    // carried from the built ancestor, and `retiring` the parts removed since
+    // the built ancestor. A slice whose requirements are all in `merged` or
+    // `staged` is recorded in `resumed` and not built again; a slice whose
+    // requirements are all in `carried` is skipped without being recorded in
+    // `resumed`; a partially built part has its remaining requirements cut
+    // into fresh slices; and each removed part is cut as one retiring slice.
     #[must_use]
     pub fn new(
-        plan: &'a Plan, spec: &'a Spec, budget: NonZeroUsize, merged: &BTreeSet<ReqId>,
-        staged: &[StagedSlice],
+        revision: &'a Revision, budget: NonZeroUsize, merged: &MergedIds, staged: &[StagedSlice],
+        carried: &BTreeSet<ReqId>, retiring: &'a [Part],
     ) -> Self {
+        let plan = &revision.plan;
+        let spec = &revision.spec;
         let floors = Floors::from_spec(spec);
         let cap = budget.get();
-        let done: BTreeSet<ReqId> = merged
-            .iter()
-            .copied()
-            .chain(staged.iter().flat_map(|slice| slice.requirements.iter().copied()))
-            .collect();
+        let mut resumed_ids = merged.clone();
+        for slice in staged {
+            resumed_ids.extend_slice(slice);
+        }
+        let mut done = resumed_ids.clone();
+        done.requirements.extend(carried.iter().copied());
 
         let mut slices = Vec::new();
         let mut resumed: BTreeSet<SliceId> = staged.iter().map(|slice| slice.id).collect();
         let mut ids = SliceId::sequence();
 
         for part in &plan.parts {
-            let cuts = cut_part(part, spec, &floors, cap, &done, staged);
+            let cuts = cut_part(
+                part,
+                spec,
+                &floors,
+                cap,
+                &done.requirements,
+                &resumed_ids.requirements,
+                staged,
+            );
             let count = u32::try_from(cuts.len()).unwrap_or(u32::MAX);
-            let untouched = part.requirements.iter().all(|id| !done.contains(id));
+            let untouched = part.requirements.iter().all(|id| !done.requirements.contains(id));
             for ((position, cut), id) in cuts.into_iter().enumerate().zip(&mut ids) {
                 if cut.resumed {
                     resumed.insert(id);
@@ -156,24 +193,45 @@ impl<'a> Schedule<'a> {
                     index,
                     count,
                     requirements: cut.requirements,
+                    departed: Vec::new(),
                     types,
                     over_budget: cut.over_budget,
                 });
             }
         }
 
+        for (part, id) in retiring.iter().zip(&mut ids) {
+            let mut departed = part.requirements.clone();
+            departed.sort_unstable();
+            if !departed.is_empty() && departed.iter().all(|req| done.departed.contains(req)) {
+                resumed.insert(id);
+            }
+            slices.push(ScheduledSlice {
+                id,
+                part: part.id,
+                name: part.name.clone(),
+                index: 1,
+                count: 1,
+                requirements: Vec::new(),
+                departed,
+                types: Vec::new(),
+                over_budget: false,
+            });
+        }
+
         Self {
             plan,
+            retiring,
             slices,
             resumed: resumed.into_iter().collect(),
         }
     }
 
     // Cuts `revision`'s plan into slices of at most `budget` requirements,
-    // with nothing resumed.
+    // with nothing resumed, carried, or retiring.
     #[must_use]
     pub fn for_revision(revision: &'a Revision, budget: NonZeroUsize) -> Self {
-        Self::new(&revision.plan, &revision.spec, budget, &BTreeSet::new(), &[])
+        Self::new(revision, budget, &MergedIds::default(), &[], &BTreeSet::new(), &[])
     }
 
     #[must_use]
@@ -191,37 +249,44 @@ impl<'a> Schedule<'a> {
         &self.resumed
     }
 
+    pub fn retiring(&self) -> impl Iterator<Item = SliceId> + '_ {
+        self.slices.iter().filter(|slice| slice.is_retiring()).map(|slice| slice.id)
+    }
+
     pub fn over_budget(&self) -> impl Iterator<Item = &ScheduledSlice> {
         self.slices.iter().filter(|slice| slice.over_budget)
     }
 
-    // The unbuilt slices ready to build once `done` requirements are merged:
-    // the next unbuilt slice of every part whose in-plan dependencies are all
-    // in `done`.
+    // The unbuilt slices ready to build once `done` requirements and departed
+    // ids are merged: the next unbuilt slice of every part whose in-plan
+    // dependencies are all in `done`, plus any unbuilt retiring slices.
     #[must_use]
-    pub fn ready(&self, done: &BTreeSet<ReqId>) -> Vec<&ScheduledSlice> {
+    pub fn ready(&self, done: &MergedIds) -> Vec<&ScheduledSlice> {
         let part_done = |id: PartId| {
-            self.plan
-                .part(id)
-                .is_none_or(|part| part.requirements.iter().all(|req| done.contains(req)))
+            self.plan.part(id).is_none_or(|part| {
+                part.requirements.iter().all(|req| done.requirements.contains(req))
+            })
         };
         let mut ready = Vec::new();
         for part in &self.plan.parts {
             if !self.plan.dependencies(part).all(part_done) {
                 continue;
             }
-            if let Some(next) =
-                self.slices.iter().filter(|slice| slice.part == part.id).find(|s| !s.is_done(done))
+            if let Some(next) = self
+                .slices
+                .iter()
+                .filter(|slice| slice.part == part.id)
+                .find(|slice| !slice.is_done(done))
             {
                 ready.push(next);
             }
         }
         ready
+            .extend(self.slices.iter().filter(|slice| slice.is_retiring() && !slice.is_done(done)));
+        ready
     }
 
-    pub fn unbuilt<'b>(
-        &'b self, done: &'b BTreeSet<ReqId>,
-    ) -> impl Iterator<Item = &'b ScheduledSlice> {
+    pub fn unbuilt<'b>(&'b self, done: &'b MergedIds) -> impl Iterator<Item = &'b ScheduledSlice> {
         self.slices.iter().filter(move |slice| !slice.is_done(done))
     }
 
@@ -232,12 +297,13 @@ impl<'a> Schedule<'a> {
 
     #[must_use]
     pub fn part(&self, id: PartId) -> Option<&'a Part> {
-        self.plan.part(id)
+        self.plan.part(id).or_else(|| self.retiring.iter().find(|part| part.id == id))
     }
 
     // Projects the schedule's slices into build waves from the base: slices
-    // within one part depend serially on the slice before them, and a part's
-    // first slice depends on the last slice of each dependency part.
+    // within one part depend serially on the slice before them, a part's
+    // first slice depends on the last slice of each dependency part, and
+    // retiring slices have no dependencies.
     #[must_use]
     pub fn waves(&self) -> Waves<SliceId> {
         let last_of: BTreeMap<PartId, SliceId> =
@@ -259,6 +325,9 @@ impl<'a> Schedule<'a> {
                 pending.insert(slice.id, deps);
                 prev = Some(slice.id);
             }
+        }
+        for slice in self.slices.iter().filter(|slice| slice.is_retiring()) {
+            pending.insert(slice.id, BTreeSet::new());
         }
         let (mut waves, cyclic) = ranks(pending);
         if !cyclic.is_empty() {
@@ -284,10 +353,11 @@ struct Group {
 // counts stay stable across resumes at the same budget. When `done` splits one
 // of the full cut's slices (as when `--budget` changed mid-build), the
 // already-built requirements stand as one resumed slice and the remaining
-// requirements are packed fresh.
+// requirements are packed fresh. Only slices whose requirements are in
+// `resumed_reqs` (merged or staged in this revision) are marked `resumed`.
 fn cut_part(
     part: &Part, spec: &Spec, floors: &Floors<'_>, cap: usize, done: &BTreeSet<ReqId>,
-    staged: &[StagedSlice],
+    resumed_reqs: &BTreeSet<ReqId>, staged: &[StagedSlice],
 ) -> Vec<Cut> {
     let mut full = pack_requirements(&part.requirements, spec, floors, cap);
     let aligned = full.iter().all(|cut| {
@@ -296,7 +366,7 @@ fn cut_part(
     });
     if aligned {
         for cut in &mut full {
-            cut.resumed = cut.requirements.iter().all(|id| done.contains(id));
+            cut.resumed = cut.requirements.iter().all(|id| resumed_reqs.contains(id));
         }
         return full;
     }
@@ -308,10 +378,11 @@ fn cut_part(
     if !built.is_empty() {
         let over_budget =
             built.len() > cap && !staged.iter().any(|slice| slice.requirements == built);
+        let resumed = built.iter().all(|id| resumed_reqs.contains(id));
         cuts.push(Cut {
             requirements: built,
             over_budget,
-            resumed: true,
+            resumed,
         });
     }
     cuts.extend(pack_requirements(&remaining, spec, floors, cap));

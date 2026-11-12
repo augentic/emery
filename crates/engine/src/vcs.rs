@@ -151,6 +151,12 @@ pub struct Message {
     pub requirements: Vec<ReqId>,
     /// The requirements the build reported covered.
     pub covered: Vec<ReqId>,
+    /// The requirements of a removed part that this retiring slice retires;
+    /// empty for a slice building requirements of the current plan.
+    pub departed: Vec<ReqId>,
+    /// The built ancestor revision a change build built against; `None` for
+    /// a whole build.
+    pub change: Option<String>,
     /// The adapter that built it, as the run named it.
     pub adapter: String,
     /// The integrated head the slice was built over.
@@ -162,8 +168,10 @@ pub struct Message {
 impl Message {
     /// Reads a message back from a commit's text; `None` when a build did not write it.
     ///
-    /// Every trailer must be present and well formed, so what a run's own
-    /// commits say is read and anything else in the history is passed over.
+    /// Every required trailer must be present and well formed (`Change:` and
+    /// `Departed:` are optional, for whole builds and older history), so what
+    /// a run's own commits say is read and anything else in the history is
+    /// passed over.
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         let mut lines = text.lines();
@@ -183,6 +191,12 @@ impl Message {
         if trailers.get("Slice")?.parse::<SliceId>().ok()? != slice {
             return None;
         }
+        let departed = match trailers.get("Departed") {
+            Some(_) => ids("Departed")?,
+            None => Vec::new(),
+        };
+        let change =
+            trailers.get("Change").copied().filter(|change| !change.is_empty()).map(str::to_owned);
         Some(Self {
             slice,
             part: trailers.get("Part")?.parse().ok()?,
@@ -191,6 +205,8 @@ impl Message {
             budget: trailers.get("Budget")?.parse().ok()?,
             requirements: ids("Requirements")?,
             covered: ids("Covered")?,
+            departed,
+            change,
             adapter: (*trailers.get("Adapter")?).to_owned(),
             base: (*trailers.get("Base")?).to_owned(),
             wave: trailers.get("Wave")?.parse().ok()?,
@@ -205,8 +221,7 @@ impl fmt::Display for Message {
         write!(
             f,
             "{slice} {name}\n\nSlice: {slice}\nPart: {part}\nRevision: {revision}\nBudget: \
-             {budget}\nRequirements: {requirements}\nCovered: {covered}\nAdapter: {adapter}\nBase: \
-             {base}\nWave: {wave}",
+             {budget}\nRequirements: {requirements}\nCovered: {covered}",
             slice = self.slice,
             part = self.part,
             name = self.name,
@@ -214,6 +229,16 @@ impl fmt::Display for Message {
             budget = self.budget,
             requirements = list(&self.requirements),
             covered = list(&self.covered),
+        )?;
+        if !self.departed.is_empty() {
+            write!(f, "\nDeparted: {}", list(&self.departed))?;
+        }
+        if let Some(change) = &self.change {
+            write!(f, "\nChange: {change}")?;
+        }
+        write!(
+            f,
+            "\nAdapter: {adapter}\nBase: {base}\nWave: {wave}",
             adapter = self.adapter,
             base = self.base,
             wave = self.wave,
@@ -725,17 +750,17 @@ impl BuildRepo {
         }
     }
 
-    /// What `label` already holds over `base` for `revision`: the labelled head and the requirements merged beneath it.
+    /// What `label` already holds over `base` for `revision`: the labelled head and the requirements and departed ids merged beneath it.
     ///
     /// The label is read back as a label alone, never a tag or a remote's
     /// branch of that spelling, and only where it descends from `base`. The
-    /// requirements are read from the [`Message`]s a build sealed along the
-    /// label's first-parent chain; a commit a build did not write, or one
-    /// of another revision, is passed over, so a label that descends from
-    /// `base` is resumed from wherever it stands, with no requirement beneath
-    /// it when the chain names none. `None` means the repository has no such
-    /// label, or the label does not descend from `base`, so a build starts
-    /// from `base`.
+    /// requirements and departed ids are read from the [`Message`]s a build
+    /// sealed along the label's first-parent chain; a commit a build did not
+    /// write, or one of another revision, is passed over, so a label that
+    /// descends from `base` is resumed from wherever it stands, with nothing
+    /// beneath it when the chain names none. `None` means the repository has
+    /// no such label, or the label does not descend from `base`, so a build
+    /// starts from `base`.
     ///
     /// # Errors
     ///
@@ -744,7 +769,7 @@ impl BuildRepo {
     /// capability fails otherwise.
     pub async fn merged_under<V: Vcs>(
         &self, vcs: &V, label: &str, base: &str, revision: &str,
-    ) -> Result<Option<(String, BTreeSet<ReqId>)>, Error> {
+    ) -> Result<Option<Labelled>, Error> {
         let repo = self.path();
         let Some(head) = self.labelled(vcs, label).await? else {
             return Ok(None);
@@ -760,12 +785,15 @@ impl BuildRepo {
         }
         let entries =
             vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?;
-        let merged: BTreeSet<ReqId> = entries
+        let mut merged = MergedIds::default();
+        for message in entries
             .iter()
             .filter_map(|entry| Message::parse(&entry.message))
             .filter(|message| message.revision == revision)
-            .flat_map(|message| message.requirements)
-            .collect();
+        {
+            merged.requirements.extend(message.requirements);
+            merged.departed.extend(message.departed);
+        }
         if merged.is_empty() {
             tracing::info!(
                 label,
@@ -773,7 +801,7 @@ impl BuildRepo {
                 "the label holds no slice of this revision; every slice builds from it"
             );
         }
-        Ok(Some((head, merged)))
+        Ok(Some(Labelled { head, merged }))
     }
 
     /// Cuts the integration working copy for a build of `revision` over `head`, resuming what an earlier run staged in it.
@@ -880,13 +908,19 @@ impl BuildRepo {
                 );
                 return Ok(None);
             }
-            slices.insert(message.slice, message.requirements);
+            slices.insert(message.slice, (message.requirements, message.departed));
         }
         if slices.is_empty() {
             return Ok(None);
         }
-        let staged_slices =
-            slices.into_iter().map(|(id, requirements)| StagedSlice { id, requirements }).collect();
+        let staged_slices = slices
+            .into_iter()
+            .map(|(id, (requirements, departed))| StagedSlice {
+                id,
+                requirements,
+                departed,
+            })
+            .collect();
         Ok(Some((staged, staged_slices)))
     }
 
@@ -963,6 +997,45 @@ async fn project_clean<V: Vcs>(vcs: &V) -> Result<(), Error> {
     Ok(())
 }
 
+/// What stands merged in a revision's history: requirements and departed ids.
+///
+/// Carried on [`Labelled`] and threaded through [`build`](crate::build::build)
+/// so that built requirements and retired departures travel together.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MergedIds {
+    /// The requirement identifiers from `Requirements:` trailers (plus carried
+    /// requirements once the schedule is cut).
+    pub requirements: BTreeSet<ReqId>,
+    /// The departed requirement identifiers from `Departed:` trailers.
+    pub departed: BTreeSet<ReqId>,
+}
+
+impl MergedIds {
+    /// Whether neither a requirement nor a departed id stands merged.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.requirements.is_empty() && self.departed.is_empty()
+    }
+
+    /// Records the requirements and departed ids of `slice` as merged.
+    pub fn extend_slice(&mut self, slice: &StagedSlice) {
+        self.requirements.extend(slice.requirements.iter().copied());
+        self.departed.extend(slice.departed.iter().copied());
+    }
+}
+
+/// What a revision's label already holds over the build's base.
+///
+/// Returned by [`BuildRepo::merged_under`]: the commit the label stands at
+/// and the requirements and departed ids its slice commits record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Labelled {
+    /// The commit the label points at.
+    pub head: String,
+    /// The requirements and departed ids recorded along the label's chain.
+    pub merged: MergedIds,
+}
+
 /// The integration working copy a build runs over, and what it was found holding.
 ///
 /// Cut by [`BuildRepo::cut_integration`]: at the head the build starts from,
@@ -988,6 +1061,8 @@ pub struct StagedSlice {
     pub id: SliceId,
     /// The requirement identifiers from the commit's `Requirements:` trailer.
     pub requirements: Vec<ReqId>,
+    /// The departed requirement identifiers from the commit's `Departed:` trailer.
+    pub departed: Vec<ReqId>,
 }
 
 /// A working copy cut from a repository for one run, on no label.

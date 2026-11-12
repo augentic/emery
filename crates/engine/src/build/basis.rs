@@ -15,9 +15,9 @@ use omnia_sdk::{Error, Vcs, server_error};
 use super::Schedule;
 use super::change::{Change, ChangeSet, Whole, WholeReason};
 use crate::Files;
-use crate::revision::{PartId, ReqId, Revision, SliceId};
+use crate::revision::{Part, PartId, ReqId, Revision, SliceId};
 use crate::store::{self, Current};
-use crate::vcs::{BuildRepo, SCOPE, WorkingCopy};
+use crate::vcs::{BuildRepo, Labelled, MergedIds, SCOPE, WorkingCopy};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Basis {
@@ -58,6 +58,30 @@ impl Basis {
     }
 
     #[must_use]
+    pub const fn change_set(&self) -> Option<&ChangeSet> {
+        match self {
+            Self::Change { change, .. } => Some(change),
+            Self::Whole(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn carried(&self) -> BTreeSet<ReqId> {
+        match self {
+            Self::Change { change, scope } => change.carried(scope),
+            Self::Whole(_) => BTreeSet::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn removed_parts(&self) -> &[Part] {
+        match self {
+            Self::Change { change, .. } => change.removed_parts(),
+            Self::Whole(_) => &[],
+        }
+    }
+
+    #[must_use]
     pub fn outcome(&self, retiring: Vec<SliceId>) -> (Option<Change>, Option<Whole>) {
         match self {
             Self::Change { change, scope } => (Some(change.describe(scope, retiring)), None),
@@ -78,13 +102,17 @@ struct Ancestor {
     id: String,
     commit: String,
     revision: Revision,
-    merged: BTreeSet<ReqId>,
+    merged: MergedIds,
 }
 
 impl Ancestor {
-    fn is_complete(&self, budget: NonZeroUsize, done: &BTreeSet<ReqId>) -> bool {
-        Schedule::new(&self.revision.plan, &self.revision.spec, budget, done, &[])
-            .unbuilt(done)
+    fn is_complete(
+        &self, budget: NonZeroUsize, carried: &BTreeSet<ReqId>, retiring: &[Part],
+    ) -> bool {
+        let mut done = self.merged.clone();
+        done.requirements.extend(carried.iter().copied());
+        Schedule::new(&self.revision, budget, &self.merged, &[], carried, retiring)
+            .unbuilt(&done)
             .next()
             .is_none()
     }
@@ -94,6 +122,7 @@ impl<P: Target + Vcs + Files> Settler<'_, P> {
     // Finds the nearest ancestor of `start` that holds slice commits on its
     // label and verifies that its build is complete.
     async fn find_ancestor(&self, start: &Revision) -> Result<Option<Ancestor>, Error> {
+        let empty = BTreeSet::new();
         let mut visited = BTreeSet::new();
         let mut chain: Vec<Ancestor> = Vec::new();
         let mut parent = start.spec.parent.as_deref();
@@ -101,7 +130,7 @@ impl<P: Target + Vcs + Files> Settler<'_, P> {
             let Some(ancestor) = self.next_built(parent, &mut visited).await? else {
                 return Ok(None);
             };
-            let complete = ancestor.is_complete(self.budget, &ancestor.merged);
+            let complete = ancestor.is_complete(self.budget, &empty, &[]);
             chain.push(ancestor);
             if complete {
                 break;
@@ -121,9 +150,8 @@ impl<P: Target + Vcs + Files> Settler<'_, P> {
                 &current.revision,
             );
             let scope = self.scope(&change).await?;
-            let mut done = current.merged.clone();
-            done.extend(change.carried(&scope));
-            if !current.is_complete(self.budget, &done) {
+            let carried = change.carried(&scope);
+            if !current.is_complete(self.budget, &carried, change.removed_parts()) {
                 return Ok(None);
             }
         }
@@ -142,7 +170,7 @@ impl<P: Target + Vcs + Files> Settler<'_, P> {
                 return Ok(None);
             }
             let label = store::label(&id);
-            let Some((commit, merged)) =
+            let Some(Labelled { head: commit, merged }) =
                 self.repo.merged_under(self.provider, &label, self.base, &id).await?
             else {
                 return Ok(None);

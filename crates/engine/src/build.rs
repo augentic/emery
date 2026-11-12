@@ -25,15 +25,18 @@ use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, server_error}
 use serde::{Deserialize, Serialize};
 
 pub(crate) use self::basis::Basis;
+use self::change::ChangeSet;
 pub use self::change::{Change, PartReach, Reason, Whole, WholeReason};
 use self::merge::UnresolvedMerge;
 pub(crate) use self::schedule::Schedule;
 pub use self::schedule::{BudgetSource, DEFAULT_BUDGET, ScheduledSlice};
 use crate::adapter::{self, AdapterRef, Loaded};
 pub use crate::revision::{BadId, PartId, ReqId, SliceId, Waves};
-use crate::revision::{Design, Part, Spec};
+use crate::revision::{Design, Part, Revision, Spec};
 pub use crate::store::StagedKind;
-use crate::vcs::{BuildRepo, INTEGRATION, Integration, Message, StagedSlice, WorkingCopy};
+use crate::vcs::{
+    BuildRepo, INTEGRATION, Integration, Labelled, MergedIds, Message, StagedSlice, WorkingCopy,
+};
 use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, vcs};
 
 /// Builds every slice of the current plan through the target adapter `input` names.
@@ -160,7 +163,6 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     let basis =
         Basis::settle(provider, &repo, Some(&adapter), &base, &revision, budget, input.whole)
             .await?;
-    let (change, whole) = basis.outcome(Vec::new());
     let label = store::label(&revision_id);
     let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
     let mut progress = Progress::start(&base, labelled);
@@ -169,8 +171,8 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         head,
         staged,
     } = repo.cut_integration(provider, &progress.head, &revision_id).await?;
-    let schedule = Schedule::new(&revision.plan, &revision.spec, budget, &progress.merged, &staged);
-    progress.stage(head, staged, schedule.resumed().to_vec());
+    let schedule = progress.schedule(head, staged, &revision, budget, &basis);
+    let (change, whole) = basis.outcome(schedule.retiring().collect());
     let initialised = progress.initialise(provider, &repo, &integration, &adapter).await?;
 
     let parts = revision.plan.waves();
@@ -206,6 +208,7 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         design: &revision.design,
         rendered: &rendered,
         schedule: &schedule,
+        change: basis.change_set(),
         budget: budget.get(),
         repo: &repo,
         integration: &integration,
@@ -459,6 +462,7 @@ pub(crate) struct Run<'a> {
     // the design as every slice carries it
     rendered: &'a str,
     schedule: &'a Schedule<'a>,
+    change: Option<&'a ChangeSet>,
     budget: usize,
     repo: &'a BuildRepo,
     integration: &'a WorkingCopy,
@@ -498,13 +502,13 @@ impl<'a> Run<'a> {
         let mut merged = Vec::with_capacity(ready.len());
         let mut pending = Vec::with_capacity(ready.len());
         for slice in ready.iter().copied() {
-            if let Some(at) = progress.staged.iter().position(|staged| {
-                staged.id == slice.id || staged.requirements == slice.requirements
-            }) {
+            if let Some(at) = progress.staged.iter().position(|staged| slice.matches_staged(staged))
+            {
                 let staged = progress.staged.remove(at);
                 tracing::info!(slice = %staged.id, "slice staged by an earlier run; not built again");
-                progress.merged.extend(staged.requirements);
-                progress.merged.extend(slice.requirements.iter().copied());
+                progress.merged.extend_slice(&staged);
+                progress.merged.requirements.extend(slice.requirements.iter().copied());
+                progress.merged.departed.extend(slice.departed.iter().copied());
                 merged.push(staged.id);
             } else {
                 pending.push(slice);
@@ -522,9 +526,14 @@ impl<'a> Run<'a> {
         // every slice still to build, built at once in a working copy of its
         // own, every outcome waited for; a buffer of none would never poll
         let head = progress.head.clone();
+        let merged_reqs = &progress.merged.requirements;
         let mut builds = Vec::with_capacity(pending.len());
         for slice in pending.iter().copied() {
-            builds.push(self.build(provider, slice, &head, wave).map(move |built| (slice, built)));
+            let built_before = self.built_before(slice, merged_reqs);
+            builds.push(
+                self.build(provider, slice, &head, wave, built_before)
+                    .map(move |built| (slice, built)),
+            );
         }
         let mut outcomes: Vec<(&'a ScheduledSlice, Result<Built<'a>, Error>)> = if builds.is_empty()
         {
@@ -565,14 +574,31 @@ impl<'a> Run<'a> {
         Ok(())
     }
 
+    // The requirements of `slice`'s part that earlier slices of this build
+    // already rebuilt.
+    fn built_before(&self, slice: &ScheduledSlice, merged: &BTreeSet<ReqId>) -> Vec<ReqId> {
+        let Some(part) = self.schedule.part(slice.part) else {
+            return Vec::new();
+        };
+        part.requirements
+            .iter()
+            .copied()
+            .filter(|id| merged.contains(id) && !slice.requirements.contains(id))
+            .collect()
+    }
+
     #[tracing::instrument(skip_all, fields(slice = %slice.id, name = %slice.name))]
     async fn build<P: Target + Vcs>(
         &self, provider: &P, slice: &'a ScheduledSlice, head: &str, wave: usize,
+        built_before: Vec<ReqId>,
     ) -> Result<Built<'a>, Error> {
         let part = self.schedule.part(slice.part).ok_or_else(|| {
             server_error!("slice `{}` names unknown part `{}`", slice.id, slice.part)
         })?;
         let at = vcs::slice_worktree(slice.id);
+        let slice_change = self
+            .change
+            .map(|change| change.slice_change(part.id, &slice.requirements, &built_before));
         let input = SliceInput {
             id: slice.id.to_string(),
             part: part.id.to_string(),
@@ -600,7 +626,7 @@ impl<'a> Run<'a> {
             design: self.rendered.to_owned(),
             plan: part.to_string(),
             base: head.to_owned(),
-            change: None,
+            change: slice_change,
         };
         tracing::info!(requirements = input.requirements.len(), wave, "building slice");
 
@@ -694,6 +720,8 @@ impl<'a> Run<'a> {
             budget: self.budget,
             requirements: scheduled.requirements.clone(),
             covered: built.covered.clone(),
+            departed: scheduled.departed.clone(),
+            change: self.change.map(|change| change.built().to_owned()),
             adapter: self.reference.to_string(),
             base: progress.head.clone(),
             wave,
@@ -730,7 +758,8 @@ impl<'a> Run<'a> {
             resolved = resolved.len(),
             "slice merged"
         );
-        progress.merged.extend(scheduled.requirements.iter().copied());
+        progress.merged.requirements.extend(scheduled.requirements.iter().copied());
+        progress.merged.departed.extend(scheduled.departed.iter().copied());
         progress.built.push(BuiltSlice {
             id: slice,
             part: part.id,
@@ -918,7 +947,7 @@ pub(crate) struct Progress {
     head: String,
     // where the label stands; `None` until a wave of a fresh build verifies
     labelled: Option<String>,
-    merged: BTreeSet<ReqId>,
+    merged: MergedIds,
     // merged over the head by an earlier run and never verified: each is
     // this run's in the wave it is ready in, with no build
     staged: Vec<StagedSlice>,
@@ -930,12 +959,12 @@ pub(crate) struct Progress {
 }
 
 impl Progress {
-    // `labelled` is the head the label stands at and the requirements its chain names;
-    // `None` starts a fresh build from the base.
-    fn start(base: &str, labelled: Option<(String, BTreeSet<ReqId>)>) -> Self {
+    // `labelled` is the head the label stands at and the requirements and
+    // departed ids its chain names; `None` starts a fresh build from the base.
+    fn start(base: &str, labelled: Option<Labelled>) -> Self {
         let (head, labelled, merged) = match labelled {
-            Some((head, merged)) => (head.clone(), Some(head), merged),
-            None => (base.to_owned(), None, BTreeSet::new()),
+            Some(Labelled { head, merged }) => (head.clone(), Some(head), merged),
+            None => (base.to_owned(), None, MergedIds::default()),
         };
         Self {
             resumed: Vec::new(),
@@ -950,25 +979,34 @@ impl Progress {
         }
     }
 
-    // `head` is where the integration copy was cut, `staged` the slices
-    // an earlier run merged over the labelled head beneath it, and `resumed`
-    // every slice already built on the label or staged in the copy.
-    fn stage(&mut self, head: String, staged: Vec<StagedSlice>, resumed: Vec<SliceId>) {
-        self.resumed = resumed;
-        if staged.is_empty() {
-            return;
+    // Cuts `revision`'s plan into a `Schedule` under `budget` and `basis`,
+    // recording the slices resumed from the label or `staged` in the
+    // integration copy at `head` and seeding carried requirements into
+    // `merged`.
+    fn schedule<'a>(
+        &mut self, head: String, staged: Vec<StagedSlice>, revision: &'a Revision,
+        budget: NonZeroUsize, basis: &'a Basis,
+    ) -> Schedule<'a> {
+        let carried = basis.carried();
+        let schedule =
+            Schedule::new(revision, budget, &self.merged, &staged, &carried, basis.removed_parts());
+        self.resumed = schedule.resumed().to_vec();
+        self.merged.requirements.extend(carried);
+        if !staged.is_empty() {
+            self.head = head;
+            self.staged = staged;
         }
-        self.head = head;
-        self.staged = staged;
+        schedule
     }
 
     // A build no slice of the revision stands merged in, by the label's
-    // chain or staged in the copy, is initialised with the adapter's layout,
-    // what it scaffolded sealed in the integration copy as the commit the
-    // slices build over; a repository the engine created is given a
-    // `.gitignore` of the engine's own directory beside it where the layout
-    // holds none, so a checkout of the result ignores `.emery/`. One
-    // resumed from a slice was initialised by the run that merged it.
+    // chain, staged in the copy, or carried from a built ancestor, is
+    // initialised with the adapter's layout, what it scaffolded sealed in the
+    // integration copy as the commit the slices build over; a repository the
+    // engine created is given a `.gitignore` of the engine's own directory
+    // beside it where the layout holds none, so a checkout of the result
+    // ignores `.emery/`. One resumed from a slice or building a change with
+    // carried requirements was initialised already.
     async fn initialise<P: Target + Vcs + Files>(
         &mut self, provider: &P, repo: &BuildRepo, integration: &WorkingCopy, adapter: &str,
     ) -> Result<Option<Initialised>, Error> {

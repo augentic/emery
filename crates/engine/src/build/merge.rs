@@ -75,8 +75,10 @@ impl UnresolvedMerge<'_> {
             .filter(|&&other| other != part.id)
             .filter_map(|other| {
                 let plan_part = run.schedule.part(*other)?;
-                let is_merged =
-                    plan_part.requirements.iter().any(|req| progress.merged.contains(req));
+                let is_merged = plan_part
+                    .requirements
+                    .iter()
+                    .any(|req| progress.merged.requirements.contains(req));
                 if !is_merged {
                     return None;
                 }
