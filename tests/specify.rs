@@ -17,7 +17,7 @@ use omnia_test::guest::{Memory, ScriptedModel};
 use serde_json::Value;
 use support::provider::{Provider, Rendezvous, claim, digest, evidence, requirement, retire};
 use support::scratch::Scratch;
-use support::store::{carry, seed, staged, staged_at, written};
+use support::store::{carry, seed, staged, written};
 use support::{cli_ok, fail};
 
 // The one-source reference most scenarios name; the scripted loader lands
@@ -652,15 +652,12 @@ async fn invalid_grouping() {
     for (answer, fragment) in cases {
         let mut provider = Provider::answering([*answer, *answer, *answer]);
         bind(&mut provider);
-        let envelope = fail(
+        fail_draft(
             &provider,
             &["emery", "specify", &reference("docs"), &reference("code")],
-            1,
-            draft_code(fragment),
+            fragment,
         )
         .await;
-        assert_message(&envelope, fragment);
-        provider.model.assert_exhausted();
     }
 
     // the corrected answer commits
@@ -1481,11 +1478,7 @@ async fn invalid_draft() {
     ];
     for (answer, fragment) in cases {
         let provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()]);
-        let envelope =
-            fail(&provider, &["emery", "specify", &reference("docs")], 1, draft_code(fragment))
-                .await;
-        assert_message(&envelope, fragment);
-        provider.model.assert_exhausted();
+        fail_draft(&provider, &["emery", "specify", &reference("docs")], fragment).await;
     }
 }
 
@@ -1770,11 +1763,7 @@ async fn invalid_design() {
     for (answer, fragment) in cases {
         let provider =
             Provider::answering([SPEC_ANSWER, answer.as_str(), answer.as_str(), answer.as_str()]);
-        let envelope =
-            fail(&provider, &["emery", "specify", &reference("docs")], 1, draft_code(fragment))
-                .await;
-        assert_message(&envelope, fragment);
-        provider.model.assert_exhausted();
+        fail_draft(&provider, &["emery", "specify", &reference("docs")], fragment).await;
     }
 }
 
@@ -1841,11 +1830,7 @@ async fn dishonest_design() {
         let mut provider =
             Provider::answering([SPEC_ANSWER, answer.as_str(), answer.as_str(), answer.as_str()]);
         provider.source.evidence.insert("docs".to_string(), evidence());
-        let envelope =
-            fail(&provider, &["emery", "specify", &reference("docs")], 1, draft_code(fragment))
-                .await;
-        assert_message(&envelope, fragment);
-        provider.model.assert_exhausted();
+        fail_draft(&provider, &["emery", "specify", &reference("docs")], fragment).await;
     }
 
     let mut provider = Provider::answering([SPEC_ANSWER, honest.as_str()]);
@@ -2867,9 +2852,7 @@ async fn invalid_plan() {
             answer.as_str(),
         ]);
         provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
-        let envelope = fail(&provider, &["emery", "specify", &docs], 1, draft_code(fragment)).await;
-        assert_message(&envelope, fragment);
-        provider.model.assert_exhausted();
+        fail_draft(&provider, &["emery", "specify", &docs], fragment).await;
     }
 }
 
@@ -3798,22 +3781,20 @@ mod store {
     use std::future::Future;
     use std::ops::Range;
     use std::sync::Arc;
-    use std::time::Duration;
 
     use bytes::Bytes;
     use emery_engine::vcs::{REVISION, RevisionMessage, SPECIFICATION};
     use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
-    use omnia_sdk::Page;
     use omnia_sdk::blobstore::{ContainerMetadata, ObjectMetadata};
-    use omnia_sdk::keyvalue::Conflict;
+    use omnia_sdk::{BlobStore, Page};
     use omnia_test::guest::Memory;
     use serde_json::Value;
 
     use super::support::vcs::HEAD;
     use super::{
         DESIGN_ANSWER, PROJECT_CONFIG, Provider, SOURCE, SPEC_ANSWER, SPEC_RENDERED, SPEC_REVISION,
-        assert_message, cli_ok, committed, fail, project_staged, projection, reference, seed,
-        shown, shown_sealed, staged,
+        assert_message, cli_ok, committed, fail, projection, reference, seed, shown, shown_sealed,
+        staged,
     };
 
     const SPEC: &[u8] = include_bytes!("build/spec.json");
@@ -4125,39 +4106,37 @@ mod store {
         provider.model.assert_exhausted();
     }
 
-    // Isolation is host policy over the engine's flat keys.
+    // Isolation is host policy over the engine's flat keys and containers.
     #[tokio::test]
     async fn multi_project() {
         // one shared store, two project-scoped views
         let shared = Memory::default();
         let alpha = Provider::over(
-            Arc::new(Namespaced::new("alpha", shared.clone())),
+            Arc::new(ProjectStore::new("alpha", &shared)),
             [SPEC_ANSWER, DESIGN_ANSWER],
         );
         let beta_spec = SPEC_ANSWER.replace("hello", "howdy");
         let beta_design = DESIGN_ANSWER.replace("hello", "howdy");
-        let beta = Provider::over(
-            Arc::new(Namespaced::new("beta", shared.clone())),
-            [beta_spec, beta_design],
-        );
+        let beta =
+            Provider::over(Arc::new(ProjectStore::new("beta", &shared)), [beta_spec, beta_design]);
 
         cli_ok(&alpha, &["emery", "specify", SOURCE]).await;
         cli_ok(&beta, &["emery", "specify", SOURCE]).await;
 
-        // every write landed under its project prefix
-        assert!(shared.state(STAGED_KEY).is_none(), "no unprefixed staged id exists");
-        assert!(shared.objects(STAGED_CONTAINER).is_empty(), "no unprefixed candidate exists");
+        // every write landed in its project bucket and container
+        assert!(shared.state(STAGED_KEY).is_none(), "default bucket holds no staged id");
+        assert!(shared.objects(STAGED_CONTAINER).is_empty(), "no unprefixed container exists");
 
-        let id_alpha = project_staged(&shared, "alpha");
-        let id_beta = project_staged(&shared, "beta");
+        let id_alpha = staged(&shared.named("alpha"));
+        let id_beta = staged(&shared.named("beta"));
         assert_ne!(id_alpha, id_beta, "distinct documents stage distinct candidates");
 
         // each project shows its own candidate
         let spec_alpha = shared
-            .object(&format!("alpha/{STAGED_CONTAINER}"), &format!("{id_alpha}/spec.json"))
+            .object(&format!("alpha-{STAGED_CONTAINER}"), &format!("{id_alpha}/spec.json"))
             .expect("spec.json");
         let spec_beta = shared
-            .object(&format!("beta/{STAGED_CONTAINER}"), &format!("{id_beta}/spec.json"))
+            .object(&format!("beta-{STAGED_CONTAINER}"), &format!("{id_beta}/spec.json"))
             .expect("spec.json");
         assert_eq!(
             String::from_utf8_lossy(&spec_alpha),
@@ -4172,164 +4151,120 @@ mod store {
         );
         assert!(shown(&beta, "spec").await.contains("howdy"), "beta shows its own revision");
 
-        // a seal's pointer lands under its prefix too
+        // a seal's pointer lands in its project bucket too
         cli_ok(&alpha, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
-        assert!(shared.state(REVISION_KEY).is_none(), "no unprefixed current id exists");
-        assert_eq!(
-            shared.state(&format!("alpha/{REVISION_KEY}")).as_deref(),
-            Some(id_alpha.as_bytes()),
-            "alpha sealed its own candidate"
-        );
-        assert_eq!(project_staged(&shared, "beta"), id_beta, "beta's candidate stands");
+        assert!(shared.state(REVISION_KEY).is_none(), "default bucket holds no current id");
+        assert_eq!(committed(&shared.named("alpha")), id_alpha, "alpha sealed its own candidate");
+        assert_eq!(staged(&shared.named("beta")), id_beta, "beta's candidate stands");
 
         alpha.model.assert_exhausted();
         beta.model.assert_exhausted();
     }
 
-    #[derive(Clone, Debug)]
-    struct Namespaced {
-        prefix: String,
-        inner: Memory,
+    #[derive(Clone, Debug, omnia_sdk::Provider)]
+    struct ProjectStore {
+        project: String,
+        #[provider(StateStore)]
+        state: Memory,
     }
 
-    impl Namespaced {
-        fn new(prefix: &str, inner: Memory) -> Self {
+    impl ProjectStore {
+        fn new(project: &str, shared: &Memory) -> Self {
             Self {
-                prefix: prefix.to_owned(),
-                inner,
+                project: project.to_owned(),
+                state: shared.clone().bucket(project).named(project),
             }
         }
 
-        fn prefixed(&self, name: &str) -> String {
-            format!("{}/{name}", self.prefix)
+        fn container(&self, name: &str) -> String {
+            format!("{}-{name}", self.project)
         }
     }
 
-    impl omnia_sdk::StateStore for Namespaced {
-        type Named = Self;
-
-        fn get(&self, key: &str) -> impl Future<Output = omnia_sdk::Result<Option<Bytes>>> + Send {
-            let key = self.prefixed(key);
-            async move { omnia_sdk::StateStore::get(&self.inner, &key).await }
-        }
-
-        fn set(
-            &self, key: &str, value: &[u8], ttl: Option<Duration>,
-        ) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
-            let key = self.prefixed(key);
-            async move { omnia_sdk::StateStore::set(&self.inner, &key, value, ttl).await }
-        }
-
-        fn delete(&self, key: &str) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
-            let key = self.prefixed(key);
-            async move { omnia_sdk::StateStore::delete(&self.inner, &key).await }
-        }
-
-        fn compare_and_swap(
-            &self, key: &str, current: Option<&[u8]>, new: &[u8], ttl: Option<Duration>,
-        ) -> impl Future<Output = omnia_sdk::Result<Result<(), Conflict>>> + Send {
-            let key = self.prefixed(key);
-            async move {
-                omnia_sdk::StateStore::compare_and_swap(&self.inner, &key, current, new, ttl).await
-            }
-        }
-
-        fn increment(
-            &self, key: &str, delta: i64, ttl: Option<Duration>,
-        ) -> impl Future<Output = omnia_sdk::Result<i64>> + Send {
-            let key = self.prefixed(key);
-            async move { omnia_sdk::StateStore::increment(&self.inner, &key, delta, ttl).await }
-        }
-
-        fn named(&self, name: &str) -> Self::Named {
-            Self {
-                prefix: self.prefix.clone(),
-                inner: self.inner.named(name),
-            }
-        }
-    }
-
-    impl omnia_sdk::BlobStore for Namespaced {
+    impl BlobStore for ProjectStore {
         fn get(
             &self, container: &str, name: &str,
         ) -> impl Future<Output = omnia_sdk::Result<Option<Bytes>>> + Send {
-            let container = self.prefixed(container);
-            async move { omnia_sdk::BlobStore::get(&self.inner, &container, name).await }
+            let container = self.container(container);
+            async move { BlobStore::get(&self.state, &container, name).await }
         }
 
         fn get_range(
             &self, container: &str, name: &str, range: Range<u64>,
         ) -> impl Future<Output = omnia_sdk::Result<Option<Bytes>>> + Send {
-            let container = self.prefixed(container);
-            async move { omnia_sdk::BlobStore::get_range(&self.inner, &container, name, range).await }
+            let container = self.container(container);
+            async move { BlobStore::get_range(&self.state, &container, name, range).await }
         }
 
         fn put(
             &self, container: &str, name: &str, data: &[u8],
         ) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
-            let container = self.prefixed(container);
-            async move { omnia_sdk::BlobStore::put(&self.inner, &container, name, data).await }
+            let container = self.container(container);
+            async move { BlobStore::put(&self.state, &container, name, data).await }
         }
 
         fn delete(
             &self, container: &str, name: &str,
         ) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
-            let container = self.prefixed(container);
-            async move { omnia_sdk::BlobStore::delete(&self.inner, &container, name).await }
+            let container = self.container(container);
+            async move { BlobStore::delete(&self.state, &container, name).await }
         }
 
         fn stat(
             &self, container: &str, name: &str,
         ) -> impl Future<Output = omnia_sdk::Result<Option<ObjectMetadata>>> + Send {
-            let container = self.prefixed(container);
-            async move { omnia_sdk::BlobStore::stat(&self.inner, &container, name).await }
+            let container = self.container(container);
+            async move { BlobStore::stat(&self.state, &container, name).await }
         }
 
         fn list(
             &self, container: &str, prefix: &str, after: Option<&str>,
         ) -> impl Future<Output = omnia_sdk::Result<Page<ObjectMetadata>>> + Send {
-            let container = self.prefixed(container);
-            async move { omnia_sdk::BlobStore::list(&self.inner, &container, prefix, after).await }
+            let container = self.container(container);
+            async move { BlobStore::list(&self.state, &container, prefix, after).await }
         }
 
         fn create_container(
             &self, container: &str,
         ) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
-            let container = self.prefixed(container);
-            async move { omnia_sdk::BlobStore::create_container(&self.inner, &container).await }
+            let container = self.container(container);
+            async move { BlobStore::create_container(&self.state, &container).await }
         }
 
         fn delete_container(
             &self, container: &str,
         ) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
-            let container = self.prefixed(container);
-            async move { omnia_sdk::BlobStore::delete_container(&self.inner, &container).await }
+            let container = self.container(container);
+            async move { BlobStore::delete_container(&self.state, &container).await }
         }
 
         fn container_exists(
             &self, container: &str,
         ) -> impl Future<Output = omnia_sdk::Result<bool>> + Send {
-            let container = self.prefixed(container);
-            async move { omnia_sdk::BlobStore::container_exists(&self.inner, &container).await }
+            let container = self.container(container);
+            async move { BlobStore::container_exists(&self.state, &container).await }
         }
 
         fn container_info(
             &self, container: &str,
         ) -> impl Future<Output = omnia_sdk::Result<Option<ContainerMetadata>>> + Send {
-            let container = self.prefixed(container);
-            async move { omnia_sdk::BlobStore::container_info(&self.inner, &container).await }
+            let container = self.container(container);
+            async move { BlobStore::container_info(&self.state, &container).await }
         }
     }
 }
 
 // --- helpers ---
 
-fn draft_code(fragment: &str) -> &'static str {
-    if fragment == "schema and answer type disagree" {
+async fn fail_draft(provider: &Provider, argv: &[&str], fragment: &str) {
+    let code = if fragment == "schema and answer type disagree" {
         "invalid-request"
     } else {
         "budget-exhausted"
-    }
+    };
+    let envelope = fail(provider, argv, 1, code).await;
+    assert_message(&envelope, fragment);
+    provider.model.assert_exhausted();
 }
 
 fn assert_message(envelope: &Value, fragment: &str) {
@@ -4339,10 +4274,6 @@ fn assert_message(envelope: &Value, fragment: &str) {
 
 fn committed(storage: &Memory) -> String {
     String::from_utf8(storage.state(REVISION_KEY).expect("current")).expect("utf-8 revision id")
-}
-
-fn project_staged(shared: &Memory, project: &str) -> String {
-    staged_at(shared, &format!("{project}/{STAGED_KEY}"))
 }
 
 fn staged_document(storage: &Memory, id: &str, name: &str) -> Vec<u8> {

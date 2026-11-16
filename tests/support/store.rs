@@ -89,12 +89,7 @@ pub fn stage_amendment(storage: &Memory, amendment: &[u8]) -> String {
 
 // The staged revision candidate's id, read from the record at `STAGED_KEY`.
 pub fn staged(storage: &Memory) -> String {
-    staged_at(storage, STAGED_KEY)
-}
-
-// The staged revision candidate's id at `key`, for a namespaced store.
-pub fn staged_at(storage: &Memory, key: &str) -> String {
-    let raw = storage.state(key).expect("staged record");
+    let raw = storage.state(STAGED_KEY).expect("staged record");
     let record: Value = serde_json::from_slice(&raw).expect("staged record JSON");
     assert_eq!(record["kind"], "revision", "{record}");
     record["id"].as_str().expect("staged record id").to_owned()

@@ -1,8 +1,7 @@
 //! Implements the WebAssembly engine guest the shipped runtime embeds.
 //!
-//! Bridges `wasip3::exports::cli::run` to `emery_cli::run`, delegating
-//! capabilities to WASI host imports and answering `Files` against the `.`
-//! preopen.
+//! Bridges `wasi:cli/run` to `emery_cli::run`, delegating capabilities to WASI
+//! host imports and answering `Files` against the `.` preopen.
 
 #![cfg(target_arch = "wasm32")]
 
@@ -12,11 +11,9 @@ use std::{fs, io};
 
 use emery_adapter::{standing, write_whole};
 use emery_engine::{Entry, EntryKind, Files};
-use omnia_sdk::api::command::Response;
-use omnia_sdk::wasi::command;
+use omnia_sdk::api::command::{self, Response};
 use omnia_sdk::{Error, WasiProvider, server_error};
 use wasip3::cli::environment;
-use wasip3::exports::cli::run::Guest;
 
 // Delegates WASI capabilities to `WasiProvider` and answers `Files` against the `.` preopen.
 #[derive(Default, omnia_sdk::Provider)]
@@ -96,17 +93,8 @@ fn carried(full: &Path) -> io::Result<Vec<u8>> {
     }
 }
 
-struct CliGuest;
-
-wasip3::cli::command::export!(CliGuest);
-
-impl Guest for CliGuest {
-    async fn run() -> Result<(), ()> {
-        command::execute(dispatch()).await;
-        Ok(())
-    }
-}
-
 async fn dispatch() -> Response {
     emery_cli::run(Provider::default(), environment::get_arguments()).await
 }
+
+command::export!(dispatch);

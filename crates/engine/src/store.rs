@@ -101,9 +101,7 @@ impl Slot {
 
     // Fails closed on bytes that decode as no record.
     async fn read<S: StateStore>(store: &S) -> Result<Option<Self>, Error> {
-        let Some(raw) = StateStore::get(store, STAGED_KEY)
-            .await
-            .map_err(|err| storage_error("getting the staged record", &err))?
+        let Some(raw) = store.get(STAGED_KEY).await.storage_context("getting the staged record")?
         else {
             return Ok(None);
         };
@@ -139,7 +137,7 @@ impl Slot {
         self, store: &S, token: Option<&[u8]>,
     ) -> Result<(), Error> {
         let record = serde_json::to_vec(&self).context("encoding the staged record")?;
-        swap_key(store, STAGED_KEY, token, &record, "swapping the staged record").await?;
+        compare_and_swap(store, STAGED_KEY, token, &record, "swapping the staged record").await?;
         if let Some(slot) = Self::from_token(token).filter(|slot| slot.id != self.id) {
             prune(store, &slot.id, slot.kind).await;
         }
@@ -158,27 +156,32 @@ impl Slot {
     }
 }
 
-async fn swap_key<S: StateStore>(
-    store: &S, key: &str, current: Option<&[u8]>, new: &[u8], context: &'static str,
-) -> Result<(), Error> {
-    let swapped = StateStore::compare_and_swap(store, key, current, new, None)
-        .await
-        .map_err(|err| storage_error(context, &err))?;
-    match swapped {
-        Ok(()) => Ok(()),
-        Err(Conflict { .. }) => Err(server_error!("{context}: value changed concurrently")),
+// Maps capability-level storage errors (`not-found`, `invalid`, ...) onto
+// `server_error` so internal staging failures never surface as domain codes.
+trait StorageResult<T> {
+    fn storage_context(self, what: &str) -> Result<T, Error>;
+}
+
+impl<T> StorageResult<T> for Result<T, Error> {
+    fn storage_context(self, what: &str) -> Self {
+        self.map_err(|error| server_error!("{what}: {}", error.description()))
     }
 }
 
-fn storage_error(context: &str, err: &Error) -> Error {
-    server_error!("{context}: {}", err.description())
+async fn compare_and_swap<S: StateStore>(
+    store: &S, key: &str, current: Option<&[u8]>, new: &[u8], what: &str,
+) -> Result<(), Error> {
+    match store.compare_and_swap(key, current, new, None).await.storage_context(what)? {
+        Ok(()) => Ok(()),
+        Err(Conflict { .. }) => Err(server_error!("{what}: value changed concurrently")),
+    }
 }
 
 // A document that will not delete stays as an inert orphan, so the failure
 // is logged rather than raised.
 async fn prune<S: BlobStore>(store: &S, id: &str, kind: StagedKind) {
     for name in kind.documents() {
-        if let Err(error) = BlobStore::delete(store, STAGED_CONTAINER, &key(id, name)).await {
+        if let Err(error) = store.delete(STAGED_CONTAINER, &key(id, name)).await {
             tracing::warn!(%id, name, %error, "a displaced candidate document could not be pruned");
         }
     }
@@ -207,15 +210,10 @@ impl Staged {
 }
 
 async fn document<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
-    if !BlobStore::container_exists(store, STAGED_CONTAINER)
+    store
+        .get(STAGED_CONTAINER, &key(id, name))
         .await
-        .map_err(|err| storage_error("reading staged candidate document", &err))?
-    {
-        return Err(server_error!("staged candidate `{id}` does not contain `{name}`"));
-    }
-    BlobStore::get(store, STAGED_CONTAINER, &key(id, name))
-        .await
-        .map_err(|err| storage_error("reading staged candidate document", &err))?
+        .storage_context("reading staged candidate document")?
         .map(Vec::from)
         .ok_or_else(|| server_error!("staged candidate `{id}` does not contain `{name}`"))
 }
@@ -592,7 +590,7 @@ pub async fn stage_amendment<S: StateStore + BlobStore>(
 // The staged record as it stands, for the compare-and-swap; unreadable
 // bytes are logged and swapped over as none.
 async fn token<S: StateStore>(store: &S) -> Option<Vec<u8>> {
-    match StateStore::get(store, STAGED_KEY).await {
+    match store.get(STAGED_KEY).await {
         Ok(token) => token.map(Vec::from),
         Err(error) => {
             tracing::warn!(%error, "the staged record is unreadable");
@@ -603,18 +601,15 @@ async fn token<S: StateStore>(store: &S) -> Option<Vec<u8>> {
 
 // Writes `documents` under `id` in the staged container, creating it on the first stage.
 async fn put<S: BlobStore>(store: &S, id: &str, documents: &[(&str, &str)]) -> Result<(), Error> {
-    if !BlobStore::container_exists(store, STAGED_CONTAINER)
+    store
+        .create_container(STAGED_CONTAINER)
         .await
-        .map_err(|err| storage_error("writing staged candidate document", &err))?
-    {
-        BlobStore::create_container(store, STAGED_CONTAINER)
-            .await
-            .map_err(|err| storage_error("writing staged candidate document", &err))?;
-    }
+        .storage_context("writing staged candidate document")?;
     for (name, body) in documents {
-        BlobStore::put(store, STAGED_CONTAINER, &key(id, name), body.as_bytes())
+        store
+            .put(STAGED_CONTAINER, &key(id, name), body.as_bytes())
             .await
-            .map_err(|err| storage_error("writing staged candidate document", &err))?;
+            .storage_context("writing staged candidate document")?;
     }
     Ok(())
 }
@@ -699,9 +694,7 @@ pub async fn clear<S: StateStore + BlobStore>(store: &S) -> Result<(), Error> {
     let Some(Slot { id, kind, .. }) = Slot::read(store).await? else {
         return Ok(());
     };
-    StateStore::delete(store, STAGED_KEY)
-        .await
-        .map_err(|err| storage_error("clearing the staged candidate", &err))?;
+    StateStore::delete(store, STAGED_KEY).await.storage_context("clearing the staged candidate")?;
     prune(store, &id, kind).await;
     Ok(())
 }
@@ -718,7 +711,7 @@ pub async fn clear<S: StateStore + BlobStore>(store: &S) -> Result<(), Error> {
 pub async fn current<P: Vcs + Files + StateStore>(
     provider: &P, repo: &BuildRepo,
 ) -> Result<Standing, Error> {
-    let pointer = match StateStore::get(provider, REVISION_KEY).await {
+    let pointer = match provider.get(REVISION_KEY).await {
         Ok(pointer) => pointer.map(Vec::from),
         Err(error) => {
             tracing::warn!(%error, "the current revision id is unreadable");
@@ -816,7 +809,7 @@ pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
     let commit = sealed?;
 
     // the pointer, then the candidate the seal consumed
-    swap_key(
+    compare_and_swap(
         provider,
         REVISION_KEY,
         standing.pointer.as_deref(),

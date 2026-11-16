@@ -7,7 +7,6 @@
 
 mod config;
 
-use std::borrow::Cow;
 use std::ffi::OsString;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -52,8 +51,8 @@ where
     let metadata = Metadata::from_env("EMERY");
     let invoked = Invoked::from(&app.verb);
     let format = app.format;
-    let command =
-        Command::new(&provider, &metadata, format).hints(move |error| invoked.hint(error));
+    let command = Command::new(&provider, &metadata, format)
+        .hints(move |error| invoked.hint(error).map(Into::into));
 
     match app.verb {
         Verb::Completions { shell } => completions::<App>(shell, NAME),
@@ -430,13 +429,8 @@ enum Invoked {
 }
 
 impl Invoked {
-    fn hint(self, error: &Error) -> Option<Cow<'static, str>> {
+    fn hint(self, error: &Error) -> Option<String> {
         let hint = match error.code() {
-            "bad_gateway" | "bad_request" | "backend" | "tool-failed" | "budget-exhausted"
-                if self == Self::Build && is_retryable(error) =>
-            {
-                "re-run `emery build` to resume from the last verified wave"
-            }
             "unsupported-version" => {
                 "update emery: `brew upgrade emery`, or `cargo install --git https://github.com/augentic/emery --locked`"
             }
@@ -446,8 +440,8 @@ impl Invoked {
             "specify-source-required" => {
                 "pass one or more adapters to `emery specify`, or add `emery.toml`"
             }
-            "build-target-required" => self.target_hint(),
-            "spec-not-generated" => self.not_generated_hint(error.description()),
+            "build-target-required" => return Some(self.target_hint()),
+            "spec-not-generated" => return Some(self.not_generated_hint(error.description())),
             "spec-mismatch" if error.description().contains("edited or merged by hand") => {
                 "keep one side's `spec/` whole (`git checkout <branch> -- spec/`) and re-run `emery amend`"
             }
@@ -506,16 +500,19 @@ impl Invoked {
             "unavailable" => {
                 "check the network and version, or place `<namespace>_<name>@<version>.wasm` in `~/.emery/adapters/`"
             }
+            _ if self == Self::Build && is_retryable(error) => {
+                "re-run `emery build` to resume from the last verified wave"
+            }
             _ => return None,
         };
-        Some(Cow::Borrowed(hint))
+        Some(hint.to_owned())
     }
 
     // The description says where the revision stands: a label behind its head,
     // a staged candidate or amendment, or nothing sealed; `amend` is told the
     // way back to a sealed revision ends in re-running it.
-    fn not_generated_hint(self, description: &str) -> &'static str {
-        match self {
+    fn not_generated_hint(self, description: &str) -> String {
+        let hint = match self {
             _ if description.contains("does not stand over its head") => {
                 "merge or rebase `emery/<revision>` onto `HEAD`, or run `emery specify --apply`"
             }
@@ -530,14 +527,15 @@ impl Invoked {
             }
             Self::Amend => "run `emery specify --apply <adapter>...` first, then `emery amend`",
             _ => "run `emery specify --apply <adapter>...` to seal a revision first",
-        }
+        };
+        hint.to_owned()
     }
 
     // A run naming its sources on the command line reads no file, so `specify`
     // and `amend` are told to pass `--config` rather than to add a table they
     // may already hold.
-    const fn target_hint(self) -> &'static str {
-        match self {
+    fn target_hint(self) -> String {
+        let hint = match self {
             Self::Build => {
                 "pass `<adapter>` to `emery build`, or add a `[target]` table to `emery.toml`"
             }
@@ -547,7 +545,8 @@ impl Invoked {
             Self::Apply | Self::Show | Self::Completions => {
                 "add a `[target]` table to `emery.toml`, or pass `--config <path>`"
             }
-        }
+        };
+        hint.to_owned()
     }
 }
 

@@ -19,11 +19,19 @@ cfg_select! {
         // select model backend
         cfg_select! {
             feature = "genai" => {
+                // keep the default backend referenced when `--all-features` activates `genai`
                 use omnia_cursor as _;
                 use omnia_genai::{Client as Model, ConnectOptions as ModelOptions};
             }
             not(feature = "genai") => {
                 use omnia_cursor::{Client as Model, ConnectOptions as ModelOptions};
+            }
+        }
+
+        fn storage_options() -> ConnectOptions {
+            ConnectOptions {
+                root: ".emery/storage".into(),
+                buckets: vec!["default".into()],
             }
         }
 
@@ -41,14 +49,8 @@ cfg_select! {
                     shell_roots: vec![".emery/vcs/worktrees".into(), ".emery/vcs/integration".into()],
                     ..ModelOptions::load_env()?
                 }),
-                WasiKeyValue: Filesystem(ConnectOptions {
-                    root: ".emery/storage".into(),
-                    buckets: vec!["default".into()],
-                }),
-                WasiBlobStore: Filesystem(ConnectOptions {
-                    root: ".emery/storage".into(),
-                    buckets: vec!["default".into()],
-                }),
+                WasiKeyValue: Filesystem(storage_options()),
+                WasiBlobStore: Filesystem(storage_options()),
                 WasiVcs: Git,
             },
         });

@@ -15,7 +15,7 @@ use emery_adapter::target::{
 use emery_engine::{Axis, Entry, Files};
 use omnia_sdk::api::command::Response;
 use omnia_sdk::plugins::{self, Digest, Location, Plugin};
-use omnia_sdk::{BlobStore, Error, Plugins, StateStore, Vcs, vcs};
+use omnia_sdk::{BlobStore, Error, Plugins, StateStore};
 use omnia_test::guest::{Memory, ScriptedModel};
 use tokio::sync::Barrier;
 
@@ -211,6 +211,7 @@ pub struct Provider<S = Memory> {
     // The scripted `Target`.
     pub target: TargetScript,
     // The scripted `Vcs`.
+    #[provider(Vcs)]
     pub vcs: VcsScript,
     // The scripted `Files`.
     pub files: FilesScript,
@@ -389,98 +390,6 @@ impl<S: Send + Sync + 'static> Target for Provider<S> {
             merge_rules: self.target.rules.clone(),
             budget: self.target.budget,
         }
-    }
-}
-
-impl<S: Send + Sync + 'static> Vcs for Provider<S> {
-    fn resolve(
-        &self, repo: &str, revision: &str,
-    ) -> impl Future<Output = Result<String, vcs::Error>> + Send {
-        Vcs::resolve(&self.vcs, repo, revision)
-    }
-
-    fn descends(
-        &self, repo: &str, ancestor: &str, descendant: &str,
-    ) -> impl Future<Output = Result<bool, vcs::Error>> + Send {
-        Vcs::descends(&self.vcs, repo, ancestor, descendant)
-    }
-
-    fn head(&self, at: &str) -> impl Future<Output = Result<String, vcs::Error>> + Send {
-        Vcs::head(&self.vcs, at)
-    }
-
-    fn commit(
-        &self, at: &str, message: &str,
-    ) -> impl Future<Output = Result<Option<String>, vcs::Error>> + Send {
-        Vcs::commit(&self.vcs, at, message)
-    }
-
-    fn merge(
-        &self, at: &str, revision: &str, message: &str, policy: &[vcs::Rule],
-    ) -> impl Future<Output = Result<vcs::Merged, vcs::Error>> + Send {
-        Vcs::merge(&self.vcs, at, revision, message, policy)
-    }
-
-    fn log(
-        &self, repo: &str, revision: &str, base: &str,
-    ) -> impl Future<Output = Result<Vec<vcs::Entry>, vcs::Error>> + Send {
-        Vcs::log(&self.vcs, repo, revision, base)
-    }
-
-    fn init(&self, at: &str) -> impl Future<Output = Result<(), vcs::Error>> + Send {
-        Vcs::init(&self.vcs, at)
-    }
-
-    fn add(
-        &self, repo: &str, at: &str, revision: &str,
-    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
-        Vcs::add(&self.vcs, repo, at, revision)
-    }
-
-    fn remove(&self, at: &str) -> impl Future<Output = Result<(), vcs::Error>> + Send {
-        Vcs::remove(&self.vcs, at)
-    }
-
-    fn pending(
-        &self, at: &str,
-    ) -> impl Future<Output = Result<Vec<vcs::Change>, vcs::Error>> + Send {
-        Vcs::pending(&self.vcs, at)
-    }
-
-    fn clone_repo(
-        &self, url: &str, at: &str, options: vcs::CloneOptions,
-    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
-        Vcs::clone_repo(&self.vcs, url, at, options)
-    }
-
-    fn fetch(
-        &self, repo: &str, remote: &str,
-    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
-        Vcs::fetch(&self.vcs, repo, remote)
-    }
-
-    fn label(
-        &self, repo: &str, name: &str, revision: &str,
-    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
-        Vcs::label(&self.vcs, repo, name, revision)
-    }
-
-    fn labelled(
-        &self, repo: &str, name: &str,
-    ) -> impl Future<Output = Result<String, vcs::Error>> + Send {
-        Vcs::labelled(&self.vcs, repo, name)
-    }
-
-    fn fetched(
-        &self, repo: &str, remote: &str, name: &str,
-    ) -> impl Future<Output = Result<String, vcs::Error>> + Send {
-        Vcs::fetched(&self.vcs, repo, remote, name)
-    }
-
-    fn push(
-        &self, repo: &str, remote: &str, label: &str,
-    ) -> impl Future<Output = Result<(), vcs::Error>> + Send {
-        Vcs::push(&self.vcs, repo, remote, label)
     }
 }
 
