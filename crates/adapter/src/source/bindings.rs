@@ -263,14 +263,11 @@ impl TryFrom<wit::Evidence> for Evidence {
 // `Source::extract` and `Target::run` restore the class.
 impl From<omnia_sdk::Error> for types::Error {
     fn from(error: omnia_sdk::Error) -> Self {
-        let description = error.description();
         match error {
-            omnia_sdk::Error::BadRequest { .. } | omnia_sdk::Error::NotFound { .. } => {
-                Self::InvalidRequest(description)
-            }
-            omnia_sdk::Error::ServerError { .. } | omnia_sdk::Error::BadGateway { .. } => {
-                Self::Internal(description)
-            }
+            omnia_sdk::Error::BadRequest { description, .. }
+            | omnia_sdk::Error::NotFound { description, .. } => Self::InvalidRequest(description),
+            omnia_sdk::Error::ServerError { description, .. }
+            | omnia_sdk::Error::BadGateway { description, .. } => Self::Internal(description),
         }
     }
 }

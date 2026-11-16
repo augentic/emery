@@ -13,15 +13,15 @@ Minimal WebAssembly (Wasm) source and target adapters and a sample project fixtu
 
 ## Build and install the mock adapters
 
-From the repository root, compile both example adapters for `wasm32-wasip2` and copy them into the local adapter store (`~/.emery/adapters`):
+From the repository root, compile both example adapters for `wasm32-wasip3` and copy them into the local adapter store (`~/.emery/adapters`):
 
 ```bash
 cargo build --release
-cargo build --examples --target wasm32-wasip2 --release
+cargo build --examples --target wasm32-wasip3 --release
 
 mkdir -p ~/.emery/adapters
-cp target/wasm32-wasip2/release/examples/source.wasm ~/.emery/adapters/example_source@0.1.0.wasm
-cp target/wasm32-wasip2/release/examples/target.wasm ~/.emery/adapters/example_target@0.1.0.wasm
+cp target/wasm32-wasip3/release/examples/source.wasm ~/.emery/adapters/example_source@0.1.0.wasm
+cp target/wasm32-wasip3/release/examples/target.wasm ~/.emery/adapters/example_target@0.1.0.wasm
 ```
 
 ## Walkthroughs and guides

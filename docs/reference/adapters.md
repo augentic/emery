@@ -79,7 +79,7 @@ mkdir -p ~/.emery/adapters
 wkg get acme:ledger@2.1.0 -o ~/.emery/adapters/
 
 # Or copy a locally built component directly:
-cp target/wasm32-wasip2/release/emery_typescript.wasm \
+cp target/wasm32-wasip3/release/emery_typescript.wasm \
   ~/.emery/adapters/emery_typescript@0.40.0-dev.wasm
 ```
 
@@ -87,7 +87,7 @@ cp target/wasm32-wasip2/release/emery_typescript.wasm \
 
 ## Source adapters vs. target adapters
 
-Every adapter is a `wasm32-wasip2` component implementing one of the two worlds in the `emery:adapter` WebAssembly Interface Types (WIT) package (`wit/emery.wit`). Before dispatching any call, Emery verifies that the loaded component exports the interface required by the command (`Axis::require`).
+Every adapter is a `wasm32-wasip3` component implementing one of the two worlds in the `emery:adapter` WebAssembly Interface Types (WIT) package (`wit/emery.wit`). Before dispatching any call, Emery verifies that the loaded component exports the interface required by the command (`Axis::require`).
 
 ### Source adapter contract (`emery:adapter/source`)
 

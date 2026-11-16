@@ -100,7 +100,7 @@ All from the repository root through `make` ([`Makefile`](Makefile) → mise). T
 make ci # exactly the CI jobs — run before handing over
 make check # local advisories: audit, fmt, lint, outdated, deps
 make test # cargo nextest run --locked --workspace --all-features
-make lint # clippy natively and per feature, then the wasm32-wasip2 guest pass
+make lint # clippy natively and per feature, then the wasm32-wasip3 guest pass
 make fmt # cargo +nightly fmt --all
 make vet-regen # regenerate cargo-vet inputs, then vet
 make cov # coverage summary

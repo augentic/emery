@@ -12,7 +12,7 @@ use std::process::{Command, Output};
 
 use emery_engine::amend::PartClass;
 use emery_engine::vcs::{Message, PartSummary, RevisionMessage, Summary};
-use omnia::{CompileOptions, Connect as _, Digest, ExitStatus, RuntimeOptions, StoreCtx};
+use omnia::{CompileOptions, Connect as _, Digest, ExitStatus, RuntimeOptions};
 use omnia_git::{Client, ConnectOptions};
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
 use omnia_wasi_blobstore::WasiBlobStore;
@@ -659,12 +659,12 @@ async fn emery(deployment: Deployment, backends: &Bundle, model: &ScriptedModel)
 }
 
 // The hosts the engine imports; the guest loader is assembly's.
-fn link(deployment: &mut omnia::Deployment<StoreCtx<Bundle>>) -> anyhow::Result<()> {
-    deployment.host::<WasiModel, Bundle>()?;
-    deployment.host::<WasiKeyValue, Bundle>()?;
-    deployment.host::<WasiBlobStore, Bundle>()?;
-    deployment.host::<WasiOtel, Bundle>()?;
-    deployment.host::<WasiVcs, Bundle>()?;
+fn link(deployment: &mut omnia::Deployment<Bundle>) -> anyhow::Result<()> {
+    deployment.host::<WasiModel>()?;
+    deployment.host::<WasiKeyValue>()?;
+    deployment.host::<WasiBlobStore>()?;
+    deployment.host::<WasiOtel>()?;
+    deployment.host::<WasiVcs>()?;
     Ok(())
 }
 

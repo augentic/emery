@@ -2221,7 +2221,7 @@ async fn rounds_exhausted() {
     let model = ScriptedModel::answering([r#"{"covered":["REQ-404"],"written":[]}"#]);
 
     let error = ask(&model, &slice(), root).await.expect_err("never accepted");
-    assert_eq!(error.code(), "bad_request", "{error}");
+    assert_eq!(error.code(), "budget-exhausted", "{error}");
     model.assert_exhausted();
 }
 

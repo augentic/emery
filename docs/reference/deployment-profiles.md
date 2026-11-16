@@ -80,7 +80,7 @@ All local state created by Emery inside your project directory sits under `.emer
 
 ## What a build's worker may reach
 
-Every model completion worker (`cursor-sdk-bridge` under the default `omnia-cursor` backend, or `sh -c` under `--features genai`) runs inside an OS kernel sandbox (`omnia-confine`: Seatbelt on macOS, Landlock + seccomp on Linux).
+Every model completion worker (`cursor-sdk-bridge` under the default `omnia-cursor` backend, or `sh -c` under `--features genai`) runs inside an OS kernel sandbox (`omnia-sandbox`: Seatbelt on macOS, Landlock + seccomp on Linux).
 
 1. **Compiled-in shell roots:** `src/main.rs` compiles in `shell_roots: [".emery/vcs/worktrees", ".emery/vcs/integration"]` (`CURSOR_SHELL_ROOTS` in the environment is ignored). Only `Task::Build` and `Task::Verify` turns run inside these directories and receive the `shell` tool; source extraction and survey turns have no shell or file-write tools.
 2. **Writable scope:** A worker can write only to its lent worktree and a private per-turn scratch directory that replaces `HOME` and `TMPDIR`.

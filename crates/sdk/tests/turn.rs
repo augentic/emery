@@ -853,7 +853,7 @@ async fn rounds_exhausted() {
     let Error::BadRequest { code, description } = error else {
         panic!("spent rounds are a bad request: {error}");
     };
-    assert_eq!(code, "bad_request");
+    assert_eq!(code, "budget-exhausted");
     assert!(description.contains("budget exhausted"), "{description}");
     assert!(description.contains("id `Not.Valid` does not match"), "{description}");
     assert_eq!(model.exchanges().len(), 1, "one check, rejected");

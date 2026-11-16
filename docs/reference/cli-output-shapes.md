@@ -47,7 +47,7 @@ This page defines the canonical JSON output schemas, exit codes, recovery error 
 
 ## Recovery error codes
 
-When a command fails with exit code `1`–`4`, the `error` field in the failure envelope carries either one of the 19 specific `kebab-case` recovery codes below, a plugin loader code (`refused`, `unavailable`, `internal`), or a generic `snake_case` class (`bad_request`, `not_found`, `server_error`, `bad_gateway`):
+When a command fails with exit code `1`–`4`, the `error` field in the failure envelope carries either one of the 19 specific `kebab-case` recovery codes below, a plugin loader code (`refused`, `unavailable`, `internal`), a model capability code (`invalid-request`, `budget-exhausted`, `tool-failed`, `backend`), or a generic `snake_case` class (`bad_request`, `not_found`, `server_error`, `bad_gateway`):
 
 | `error` discriminant | Exit | Raised by | When it occurs |
 | --- | --- | --- | --- |

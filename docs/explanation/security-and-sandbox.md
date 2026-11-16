@@ -55,7 +55,7 @@ A build turn can edit files inside its worktree, including `emery.toml`. To ensu
 
 ## 2. WebAssembly guest isolation
 
-The Emery engine and every source or target adapter are compiled to `wasm32-wasip2` components:
+The Emery engine and every source or target adapter are compiled to `wasm32-wasip3` components:
 
 - **No ambient host access:** Guests cannot spawn processes, open network sockets, or read environment variables unless explicitly provided through typed WIT interfaces.
 - **Host-mediated Git (`omnia:vcs`):** Guests never hold Git credentials, host filesystem paths, or `git` subprocesses. The engine passes deployment-local relative paths (such as `.`, `.emery/vcs/repos/<name>`, or `.emery/vcs/worktrees/<slice>`) to the `omnia:vcs` host capability, which resolves them against the project mount and invokes `git` on the host.
@@ -64,7 +64,7 @@ The Emery engine and every source or target adapter are compiled to `wasm32-wasi
 
 ## 3. Kernel confinement for model workers
 
-When the Cursor model backend (`omnia-cursor`) spawns a `cursor-sdk-bridge` worker process for a model turn (or when `emery-dev` runs a local `sh -c` shell turn under the `genai` feature), the worker is confined inside an operating-system kernel sandbox via `omnia-confine` (**Seatbelt** on macOS, **Landlock + seccomp** on Linux). If neither kernel mechanism is available, the runtime refuses to start.
+When the Cursor model backend (`omnia-cursor`) spawns a `cursor-sdk-bridge` worker process for a model turn (or when `emery-dev` runs a local `sh -c` shell turn under the `genai` feature), the worker is confined inside an operating-system kernel sandbox via `omnia-sandbox` (**Seatbelt** on macOS, **Landlock + seccomp** on Linux). If neither kernel mechanism is available, the runtime refuses to start.
 
 ### Filesystem and network confinement
 

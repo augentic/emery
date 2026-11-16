@@ -28,9 +28,6 @@ url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/
 [policy.omnia]
 audit-as-crates-io = false
 
-[policy.omnia-backend]
-audit-as-crates-io = false
-
 [policy.omnia-cli]
 audit-as-crates-io = false
 
@@ -410,15 +407,11 @@ version = "0.11.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.fancy-regex]]
-version = "0.19.2"
+version = "0.20.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.fastrand]]
 version = "2.5.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.fixedbitset]]
-version = "0.5.7"
 criteria = "safe-to-deploy"
 
 [[exemptions.flagset]]
@@ -634,15 +627,15 @@ version = "0.3.107"
 criteria = "safe-to-deploy"
 
 [[exemptions.jsonschema]]
-version = "0.60.2"
+version = "0.61.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.jsonschema-regex]]
-version = "0.60.2"
+version = "0.61.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.jsonschema-value]]
-version = "0.60.2"
+version = "0.61.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.jsonwebtoken]]
@@ -801,10 +794,6 @@ criteria = "safe-to-deploy"
 version = "0.5.2"
 criteria = "safe-to-deploy"
 
-[[exemptions.petgraph]]
-version = "0.8.3"
-criteria = "safe-to-deploy"
-
 [[exemptions.pin-project]]
 version = "1.1.13"
 criteria = "safe-to-deploy"
@@ -846,15 +835,15 @@ version = "1.12.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.prost]]
-version = "0.14.4"
+version = "0.14.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.prost-derive]]
-version = "0.14.4"
+version = "0.14.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.prost-types]]
-version = "0.14.4"
+version = "0.14.6"
 criteria = "safe-to-deploy"
 
 [[exemptions.quinn]]
@@ -894,7 +883,7 @@ version = "0.9.5"
 criteria = "safe-to-deploy"
 
 [[exemptions.referencing]]
-version = "0.60.2"
+version = "0.61.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.reqwest]]
@@ -1262,11 +1251,11 @@ version = "0.2.130"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-pkg-client]]
-version = "0.16.1"
+version = "0.16.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-pkg-common]]
-version = "0.16.1"
+version = "0.16.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.wasm-streams]]

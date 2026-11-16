@@ -16,6 +16,7 @@
 //! so a document rewritten beneath the engine is refused rather than served.
 
 use anyhow::Context;
+use omnia_sdk::keyvalue::Conflict;
 use omnia_sdk::{BlobStore, Error, StateStore, Vcs, server_error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -100,8 +101,9 @@ impl Slot {
 
     // Fails closed on bytes that decode as no record.
     async fn read<S: StateStore>(store: &S) -> Result<Option<Self>, Error> {
-        let Some(raw) =
-            StateStore::get(store, STAGED_KEY).await.context("getting the staged record")?
+        let Some(raw) = StateStore::get(store, STAGED_KEY)
+            .await
+            .map_err(|err| storage_error("getting the staged record", &err))?
         else {
             return Ok(None);
         };
@@ -137,9 +139,7 @@ impl Slot {
         self, store: &S, token: Option<&[u8]>,
     ) -> Result<(), Error> {
         let record = serde_json::to_vec(&self).context("encoding the staged record")?;
-        StateStore::cas(store, STAGED_KEY, token, &record)
-            .await
-            .context("swapping the staged record")?;
+        swap_key(store, STAGED_KEY, token, &record, "swapping the staged record").await?;
         if let Some(slot) = Self::from_token(token).filter(|slot| slot.id != self.id) {
             prune(store, &slot.id, slot.kind).await;
         }
@@ -156,6 +156,22 @@ impl Slot {
             }
         }
     }
+}
+
+async fn swap_key<S: StateStore>(
+    store: &S, key: &str, current: Option<&[u8]>, new: &[u8], context: &'static str,
+) -> Result<(), Error> {
+    let swapped = StateStore::compare_and_swap(store, key, current, new, None)
+        .await
+        .map_err(|err| storage_error(context, &err))?;
+    match swapped {
+        Ok(()) => Ok(()),
+        Err(Conflict { .. }) => Err(server_error!("{context}: value changed concurrently")),
+    }
+}
+
+fn storage_error(context: &str, err: &Error) -> Error {
+    server_error!("{context}: {}", err.description())
 }
 
 // A document that will not delete stays as an inert orphan, so the failure
@@ -191,9 +207,16 @@ impl Staged {
 }
 
 async fn document<S: BlobStore>(store: &S, id: &str, name: &str) -> Result<Vec<u8>, Error> {
+    if !BlobStore::container_exists(store, STAGED_CONTAINER)
+        .await
+        .map_err(|err| storage_error("reading staged candidate document", &err))?
+    {
+        return Err(server_error!("staged candidate `{id}` does not contain `{name}`"));
+    }
     BlobStore::get(store, STAGED_CONTAINER, &key(id, name))
         .await
-        .context("reading staged candidate document")?
+        .map_err(|err| storage_error("reading staged candidate document", &err))?
+        .map(Vec::from)
         .ok_or_else(|| server_error!("staged candidate `{id}` does not contain `{name}`"))
 }
 
@@ -363,7 +386,7 @@ impl Current {
         }
         let revision = match Revision::read(&id, &spec, &design, &plan) {
             Err(error) if expect.is_none() && !matches!(error, Error::BadRequest { .. }) => {
-                return Err(hand_merged(commit, "no revision", &error.description()));
+                return Err(hand_merged(commit, "no revision", error.description()));
             }
             Ok(revision) if expect.is_none() => {
                 let findings = revision.findings();
@@ -570,7 +593,7 @@ pub async fn stage_amendment<S: StateStore + BlobStore>(
 // bytes are logged and swapped over as none.
 async fn token<S: StateStore>(store: &S) -> Option<Vec<u8>> {
     match StateStore::get(store, STAGED_KEY).await {
-        Ok(token) => token,
+        Ok(token) => token.map(Vec::from),
         Err(error) => {
             tracing::warn!(%error, "the staged record is unreadable");
             None
@@ -580,13 +603,18 @@ async fn token<S: StateStore>(store: &S) -> Option<Vec<u8>> {
 
 // Writes `documents` under `id` in the staged container, creating it on the first stage.
 async fn put<S: BlobStore>(store: &S, id: &str, documents: &[(&str, &str)]) -> Result<(), Error> {
-    if !BlobStore::container_exists(store, STAGED_CONTAINER).await? {
-        BlobStore::create_container(store, STAGED_CONTAINER).await?;
+    if !BlobStore::container_exists(store, STAGED_CONTAINER)
+        .await
+        .map_err(|err| storage_error("writing staged candidate document", &err))?
+    {
+        BlobStore::create_container(store, STAGED_CONTAINER)
+            .await
+            .map_err(|err| storage_error("writing staged candidate document", &err))?;
     }
     for (name, body) in documents {
         BlobStore::put(store, STAGED_CONTAINER, &key(id, name), body.as_bytes())
             .await
-            .context("writing staged candidate document")?;
+            .map_err(|err| storage_error("writing staged candidate document", &err))?;
     }
     Ok(())
 }
@@ -671,7 +699,9 @@ pub async fn clear<S: StateStore + BlobStore>(store: &S) -> Result<(), Error> {
     let Some(Slot { id, kind, .. }) = Slot::read(store).await? else {
         return Ok(());
     };
-    StateStore::delete(store, STAGED_KEY).await.context("clearing the staged candidate")?;
+    StateStore::delete(store, STAGED_KEY)
+        .await
+        .map_err(|err| storage_error("clearing the staged candidate", &err))?;
     prune(store, &id, kind).await;
     Ok(())
 }
@@ -689,7 +719,7 @@ pub async fn current<P: Vcs + Files + StateStore>(
     provider: &P, repo: &BuildRepo,
 ) -> Result<Standing, Error> {
     let pointer = match StateStore::get(provider, REVISION_KEY).await {
-        Ok(pointer) => pointer,
+        Ok(pointer) => pointer.map(Vec::from),
         Err(error) => {
             tracing::warn!(%error, "the current revision id is unreadable");
             None
@@ -786,14 +816,14 @@ pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
     let commit = sealed?;
 
     // the pointer, then the candidate the seal consumed
-    StateStore::cas(
+    swap_key(
         provider,
         REVISION_KEY,
         standing.pointer.as_deref(),
         message.revision.as_bytes(),
+        "swapping the revision id",
     )
-    .await
-    .context("swapping the revision id")?;
+    .await?;
     clear(provider).await?;
     Ok(Sealed {
         label: label(&message.revision),

@@ -172,7 +172,7 @@ Because slices are merged in deterministic ID order and always branch from the s
 
 Once a wave's slices are merged into `.emery/vcs/integration`, Emery invokes the target adapter with `Task::Verify` over the integrated worktree:
 
-- The adapter runs workspace-wide checks (such as `cargo clippy`, `cargo test`, `cargo build --target wasm32-wasip2`, or `npm test`) and its own AST structural checks.
+- The adapter runs workspace-wide checks (such as `cargo clippy`, `cargo test`, `cargo build --target wasm32-wasip3`, or `npm test`) and its own AST structural checks.
 - If a check fails, the verification turn can repair the integrated tree using `write_files` and `edit_files` and re-run the checks before returning its `Verdict`.
 - If verification passes and left changes in the worktree (such as lockfile updates or cross-slice repairs), Emery runs the security gates and commits them as `Wave <k> verified`. If any modified file falls outside the adapter's `ours` merge rules, the wave is flagged as `repaired`.
 - Finally, Emery advances the local branch **`emery/<revision>`** to the verified head commit. The `emery/<revision>` label therefore always points to a verified tree.

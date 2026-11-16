@@ -20,7 +20,7 @@ This guide shows how to write, compile, and install a custom WebAssembly (Wasm) 
 
 ## Crate setup (`Cargo.toml`)
 
-Every Emery adapter is a Rust library crate compiled to `wasm32-wasip2` with `crate-type = ["cdylib", "rlib"]` (`cdylib` produces the `.wasm` component; `rlib` lets native Rust tests exercise your adapter directly on the host):
+Every Emery adapter is a Rust library crate compiled to `wasm32-wasip3` with `crate-type = ["cdylib", "rlib"]` (`cdylib` produces the `.wasm` component; `rlib` lets native Rust tests exercise your adapter directly on the host):
 
 ```toml
 [package]
@@ -223,13 +223,13 @@ fn prose_corpus() {
 
 ## Build and install into `~/.emery/adapters`
 
-Compile the component for `wasm32-wasip2` and copy the resulting `.wasm` file into `~/.emery/adapters/` using the `<namespace>_<name>@<version>.wasm` filename convention:
+Compile the component for `wasm32-wasip3` and copy the resulting `.wasm` file into `~/.emery/adapters/` using the `<namespace>_<name>@<version>.wasm` filename convention:
 
 ```bash
-cargo build --target wasm32-wasip2 --release
+cargo build --target wasm32-wasip3 --release
 
 mkdir -p ~/.emery/adapters
-cp target/wasm32-wasip2/release/acme_runbook.wasm \
+cp target/wasm32-wasip3/release/acme_runbook.wasm \
   ~/.emery/adapters/acme_runbook@0.1.0.wasm
 ```
 

@@ -66,15 +66,15 @@ wkg get acme:ledger@2.1.0 -o ~/.emery/adapters/
 
 ## Install a locally built `-dev` adapter
 
-When developing or testing a custom adapter (or a modified build of a first-party adapter from `augentic/emery-adapters`), build the `wasm32-wasip2` component and copy the raw `.wasm` file into `~/.emery/adapters/` under a `-dev` version tag:
+When developing or testing a custom adapter (or a modified build of a first-party adapter from `augentic/emery-adapters`), build the `wasm32-wasip3` component and copy the raw `.wasm` file into `~/.emery/adapters/` under a `-dev` version tag:
 
 ```bash
-# Build the component for wasm32-wasip2
-cargo build -p emery-typescript --target wasm32-wasip2 --release
+# Build the component for wasm32-wasip3
+cargo build -p emery-typescript --target wasm32-wasip3 --release
 
 # Copy into ~/.emery/adapters/<namespace>_<name>@<version>.wasm
 mkdir -p ~/.emery/adapters
-cp target/wasm32-wasip2/release/emery_typescript.wasm \
+cp target/wasm32-wasip3/release/emery_typescript.wasm \
   ~/.emery/adapters/emery_typescript@0.40.0-dev.wasm
 ```
 

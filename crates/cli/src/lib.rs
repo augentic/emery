@@ -11,6 +11,7 @@ use std::borrow::Cow;
 use std::ffi::OsString;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
@@ -21,10 +22,10 @@ use emery_engine::show::{Artifact, ShowInput, show};
 use emery_engine::specify::{SpecifyInput, specify};
 use emery_engine::{Provider, is_retryable};
 use omnia_sdk::Error;
+use omnia_sdk::api::Metadata;
 use omnia_sdk::api::command::{
     Command, Failure, Format, Parsed, Response, Shell, Verbosity, completions, parse,
 };
-use omnia_sdk::api::{Client, Metadata};
 use strum::VariantArray as _;
 
 const NAME: &str = "emery";
@@ -47,11 +48,12 @@ where
         Parsed::Usage(error) => return Response::usage(&error),
     };
 
-    let client = Client::new(provider);
+    let provider = Arc::new(provider);
     let metadata = Metadata::from_env("EMERY");
     let invoked = Invoked::from(&app.verb);
     let format = app.format;
-    let command = Command::new(&client, &metadata, format).hints(move |error| invoked.hint(error));
+    let command =
+        Command::new(&provider, &metadata, format).hints(move |error| invoked.hint(error));
 
     match app.verb {
         Verb::Completions { shell } => completions::<App>(shell, NAME),
@@ -429,9 +431,10 @@ enum Invoked {
 
 impl Invoked {
     fn hint(self, error: &Error) -> Option<Cow<'static, str>> {
-        let code = error.code();
-        let hint = match code.as_str() {
-            "bad_gateway" | "bad_request" if self == Self::Build && is_retryable(error) => {
+        let hint = match error.code() {
+            "bad_gateway" | "bad_request" | "backend" | "tool-failed" | "budget-exhausted"
+                if self == Self::Build && is_retryable(error) =>
+            {
                 "re-run `emery build` to resume from the last verified wave"
             }
             "unsupported-version" => {
@@ -444,7 +447,7 @@ impl Invoked {
                 "pass one or more adapters to `emery specify`, or add `emery.toml`"
             }
             "build-target-required" => self.target_hint(),
-            "spec-not-generated" => self.not_generated_hint(&error.description()),
+            "spec-not-generated" => self.not_generated_hint(error.description()),
             "spec-mismatch" if error.description().contains("edited or merged by hand") => {
                 "keep one side's `spec/` whole (`git checkout <branch> -- spec/`) and re-run `emery amend`"
             }

@@ -656,7 +656,7 @@ async fn invalid_grouping() {
             &provider,
             &["emery", "specify", &reference("docs"), &reference("code")],
             1,
-            "bad_request",
+            draft_code(fragment),
         )
         .await;
         assert_message(&envelope, fragment);
@@ -1482,7 +1482,8 @@ async fn invalid_draft() {
     for (answer, fragment) in cases {
         let provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()]);
         let envelope =
-            fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+            fail(&provider, &["emery", "specify", &reference("docs")], 1, draft_code(fragment))
+                .await;
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
     }
@@ -1652,7 +1653,7 @@ mod unknown {
         );
 
         let envelope =
-            fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+            fail(&provider, &["emery", "specify", &reference("docs")], 1, "budget-exhausted").await;
         assert_message(&envelope, "is `[unknown]` but the requirement is covered");
         provider.model.assert_exhausted();
     }
@@ -1728,7 +1729,7 @@ async fn technology_named() {
         let mut provider = Provider::answering([answer.as_str(), answer.as_str(), answer.as_str()]);
         provider.source.evidence.insert("docs".to_string(), evidence());
         let envelope =
-            fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+            fail(&provider, &["emery", "specify", &reference("docs")], 1, "budget-exhausted").await;
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
     }
@@ -1770,7 +1771,8 @@ async fn invalid_design() {
         let provider =
             Provider::answering([SPEC_ANSWER, answer.as_str(), answer.as_str(), answer.as_str()]);
         let envelope =
-            fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+            fail(&provider, &["emery", "specify", &reference("docs")], 1, draft_code(fragment))
+                .await;
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
     }
@@ -1840,7 +1842,8 @@ async fn dishonest_design() {
             Provider::answering([SPEC_ANSWER, answer.as_str(), answer.as_str(), answer.as_str()]);
         provider.source.evidence.insert("docs".to_string(), evidence());
         let envelope =
-            fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+            fail(&provider, &["emery", "specify", &reference("docs")], 1, draft_code(fragment))
+                .await;
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
     }
@@ -1879,7 +1882,7 @@ async fn decision_claim() {
         Provider::answering([SPEC_ANSWER, DESIGN_ANSWER, DESIGN_ANSWER, DESIGN_ANSWER]);
     provider.source.evidence.insert("docs".to_string(), evidence());
     let envelope =
-        fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+        fail(&provider, &["emery", "specify", &reference("docs")], 1, "budget-exhausted").await;
     assert_message(&envelope, "`## APIs and integrations` is required but absent");
     let request = provider.model.seen()[1].messages.join("\n");
     assert!(
@@ -1926,7 +1929,7 @@ async fn call_unnamed_in_design() {
         Provider::answering([SPEC_ANSWER, unnamed.as_str(), unnamed.as_str(), unnamed.as_str()]);
     provider.source.evidence.insert("docs".to_string(), evidence("@acme-cloud/ledger-client:post"));
     let envelope =
-        fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+        fail(&provider, &["emery", "specify", &reference("docs")], 1, "budget-exhausted").await;
     assert_message(&envelope, finding);
     provider.model.assert_exhausted();
 
@@ -2256,7 +2259,7 @@ async fn model_gateway_error() {
         ]),
         ..Provider::idle()
     };
-    fail(&provider, &["emery", "specify", &reference("docs")], 4, "bad_gateway").await;
+    fail(&provider, &["emery", "specify", &reference("docs")], 4, "backend").await;
     provider.model.assert_exhausted();
 }
 
@@ -2852,6 +2855,7 @@ async fn invalid_plan() {
         ),
         ("not json".to_string(), "schema and answer type disagree"),
     ];
+    let docs = reference("docs");
     for (answer, fragment) in cases {
         let grouping = separate_grouping(4);
         let mut provider = Provider::answering([
@@ -2863,8 +2867,7 @@ async fn invalid_plan() {
             answer.as_str(),
         ]);
         provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
-        let envelope =
-            fail(&provider, &["emery", "specify", &reference("docs")], 1, "bad_request").await;
+        let envelope = fail(&provider, &["emery", "specify", &docs], 1, draft_code(fragment)).await;
         assert_message(&envelope, fragment);
         provider.model.assert_exhausted();
     }
@@ -3792,11 +3795,18 @@ mod digest {
 }
 
 mod store {
+    use std::future::Future;
+    use std::ops::Range;
     use std::sync::Arc;
+    use std::time::Duration;
 
+    use bytes::Bytes;
     use emery_engine::vcs::{REVISION, RevisionMessage, SPECIFICATION};
     use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
-    use omnia_test::guest::{Memory, Namespaced};
+    use omnia_sdk::Page;
+    use omnia_sdk::blobstore::{ContainerMetadata, ObjectMetadata};
+    use omnia_sdk::keyvalue::Conflict;
+    use omnia_test::guest::Memory;
     use serde_json::Value;
 
     use super::support::vcs::HEAD;
@@ -4175,9 +4185,152 @@ mod store {
         alpha.model.assert_exhausted();
         beta.model.assert_exhausted();
     }
+
+    #[derive(Clone, Debug)]
+    struct Namespaced {
+        prefix: String,
+        inner: Memory,
+    }
+
+    impl Namespaced {
+        fn new(prefix: &str, inner: Memory) -> Self {
+            Self {
+                prefix: prefix.to_owned(),
+                inner,
+            }
+        }
+
+        fn prefixed(&self, name: &str) -> String {
+            format!("{}/{name}", self.prefix)
+        }
+    }
+
+    impl omnia_sdk::StateStore for Namespaced {
+        type Named = Self;
+
+        fn get(&self, key: &str) -> impl Future<Output = omnia_sdk::Result<Option<Bytes>>> + Send {
+            let key = self.prefixed(key);
+            async move { omnia_sdk::StateStore::get(&self.inner, &key).await }
+        }
+
+        fn set(
+            &self, key: &str, value: &[u8], ttl: Option<Duration>,
+        ) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
+            let key = self.prefixed(key);
+            async move { omnia_sdk::StateStore::set(&self.inner, &key, value, ttl).await }
+        }
+
+        fn delete(&self, key: &str) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
+            let key = self.prefixed(key);
+            async move { omnia_sdk::StateStore::delete(&self.inner, &key).await }
+        }
+
+        fn compare_and_swap(
+            &self, key: &str, current: Option<&[u8]>, new: &[u8], ttl: Option<Duration>,
+        ) -> impl Future<Output = omnia_sdk::Result<Result<(), Conflict>>> + Send {
+            let key = self.prefixed(key);
+            async move {
+                omnia_sdk::StateStore::compare_and_swap(&self.inner, &key, current, new, ttl).await
+            }
+        }
+
+        fn increment(
+            &self, key: &str, delta: i64, ttl: Option<Duration>,
+        ) -> impl Future<Output = omnia_sdk::Result<i64>> + Send {
+            let key = self.prefixed(key);
+            async move { omnia_sdk::StateStore::increment(&self.inner, &key, delta, ttl).await }
+        }
+
+        fn named(&self, name: &str) -> Self::Named {
+            Self {
+                prefix: self.prefix.clone(),
+                inner: self.inner.named(name),
+            }
+        }
+    }
+
+    impl omnia_sdk::BlobStore for Namespaced {
+        fn get(
+            &self, container: &str, name: &str,
+        ) -> impl Future<Output = omnia_sdk::Result<Option<Bytes>>> + Send {
+            let container = self.prefixed(container);
+            async move { omnia_sdk::BlobStore::get(&self.inner, &container, name).await }
+        }
+
+        fn get_range(
+            &self, container: &str, name: &str, range: Range<u64>,
+        ) -> impl Future<Output = omnia_sdk::Result<Option<Bytes>>> + Send {
+            let container = self.prefixed(container);
+            async move { omnia_sdk::BlobStore::get_range(&self.inner, &container, name, range).await }
+        }
+
+        fn put(
+            &self, container: &str, name: &str, data: &[u8],
+        ) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
+            let container = self.prefixed(container);
+            async move { omnia_sdk::BlobStore::put(&self.inner, &container, name, data).await }
+        }
+
+        fn delete(
+            &self, container: &str, name: &str,
+        ) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
+            let container = self.prefixed(container);
+            async move { omnia_sdk::BlobStore::delete(&self.inner, &container, name).await }
+        }
+
+        fn stat(
+            &self, container: &str, name: &str,
+        ) -> impl Future<Output = omnia_sdk::Result<Option<ObjectMetadata>>> + Send {
+            let container = self.prefixed(container);
+            async move { omnia_sdk::BlobStore::stat(&self.inner, &container, name).await }
+        }
+
+        fn list(
+            &self, container: &str, prefix: &str, after: Option<&str>,
+        ) -> impl Future<Output = omnia_sdk::Result<Page<ObjectMetadata>>> + Send {
+            let container = self.prefixed(container);
+            async move { omnia_sdk::BlobStore::list(&self.inner, &container, prefix, after).await }
+        }
+
+        fn create_container(
+            &self, container: &str,
+        ) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
+            let container = self.prefixed(container);
+            async move { omnia_sdk::BlobStore::create_container(&self.inner, &container).await }
+        }
+
+        fn delete_container(
+            &self, container: &str,
+        ) -> impl Future<Output = omnia_sdk::Result<()>> + Send {
+            let container = self.prefixed(container);
+            async move { omnia_sdk::BlobStore::delete_container(&self.inner, &container).await }
+        }
+
+        fn container_exists(
+            &self, container: &str,
+        ) -> impl Future<Output = omnia_sdk::Result<bool>> + Send {
+            let container = self.prefixed(container);
+            async move { omnia_sdk::BlobStore::container_exists(&self.inner, &container).await }
+        }
+
+        fn container_info(
+            &self, container: &str,
+        ) -> impl Future<Output = omnia_sdk::Result<Option<ContainerMetadata>>> + Send {
+            let container = self.prefixed(container);
+            async move { omnia_sdk::BlobStore::container_info(&self.inner, &container).await }
+        }
+    }
 }
 
 // --- helpers ---
+
+fn draft_code(fragment: &str) -> &'static str {
+    if fragment == "schema and answer type disagree" {
+        "invalid-request"
+    } else {
+        "budget-exhausted"
+    }
+}
 
 fn assert_message(envelope: &Value, fragment: &str) {
     let message = envelope["message"].as_str().unwrap_or("");

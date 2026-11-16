@@ -309,7 +309,7 @@ async fn retry_spent() {
 
     let error = extract(&model, &input, &seams).await.expect_err("the retry failed too");
 
-    assert_eq!(error.code(), "bad_gateway");
+    assert_eq!(error.code(), "backend");
     assert_eq!(
         error.description(),
         "`docs`: 1 of 2 seams failed:\n- seam 1: backend failure: still down"
@@ -337,7 +337,7 @@ async fn bad_request_seam() {
 
     let error = extract(&model, &input, &seams).await.expect_err("two seams are refused");
 
-    assert_eq!(error.code(), "bad_request");
+    assert_eq!(error.code(), "invalid-request");
     assert!(error.description().starts_with("`docs`: 2 of 3 seams failed:\n"), "{error}");
     assert_eq!(model.turns("a/x.md"), 1, "a refused request is put once");
     assert_eq!(model.turns("c/z.md"), 1, "spent rounds are put once");
@@ -412,7 +412,7 @@ async fn two_seams_fail() {
 
     let error = extract(&model, &input, &seams).await.expect_err("two seams failed");
 
-    assert_eq!(error.code(), "bad_request", "the first failure's class");
+    assert_eq!(error.code(), "invalid-request", "the first failure's class");
     assert_eq!(
         error.description(),
         "`docs`: 2 of 3 seams failed:\n- seam 0: invalid request: no such model\n- \
@@ -431,7 +431,7 @@ async fn single_seam_error() {
     let error =
         extract(&model, &input, &[Seam::whole()]).await.expect_err("the one seam failed twice");
 
-    assert_eq!(error.code(), "bad_gateway");
+    assert_eq!(error.code(), "backend");
     assert_eq!(error.description(), "backend failure: still down");
     assert_eq!(model.seen().len(), 2, "the one seam was put twice");
     model.assert_exhausted();

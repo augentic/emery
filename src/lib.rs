@@ -12,7 +12,8 @@ use std::{fs, io};
 
 use emery_adapter::{standing, write_whole};
 use emery_engine::{Entry, EntryKind, Files};
-use omnia_sdk::api::command::{self, Response};
+use omnia_sdk::api::command::Response;
+use omnia_sdk::wasi::command;
 use omnia_sdk::{Error, WasiProvider, server_error};
 use wasip3::cli::environment;
 use wasip3::exports::cli::run::Guest;
@@ -101,7 +102,7 @@ wasip3::cli::command::export!(CliGuest);
 
 impl Guest for CliGuest {
     async fn run() -> Result<(), ()> {
-        command::execute_wasi(dispatch()).await;
+        command::execute(dispatch()).await;
         Ok(())
     }
 }

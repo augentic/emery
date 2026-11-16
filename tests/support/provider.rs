@@ -15,10 +15,7 @@ use emery_adapter::target::{
 use emery_engine::{Axis, Entry, Files};
 use omnia_sdk::api::command::Response;
 use omnia_sdk::plugins::{self, Digest, Location, Plugin};
-use omnia_sdk::{
-    BlobStore, CasError, ContainerMetadata, Error, Model, ObjectMetadata, Plugins, StateStore, Vcs,
-    model, vcs,
-};
+use omnia_sdk::{BlobStore, Error, Plugins, StateStore, Vcs, vcs};
 use omnia_test::guest::{Memory, ScriptedModel};
 use tokio::sync::Barrier;
 
@@ -204,9 +201,10 @@ impl TargetScript {
 }
 
 // The scripted provider behind every root scenario.
-#[derive(Debug)]
+#[derive(Debug, omnia_sdk::Provider)]
 pub struct Provider<S = Memory> {
     // FIFO-scripted model answers.
+    #[provider(Model)]
     pub model: ScriptedModel,
     // The scripted `Source`.
     pub source: SourceScript,
@@ -217,6 +215,7 @@ pub struct Provider<S = Memory> {
     // The scripted `Files`.
     pub files: FilesScript,
     // The scripted storage pair.
+    #[provider(StateStore, BlobStore)]
     pub storage: Arc<S>,
 }
 
@@ -259,27 +258,6 @@ impl<S> Clone for Provider<S> {
     }
 }
 
-// Several capabilities share method names, so every delegation is a fully
-// qualified trait call.
-
-impl<S: Send + Sync + 'static> Model for Provider<S> {
-    fn complete(
-        &self, request: model::Request,
-    ) -> impl Future<Output = Result<model::Reply, model::Error>> + Send {
-        Model::complete(&self.model, request)
-    }
-
-    fn complete_with<H, F>(
-        &self, request: model::Request, handler: H,
-    ) -> impl Future<Output = Result<model::Reply, model::Error>> + Send
-    where
-        H: FnMut(model::ToolCall) -> F + Send,
-        F: Future<Output = Result<String, String>> + Send,
-    {
-        Model::complete_with(&self.model, request, handler)
-    }
-}
-
 // Every load lands as the guest its location names, exporting both axes, at
 // a fixed digest: what a load resolves to is the runtime suite's to assert.
 impl<S: Send + Sync + 'static> Plugins for Provider<S> {
@@ -288,84 +266,6 @@ impl<S: Send + Sync + 'static> Plugins for Provider<S> {
     ) -> impl Future<Output = Result<Plugin, plugins::Error>> + Send {
         let plugin = Plugin::new(from.name(), digest("ab"), Axis::INTERFACES);
         async move { Ok(plugin) }
-    }
-}
-
-impl<S: StateStore + Send + Sync + 'static> StateStore for Provider<S> {
-    fn get(&self, key: &str) -> impl Future<Output = Result<Option<Vec<u8>>>> + Send {
-        StateStore::get(&self.storage, key)
-    }
-
-    fn set(
-        &self, key: &str, value: &[u8], ttl_secs: Option<u64>,
-    ) -> impl Future<Output = Result<()>> + Send {
-        StateStore::set(&self.storage, key, value, ttl_secs)
-    }
-
-    fn delete(&self, key: &str) -> impl Future<Output = Result<()>> + Send {
-        StateStore::delete(&self.storage, key)
-    }
-
-    fn cas(
-        &self, key: &str, expected: Option<&[u8]>, value: &[u8],
-    ) -> impl Future<Output = Result<(), CasError>> + Send {
-        StateStore::cas(&self.storage, key, expected, value)
-    }
-
-    fn increment(&self, key: &str, delta: i64) -> impl Future<Output = Result<i64>> + Send {
-        StateStore::increment(&self.storage, key, delta)
-    }
-}
-
-impl<S: BlobStore + Send + Sync + 'static> BlobStore for Provider<S> {
-    fn get(
-        &self, container: &str, name: &str,
-    ) -> impl Future<Output = Result<Option<Vec<u8>>>> + Send {
-        BlobStore::get(&self.storage, container, name)
-    }
-
-    fn put(
-        &self, container: &str, name: &str, data: &[u8],
-    ) -> impl Future<Output = Result<()>> + Send {
-        BlobStore::put(&self.storage, container, name, data)
-    }
-
-    fn delete(&self, container: &str, name: &str) -> impl Future<Output = Result<()>> + Send {
-        BlobStore::delete(&self.storage, container, name)
-    }
-
-    fn list(&self, container: &str) -> impl Future<Output = Result<Vec<String>>> + Send {
-        BlobStore::list(&self.storage, container)
-    }
-
-    fn get_range(
-        &self, container: &str, name: &str, start: u64, end: u64,
-    ) -> impl Future<Output = Result<Vec<u8>>> + Send {
-        BlobStore::get_range(&self.storage, container, name, start, end)
-    }
-
-    fn object_info(
-        &self, container: &str, name: &str,
-    ) -> impl Future<Output = Result<ObjectMetadata>> + Send {
-        BlobStore::object_info(&self.storage, container, name)
-    }
-
-    fn create_container(&self, name: &str) -> impl Future<Output = Result<()>> + Send {
-        BlobStore::create_container(&self.storage, name)
-    }
-
-    fn delete_container(&self, name: &str) -> impl Future<Output = Result<()>> + Send {
-        BlobStore::delete_container(&self.storage, name)
-    }
-
-    fn container_exists(&self, name: &str) -> impl Future<Output = Result<bool>> + Send {
-        BlobStore::container_exists(&self.storage, name)
-    }
-
-    fn container_info(
-        &self, container: &str,
-    ) -> impl Future<Output = Result<ContainerMetadata>> + Send {
-        BlobStore::container_info(&self.storage, container)
     }
 }
 

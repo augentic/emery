@@ -19,6 +19,7 @@ cfg_select! {
         // select model backend
         cfg_select! {
             feature = "genai" => {
+                use omnia_cursor as _;
                 use omnia_genai::{Client as Model, ConnectOptions as ModelOptions};
             }
             not(feature = "genai") => {
@@ -40,8 +41,14 @@ cfg_select! {
                     shell_roots: vec![".emery/vcs/worktrees".into(), ".emery/vcs/integration".into()],
                     ..ModelOptions::load_env()?
                 }),
-                WasiKeyValue: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
-                WasiBlobStore: Filesystem(ConnectOptions { root: ".emery/storage".into() }),
+                WasiKeyValue: Filesystem(ConnectOptions {
+                    root: ".emery/storage".into(),
+                    buckets: vec!["default".into()],
+                }),
+                WasiBlobStore: Filesystem(ConnectOptions {
+                    root: ".emery/storage".into(),
+                    buckets: vec!["default".into()],
+                }),
                 WasiVcs: Git,
             },
         });

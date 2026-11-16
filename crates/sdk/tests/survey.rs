@@ -397,6 +397,6 @@ async fn rounds_exhausted() {
     };
 
     let error = ask(&model, &input, &facts, |_| Vec::new()).await.expect_err("never accepted");
-    assert_eq!(error.code(), "bad_request", "{error}");
+    assert_eq!(error.code(), "budget-exhausted", "{error}");
     model.assert_exhausted();
 }

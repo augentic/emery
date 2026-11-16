@@ -1,4 +1,4 @@
-//! Precompiles a `wasm32-wasip2` component for the release `emery` binary.
+//! Precompiles a `wasm32-wasip3` component for the release `emery` binary.
 //!
 //! The root build script runs this under `--release` as
 //! `emery-precompile <wasm> <output> --target <triple>`. Compile options are

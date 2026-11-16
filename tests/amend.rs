@@ -2775,7 +2775,7 @@ async fn amend_merged_standing() {
         &provider,
         &["emery", "amend", DOCS, WIKI, "--config", PROJECT_CONFIG],
         1,
-        "bad_request",
+        "budget-exhausted",
     )
     .await;
     assert!(

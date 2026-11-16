@@ -220,12 +220,6 @@ user-login = "cuviper"
 user-name = "Josh Stone"
 
 [[publisher.hashbrown]]
-version = "0.15.5"
-when = "2025-08-07"
-user-id = 55123
-user-login = "rust-lang-owner"
-
-[[publisher.hashbrown]]
 version = "0.16.1"
 when = "2025-11-20"
 user-id = 55123
@@ -496,8 +490,8 @@ user-login = "dtolnay"
 user-name = "David Tolnay"
 
 [[publisher.syn]]
-version = "3.0.9"
-when = "2026-10-12"
+version = "3.0.10"
+when = "2026-11-09"
 user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
@@ -613,11 +607,6 @@ when = "2026-07-07"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wasm-encoder]]
-version = "0.254.2"
-when = "2026-10-02"
-trusted-publisher = "github:bytecodealliance/wasm-tools"
-
-[[publisher.wasm-encoder]]
 version = "0.261.0"
 when = "2026-10-02"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
@@ -638,11 +627,6 @@ when = "2026-07-07"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wasm-metadata]]
-version = "0.254.2"
-when = "2026-10-02"
-trusted-publisher = "github:bytecodealliance/wasm-tools"
-
-[[publisher.wasm-metadata]]
 version = "0.261.0"
 when = "2026-10-02"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
@@ -652,14 +636,14 @@ version = "0.262.0"
 when = "2026-10-13"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
-[[publisher.wasmparser]]
-version = "0.253.0"
-when = "2026-07-07"
+[[publisher.wasm-metadata]]
+version = "0.263.0"
+when = "2026-10-30"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wasmparser]]
-version = "0.254.2"
-when = "2026-10-02"
+version = "0.253.0"
+when = "2026-07-07"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wasmparser]]
@@ -743,6 +727,11 @@ when = "2026-10-29"
 trusted-publisher = "github:bytecodealliance/wasmtime"
 
 [[publisher.wasmtime-wasi]]
+version = "50.0.1"
+when = "2026-10-29"
+trusted-publisher = "github:bytecodealliance/wasmtime"
+
+[[publisher.wasmtime-wasi-config]]
 version = "50.0.1"
 when = "2026-10-29"
 trusted-publisher = "github:bytecodealliance/wasmtime"
@@ -1008,11 +997,6 @@ when = "2026-07-07"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wit-component]]
-version = "0.254.2"
-when = "2026-10-02"
-trusted-publisher = "github:bytecodealliance/wasm-tools"
-
-[[publisher.wit-component]]
 version = "0.261.0"
 when = "2026-10-02"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
@@ -1020,6 +1004,11 @@ trusted-publisher = "github:bytecodealliance/wasm-tools"
 [[publisher.wit-component]]
 version = "0.262.0"
 when = "2026-10-13"
+trusted-publisher = "github:bytecodealliance/wasm-tools"
+
+[[publisher.wit-component]]
+version = "0.263.0"
+when = "2026-10-30"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wit-parser]]
@@ -1028,11 +1017,6 @@ when = "2026-07-07"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [[publisher.wit-parser]]
-version = "0.254.2"
-when = "2026-10-02"
-trusted-publisher = "github:bytecodealliance/wasm-tools"
-
-[[publisher.wit-parser]]
 version = "0.261.0"
 when = "2026-10-02"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
@@ -1040,6 +1024,11 @@ trusted-publisher = "github:bytecodealliance/wasm-tools"
 [[publisher.wit-parser]]
 version = "0.262.0"
 when = "2026-10-13"
+trusted-publisher = "github:bytecodealliance/wasm-tools"
+
+[[publisher.wit-parser]]
+version = "0.263.0"
+when = "2026-10-30"
 trusted-publisher = "github:bytecodealliance/wasm-tools"
 
 [audits.augentic.audits]
@@ -1318,6 +1307,14 @@ end = "2027-01-08"
 notes = "The Bytecode Alliance is the author of this crate"
 
 [[audits.bytecode-alliance.wildcard-audits.wasmtime-wasi]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+trusted-publisher = "github:bytecodealliance/wasmtime"
+start = "2026-01-07"
+end = "2027-01-08"
+notes = "The Bytecode Alliance is the author of this crate"
+
+[[audits.bytecode-alliance.wildcard-audits.wasmtime-wasi-config]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"
 trusted-publisher = "github:bytecodealliance/wasmtime"

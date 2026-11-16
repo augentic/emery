@@ -33,7 +33,7 @@ When you modify files under `plugins/emery/`, bump the version in both `.cursor-
 ### Rust workspace
 
 - Format code with nightly rustfmt: `make fmt`
-- Run host and WebAssembly (`wasm32-wasip2`) clippy passes: `make lint`
+- Run host and WebAssembly (`wasm32-wasip3`) clippy passes: `make lint`
 - Run the full CI gate before submitting: `make ci`
 
 ### Documentation and Cursor skills

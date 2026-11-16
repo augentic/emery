@@ -167,7 +167,7 @@ Adapters embed their Markdown prompts at compile time with `emery_sdk::prose!` a
 
 ## Links
 
-- **API documentation:** [docs.rs/emery-sdk](https://docs.rs/emery-sdk) (built for `wasm32-wasip2` so the `export` modules are included)
+- **API documentation:** [docs.rs/emery-sdk](https://docs.rs/emery-sdk) (built for `wasm32-wasip3` so the `export` modules are included)
 - **Adapter authoring guide:** [`docs/how-to/author-an-adapter.md`](../../docs/how-to/author-an-adapter.md)
 - **First-party adapters:** [augentic/emery-adapters](https://github.com/augentic/emery-adapters)
 

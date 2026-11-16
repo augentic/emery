@@ -61,7 +61,7 @@ For a deep architectural explanation of wave scheduling, merge resolution, and r
 
 ### Worker sandbox and pre-commit gates
 
-Every build and verification turn runs inside an OS kernel sandbox (`omnia-confine`) with shell access restricted to `.emery/vcs/worktrees` and `.emery/vcs/integration`, network egress restricted to the target adapter's declared worker grants, and tool calls capped by `CURSOR_MAX_TOOL_CALLS` (default `128`). Before any commit is created, Emery checks all modified paths against the **specification guard** (`spec-rewritten`, blocking changes to `spec/`) and the **secret gate** (`secret-detected`, blocking credential files and tokens). See [Security, sandboxing, and gates](../../explanation/security-and-sandbox.md).
+Every build and verification turn runs inside an OS kernel sandbox (`omnia-sandbox`) with shell access restricted to `.emery/vcs/worktrees` and `.emery/vcs/integration`, network egress restricted to the target adapter's declared worker grants, and tool calls capped by `CURSOR_MAX_TOOL_CALLS` (default `128`). Before any commit is created, Emery checks all modified paths against the **specification guard** (`spec-rewritten`, blocking changes to `spec/`) and the **secret gate** (`secret-detected`, blocking credential files and tokens). See [Security, sandboxing, and gates](../../explanation/security-and-sandbox.md).
 
 This is the CLI command invoked by the [`/emery:build`](../../../plugins/emery/skills/build/SKILL.md) Cursor skill.
 

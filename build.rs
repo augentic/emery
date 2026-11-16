@@ -1,4 +1,4 @@
-//! Builds the engine guest and mock adapters for `wasm32-wasip2`.
+//! Builds the engine guest and mock adapters for `wasm32-wasip3`.
 //!
 //! Emits `EMERY_GUEST` (precompiled in release builds via `emery-precompile`),
 //! `EMERY_MOCK_SOURCE`, and `EMERY_MOCK_TARGET`. Check-only runs emit empty
@@ -36,7 +36,7 @@ fn main() {
     }
 
     let target_dir = nested_dir(&out_dir);
-    let built = target_dir.join("wasm32-wasip2").join(if release { "release" } else { "debug" });
+    let built = target_dir.join("wasm32-wasip3").join(if release { "release" } else { "debug" });
 
     // the engine: the lib as a cdylib, which the manifest's `rlib` is not
     nested(
@@ -97,7 +97,7 @@ fn precompile(manifest_dir: &Path, target_dir: &Path, wasm: &Path, out_dir: &Pat
 }
 
 // One build of this workspace spawned with the parent's cargo: for
-// `wasm32-wasip2` in the parent's profile, or for the host in the dev profile.
+// `wasm32-wasip3` in the parent's profile, or for the host in the dev profile.
 #[derive(Clone, Copy)]
 enum Nested {
     Wasm32 { release: bool },
@@ -110,7 +110,7 @@ fn nested(manifest_dir: &Path, target_dir: &Path, build: Nested, args: &[&str]) 
     let mut child = Command::new(cargo);
     child.current_dir(manifest_dir).args(args).arg("--locked");
     if let Nested::Wasm32 { release } = build {
-        child.args(["--target", "wasm32-wasip2"]);
+        child.args(["--target", "wasm32-wasip3"]);
         if release {
             child.arg("--release");
         }

@@ -100,7 +100,7 @@ impl UnresolvedMerge<'_> {
             Err(error @ Error::BadRequest { .. }) if !is_retryable(&error) => {
                 return Err(self.unresolved(format_args!(
                     "the model's resolution was refused within the available rounds: {}",
-                    findings_of(&error.description())
+                    findings_of(error.description())
                 )));
             }
             Err(error) => return Err(error),

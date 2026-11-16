@@ -184,7 +184,7 @@ impl TryFrom<String> for AdapterRef {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, String> {
-        value.parse().map_err(|err: Error| err.description())
+        value.parse().map_err(|err: Error| err.description().to_owned())
     }
 }
 
