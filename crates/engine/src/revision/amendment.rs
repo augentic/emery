@@ -280,8 +280,8 @@ pub struct Change {
     ///
     /// Set on a [`ChangeClass::Retired`] entry alone, whose
     /// [`sources`](Self::sources) are then empty: the source covers the
-    /// requirement's stem with its requirement claims and states nothing of
-    /// the requirement.
+    /// requirement's stem with its requirement claims, or is the sole source
+    /// the base requirement cites, and states nothing of the requirement.
     pub scope: Option<String>,
 }
 

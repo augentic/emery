@@ -150,7 +150,7 @@ adapter = "emery:documentation@1.2.0"
 
 # 2. Extract behaviour from a local subdirectory.
 # In `emery amend`, scope = "whole" retires untouched requirements under stems
-# covered by at least one requirement claim from this source.
+# covered by this source's claims or citing this source alone in the base spec.
 [[source]]
 name = "api-surface"
 adapter = "emery:typescript@1.2.0"

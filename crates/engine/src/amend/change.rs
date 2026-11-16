@@ -11,7 +11,8 @@
 //! each under the id its requirement takes. A change that states no
 //! requirement is grouped against nothing and leaves every standing
 //! requirement as it is. A behaviour source read whole then retires what it
-//! falls silent on under the stems it covers.
+//! falls silent on under the stems it covers or where a base requirement
+//! cites it alone.
 
 use std::collections::BTreeSet;
 
@@ -68,13 +69,11 @@ impl<'a> ChangeSet<'a> {
     }
 
     // Retires every standing requirement a behaviour source read whole falls
-    // silent on: under a stem the source's requirement claims cover, a
-    // requirement no claim of the change touched is withdrawn by the
-    // source's silence and names the source. A prose source's scope is
-    // passed over, since a brief states a change and never its subject
-    // whole, and the first source in declaration order to cover a stem is
-    // the one named.
-    pub fn retire_by_scope(&mut self, extracts: &[Extract]) {
+    // silent on: one no claim touched under a stem the source's requirement
+    // claims cover, or one whose base citations name that source alone. A
+    // prose source's scope retires nothing, and the first source in
+    // declaration order to match is the one named.
+    pub fn retire_by_scope(&mut self, baseline: &Baseline<'_>, extracts: &[Extract]) {
         for extract in extracts.iter().filter(|extract| extract.scope == Scope::Whole) {
             if extract.kind != SourceKind::Behaviour {
                 tracing::info!(
@@ -95,7 +94,9 @@ impl<'a> ChangeSet<'a> {
                 .collect();
             for change in &mut self.changes {
                 let silent = change.class == ChangeClass::Unchanged && change.sources.is_empty();
-                if !silent || !covered.contains(change.stem()) {
+                let owned = covered.contains(change.stem())
+                    || baseline.cites_only(change.id, &extract.source);
+                if !silent || !owned {
                     continue;
                 }
                 tracing::info!(

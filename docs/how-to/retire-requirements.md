@@ -79,16 +79,16 @@ repository = "."
 When you run `emery amend`:
 
 1. `orders-service` extracts all current `requirement` claims from `src/`.
-2. Emery collects every stem (`<stem>.*`) covered by at least one `requirement` claim emitted by `orders-service` (for example, `orders`).
-3. Any existing requirement in the current revision under `orders.*` that remains `unchanged` (matched by no change claim from any source) is automatically retired with the note:
+2. Emery collects every stem (`<stem>.*`) covered by at least one `requirement` claim emitted by `orders-service` (for example, `orders`), and checks each standing requirement's cited `sources` in the base specification.
+3. Any existing requirement in the current revision that remains `unchanged` (matched by no change claim from any source) and either falls under one of those covered stems or cites `orders-service` alone in the base specification is automatically retired with the note:
    ``Note: retired by scope: `orders-service` was read whole and states nothing under `orders`.``
 
 ### Important rule: stem coverage in `scope = "whole"`
 
-`scope = "whole"` only retires untouched requirements under stems where that behaviour source emitted **at least one** `requirement` claim during the run.
+`scope = "whole"` retires untouched requirements under stems where that behaviour source emitted **at least one** `requirement` claim during the run, or whose non-empty base `sources` cite that behaviour source alone.
 
-- This protects requirements belonging to *other* stems (such as `billing.*` or `audit.*` owned by other sources) from being accidentally wiped out when `orders-service` is read whole.
-- Consequently, if you delete an **entire stem** from your codebase so the adapter emits zero `requirement` claims under that stem, `scope = "whole"` will not retire that stem's requirements. Use Method 1 (`--description` with `emery:intent`) to explicitly retire the removed stem.
+- This retires an entire stem automatically when all of its files are deleted from `orders-service` (when `orders-service` was the sole source behind those requirements), while protecting stems owned by *other* sources (such as `billing.*` or `audit.*` from `documentation` or another service) from being wiped out.
+- If a deleted stem's requirements also cited another source (such as `documentation`), `scope = "whole"` leaves them `unchanged`; use Method 1 (`--description` with `emery:intent` or updating `documentation`) to withdraw them explicitly.
 
 *(Setting `scope = "whole"` on a prose source like `emery:documentation` or `emery:intent` has no effect—prose sources only retire requirements through explicit `retire` claims.)*
 

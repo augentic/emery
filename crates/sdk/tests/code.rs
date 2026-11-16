@@ -168,7 +168,7 @@ fn arg(keyword: Option<&str>, literal: Option<&str>) -> Arg {
         inner: None,
         function: false,
         properties: Vec::new(),
-        head: literal.map(|text| format!("\"{text}\"")).unwrap_or_default(),
+        head: literal.map_or_default(|text| format!("\"{text}\"")),
         lines: span(1, 1),
     }
 }

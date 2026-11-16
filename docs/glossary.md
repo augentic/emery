@@ -99,7 +99,7 @@ Requirements that share a trigger are always placed in the same part in `plan.js
 An amendment can remove ("retire") an existing requirement in two ways:
 
 1. **Explicit withdrawal (`retire` claim):** A prose source adapter (`intent` or `documentation`) emits a claim of kind `retire` whose subject matches an existing requirement (for example, when an operator note states "Remove legacy CSV export").
-2. **Implicit withdrawal (`scope = "whole"`):** A code source configured with `scope = "whole"` in `emery.toml` is treated as exhaustive for every stem its extracted `requirement` claims mention. Any existing requirement under one of those stems that is left untouched by the change is automatically retired ("retired by scope").
+2. **Implicit withdrawal (`scope = "whole"`):** A code source configured with `scope = "whole"` in `emery.toml` is treated as exhaustive for every stem its extracted `requirement` claims mention and for every requirement whose base `sources` cite that source alone. Any untouched standing requirement matching either rule is automatically retired ("retired by scope").
 
 ### Part
 

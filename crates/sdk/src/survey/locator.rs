@@ -127,8 +127,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
             for call in &module.calls {
                 let Some(receiver) = tree.handed_to(module, call) else { continue };
                 let (_, literal) = call.registered(tree.leading_literal(module, call));
-                let led =
-                    literal.map(|literal| format!(" led by `\"{literal}\"`")).unwrap_or_default();
+                let led = literal.map_or_default(|literal| format!(" led by `\"{literal}\"`"));
                 let spelled = match tree.dialect.constructs {
                     Some(keyword) if call.constructs => format!("{keyword} {}", call.method()),
                     _ if call.constructs || call.callee.links.is_empty() => {
@@ -136,11 +135,8 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
                     }
                     _ => format!("{}.{}", call.callee.receiver(tree.dialect), call.method()),
                 };
-                let typed = receiver
-                    .type_name
-                    .as_deref()
-                    .map(|name| format!(" as `{name}`"))
-                    .unwrap_or_default();
+                let typed =
+                    receiver.type_name.as_deref().map_or_default(|name| format!(" as `{name}`"));
                 lines.push(format!(
                     "- `{}#{}` — `{spelled}`{led} handed a function, through `{}`{typed}",
                     module.path,
@@ -171,8 +167,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
                     continue;
                 };
                 let decorator = decorated.name.join(".");
-                let argument =
-                    decorated.literal.as_ref().map(|l| format!("(\"{l}\")")).unwrap_or_default();
+                let argument = decorated.literal.as_ref().map_or_default(|l| format!("(\"{l}\")"));
                 let on = match (&decorated.class, &decorated.member) {
                     (Some(class), Some(member)) => format!("`{class}.{member}`"),
                     (None, Some(member)) => format!("`{member}`"),

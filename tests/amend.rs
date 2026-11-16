@@ -1015,6 +1015,121 @@ async fn amend_scoped_silent() {
     provider.model.assert_exhausted();
 }
 
+// When an entire stem vanishes from a whole-scope behaviour source so the
+// source emits zero claims under that stem, standing requirements whose
+// non-empty base citations name that source alone retire by scope, emptying
+// their part and its owned types, while a silent stem that also cites another
+// source stands unchanged. The same holds when the source states no
+// requirement at all, with no grouping turn spent.
+#[tokio::test]
+async fn amend_scoped_vanished_stem() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let base_bytes = vanished_spec("code");
+
+    // index 0 is `code`'s `auth.login`, 1..=4 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 1], "classes": [[0, 1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [4], "classes": [[4]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, grouping]);
+    provider.source.kinds.insert("acme:code".to_owned(), SourceKind::Behaviour);
+    provider.source.evidence.insert(
+        "code".to_owned(),
+        Ok(evidence(vec![requirement("auth.login", "Users sign in with a credential.")])),
+    );
+    let revision = seed(&provider.files, &base_bytes, DESIGN, PLAN);
+
+    let resp = cli_ok(&provider, &["emery", "amend", "--config", &config]).await;
+
+    let (id, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        String::from_utf8_lossy(&resp.stdout),
+        format!(
+            "staged amendment {id}\n  base {revision} at {}\n  0 added, 0 changed, 2 retired (2 \
+             by scope), 0 conflict, 2 unchanged\n  stems: orders\n  design: domain-model\n  \
+             parts: orders (removed)\n  nothing sealed; `emery show amendment` reviews it\n",
+            &HEAD[..8]
+        )
+    );
+    assert_eq!(provider.model.seen().len(), 1, "the grouping is the one turn");
+    assert_eq!(provider.vcs.calls(), read_calls());
+    assert_eq!(amendment["changes"][0]["class"], "unchanged", "{amendment}");
+    assert_eq!(amendment["changes"][1]["class"], "unchanged", "{amendment}");
+    for retired in [2, 3] {
+        assert_eq!(amendment["changes"][retired]["class"], "retired", "{amendment}");
+        assert_eq!(amendment["changes"][retired]["scope"], "code", "{amendment}");
+    }
+    assert_eq!(
+        amendment["parts"],
+        serde_json::json!([
+            {"id": "PART-002", "name": "orders", "class": "removed", "brief": "kept"}
+        ]),
+        "{amendment}"
+    );
+    assert_eq!(
+        amendment["sections"],
+        serde_json::json!({
+            "preamble": false, "added": [], "removed": ["domain-model"], "changed": []
+        }),
+        "{amendment}"
+    );
+
+    let shown = cli_ok(&provider, &["emery", "show", "amendment"]).await;
+    let shown = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        shown.contains(
+            "## Retired\n\n### Requirement: orders.create\n\nID: REQ-003\nSources: []\n\nA \
+             signed-in user places an order.\n\nNote: retired by scope: `code` was read whole \
+             and states nothing under `orders`.\n\n### Requirement: orders.cancel\n\nID: \
+             REQ-004\nSources: []\n\nA signed-in user cancels an open order.\n\nNote: retired \
+             by scope: `code` was read whole and states nothing under `orders`.\n"
+        ),
+        "{shown}"
+    );
+    assert!(shown.ends_with("### Part: orders [removed]\n\nID: PART-002\n"), "{shown}");
+
+    let expected_tally = serde_json::json!({
+        "added": 0, "changed": 0, "retired": 2, "conflict": 0, "unchanged": 2, "by-scope": 2
+    });
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["tally"], expected_tally, "{envelope}");
+    provider.model.assert_exhausted();
+
+    // every stem of `code` gone (no requirement claims at all): no grouping turn
+    let mut provider = Provider::idle();
+    provider.source.kinds.insert("acme:code".to_owned(), SourceKind::Behaviour);
+    provider.source.evidence.insert("code".to_owned(), Ok(evidence(vec![])));
+    seed(&provider.files, &vanished_spec("docs"), DESIGN, PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["tally"], expected_tally, "{envelope}");
+    assert!(provider.model.seen().is_empty(), "no turn when no claim states a requirement");
+}
+
+// `SPEC` with `auth.login` citing `login_source`, `session.timeout` citing
+// both `docs` and `code`, and `orders.*` citing `code` alone.
+fn vanished_spec(login_source: &str) -> Vec<u8> {
+    let mut spec: Value = serde_json::from_slice(SPEC).expect("the base spec is JSON");
+    spec["requirements"][0]["sources"] = serde_json::json!([
+        {"source": login_source, "claim": "auth.login", "path": null}
+    ]);
+    spec["requirements"][1]["sources"] = serde_json::json!([
+        {"source": "docs", "claim": "session.timeout", "path": null},
+        {"source": "code", "claim": "session.timeout", "path": null}
+    ]);
+    for index in [2, 3] {
+        spec["requirements"][index]["sources"][0]["source"] = Value::from("code");
+    }
+    serde_json::to_vec(&spec).expect("serialise base spec")
+}
+
 // The grouping over `code`'s one claim, `orders.create`, restating the
 // standing requirement of that id: index 0 is `code`, 1..=4 the standing
 // requirements in id order.

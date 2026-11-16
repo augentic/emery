@@ -95,6 +95,14 @@ impl<'a> Baseline<'a> {
         self.spec.requirements.iter().find(|requirement| requirement.subject == subject)
     }
 
+    // Whether the base requirement `id` cites `source` and no other source.
+    pub fn cites_only(&self, id: ReqId, source: &str) -> bool {
+        self.spec.requirement(id).is_some_and(|requirement| {
+            !requirement.sources.is_empty()
+                && requirement.sources.iter().all(|cited| cited.source == source)
+        })
+    }
+
     // The ids an added requirement takes, from the first above every id the
     // base holds: an id the base once held is never reused, a retired one
     // included.
