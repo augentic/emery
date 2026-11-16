@@ -14,21 +14,21 @@ use crate::revision::{ReqId, Requirement, Spec};
 use crate::specify::{BASELINE, Basis, Contributor, Extract};
 
 // The base specification as the grouping and the change set read it.
-pub struct Baseline<'a> {
-    spec: &'a Spec,
+pub struct Baseline {
+    spec: Spec,
     rank: Rank,
 }
 
-impl<'a> Baseline<'a> {
+impl Baseline {
     // The base `spec` ranked beneath every source of `extracts`.
-    pub fn new(spec: &'a Spec, extracts: &[Extract]) -> Self {
+    pub fn new(spec: &Spec, extracts: &[Extract]) -> Self {
         let lowest = extracts
             .iter()
             .map(|extract| extract.rank)
             .max()
             .unwrap_or_else(|| Rank::from(SourceKind::Behaviour));
         Self {
-            spec,
+            spec: spec.clone(),
             rank: lowest.below(),
         }
     }
@@ -41,66 +41,63 @@ impl<'a> Baseline<'a> {
     // position among the standing alone, which the brief re-indexes; the
     // citations are where the requirement was read, for the brief's anchor
     // hints.
-    pub fn contributors(&self) -> Vec<Contributor<'a>> {
+    pub fn contributors(&self) -> Vec<Contributor> {
         self.spec
             .requirements
             .iter()
             .filter_map(|requirement| Some((requirement, requirement.stated()?)))
             .enumerate()
             .map(|(index, (requirement, statement))| Contributor {
-                source: BASELINE,
+                source: BASELINE.to_owned(),
                 kind: SourceKind::Documentation,
                 rank: self.rank,
-                id: &requirement.subject,
+                id: requirement.subject.clone(),
                 path: None,
                 statement,
                 synopsis: None,
                 withdraws: false,
-                citations: &requirement.sources,
+                citations: requirement.sources.clone(),
                 index,
             })
             .collect()
     }
 
     // The base's requirements, in id order.
-    pub fn requirements(&self) -> impl Iterator<Item = &'a Requirement> {
-        self.spec.requirements.iter()
+    pub fn requirements(&self) -> &[Requirement] {
+        &self.spec.requirements
     }
 
     // The subjects of the requirements the base holds covered, as criterion
     // ids, so a requirement the change leaves standing keeps its coverage.
-    pub fn criteria(&self) -> Vec<&'a str> {
+    pub fn criteria(&self) -> Vec<String> {
         self.spec
             .requirements
             .iter()
             .filter(|requirement| requirement.covered)
-            .map(|requirement| requirement.subject.as_str())
+            .map(|requirement| requirement.subject.clone())
             .collect()
     }
 
     // The base requirement `basis` matched against, when a standing
     // contributor joined its group.
-    pub fn matched(&self, basis: &Basis<'_>) -> Option<&'a Requirement> {
+    pub fn matched(&self, basis: &Basis) -> Option<&Requirement> {
         basis
             .classes
             .iter()
             .flatten()
             .find(|member| member.source == BASELINE)
-            .and_then(|member| self.requirement(member.id))
+            .and_then(|member| self.requirement(&member.id))
     }
 
     // The base requirement a standing contributor stands for, by the subject
     // it carries as its claim id.
-    pub fn requirement(&self, subject: &str) -> Option<&'a Requirement> {
+    pub fn requirement(&self, subject: &str) -> Option<&Requirement> {
         self.spec.requirements.iter().find(|requirement| requirement.subject == subject)
     }
 
     // Whether the base requirement `id` cites `source` and no other source.
     pub fn cites_only(&self, id: ReqId, source: &str) -> bool {
-        self.spec.requirement(id).is_some_and(|requirement| {
-            !requirement.sources.is_empty()
-                && requirement.sources.iter().all(|cited| cited.source == source)
-        })
+        self.spec.requirement(id).is_some_and(|requirement| requirement.cites_only(source))
     }
 
     // The ids an added requirement takes, from the first above every id the

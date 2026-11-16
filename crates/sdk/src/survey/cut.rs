@@ -269,7 +269,7 @@ fn with_data<R: Recogniser>(tree: &Tree<R>, modules: Vec<String>) -> Vec<String>
             if files.iter().chain(&large).any(|file| file == data) {
                 continue;
             }
-            let size = std::fs::metadata(tree.root.join(data)).map_or(u64::MAX, |m| m.len());
+            let size = std::fs::metadata(tree.root.join(data)).map_or(u64::MAX, |meta| meta.len());
             if size <= DATA_BESIDE_BYTES {
                 files.push(data.to_owned());
             } else {

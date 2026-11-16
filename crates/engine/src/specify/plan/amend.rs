@@ -53,7 +53,7 @@ pub struct PartAmend<'a> {
     // The design's data types.
     types: &'a Types,
     // The requirements the change adds, revises, or leaves in conflict.
-    drafted: &'a [Basis<'a>],
+    drafted: &'a [Basis],
 }
 
 impl<'a> PartAmend<'a> {
@@ -66,7 +66,7 @@ impl<'a> PartAmend<'a> {
     #[must_use]
     pub const fn new(
         base: &'a Plan, parent: String, parts: Vec<Part>, open: Open, floors: Floors<'a>,
-        types: &'a Types, drafted: &'a [Basis<'a>],
+        types: &'a Types, drafted: &'a [Basis],
     ) -> Self {
         Self {
             base,

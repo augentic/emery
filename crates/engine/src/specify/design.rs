@@ -36,14 +36,14 @@ use crate::specify::{Extract, shape};
 // the design and the specification are drafted together.
 pub struct DesignBrief<'a> {
     extracts: &'a [Extract],
-    bases: &'a [Basis<'a>],
+    bases: &'a [Basis],
     outline: Outline<'a>,
 }
 
 impl<'a> DesignBrief<'a> {
     // Returns a design brief for `extracts` and `bases`.
     #[must_use]
-    pub fn new(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Self {
+    pub fn new(extracts: &'a [Extract], bases: &'a [Basis]) -> Self {
         Self {
             extracts,
             bases,

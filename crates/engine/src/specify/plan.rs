@@ -30,7 +30,7 @@ use crate::specify::sections::BasesSection;
 // The brief contains the requirement bases, the floors they fall under,
 // and the design's data types.
 pub struct PartBrief<'a> {
-    bases: &'a [Basis<'a>],
+    bases: &'a [Basis],
     types: Types,
     floors: Floors<'a>,
 }
@@ -38,9 +38,9 @@ pub struct PartBrief<'a> {
 impl<'a> PartBrief<'a> {
     // Returns a slicing brief for `bases` and the design's data `types`.
     #[must_use]
-    pub fn new(bases: &'a [Basis<'a>], types: Types) -> Self {
+    pub fn new(bases: &'a [Basis], types: Types) -> Self {
         let floors = Floors::new(
-            bases.iter().map(|basis| (basis.id, basis.subject, basis.trigger.as_ref())),
+            bases.iter().map(|basis| (basis.id, basis.subject.as_str(), basis.trigger.as_ref())),
         );
         Self { bases, types, floors }
     }

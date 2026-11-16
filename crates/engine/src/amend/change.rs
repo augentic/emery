@@ -17,53 +17,50 @@
 use std::collections::BTreeSet;
 
 use emery_adapter::source::{ClaimKind, SourceKind};
-use omnia_sdk::{Error, server_error};
+use omnia_sdk::{Error, Model, server_error};
 
 use crate::amend::baseline::Baseline;
-use crate::revision::{self, Change, ChangeClass, Cited};
-use crate::specify::{BASELINE, Basis, Contributor, Extract, Scope};
+use crate::revision::{self, Change, ChangeClass, Cited, Spec};
+use crate::specify::{BASELINE, Basis, Contributor, Extract, GroupingBrief, Scope};
 
-pub struct ChangeSet<'a> {
+pub struct ChangeSet {
     // One per requirement of the amended specification and per requirement
     // retired from it, in id order.
     pub changes: Vec<Change>,
     // The bases of the requirements drafted anew, each under the id and
     // subject its change carries, in id order.
-    pub drafted: Vec<Basis<'a>>,
+    pub drafted: Vec<Basis>,
 }
 
-impl<'a> ChangeSet<'a> {
-    // Whether any claim of `extracts` states or withdraws a requirement, so
-    // the change is matched against the standing requirements. A change of
-    // other claims alone, a `decision` or a `type`, informs the design and
-    // nothing of the specification.
-    pub fn states(extracts: &[Extract]) -> bool {
-        extracts
-            .iter()
-            .flat_map(|extract| &extract.evidence.claims)
-            .any(|claim| matches!(claim.kind, ClaimKind::Requirement | ClaimKind::Retire))
+impl ChangeSet {
+    // Matches `extracts` against `base`, settles each requirement's class
+    // and drafted basis, and retires untouched requirements covered by a
+    // whole-scope behaviour source. A change stating no requirement skips the
+    // grouping turn.
+    pub async fn derive<M: Model>(
+        model: &M, base: &Spec, extracts: &[Extract],
+    ) -> Result<Self, Error> {
+        let baseline = Baseline::new(base, extracts);
+        let mut set = if states_requirements(extracts) {
+            let bases = GroupingBrief::with_standing(
+                extracts,
+                baseline.contributors(),
+                baseline.criteria(),
+            )
+            .derive(model)
+            .await?;
+            Self::from_bases(&baseline, bases)?
+        } else {
+            tracing::info!("the change states no requirement; the specification stands");
+            Self::unchanged(&baseline)
+        };
+        set.retire_by_scope(&baseline, extracts);
+        Ok(set)
     }
 
-    // The change set of a change that states no requirement: every standing
-    // requirement as it is, with no source behind it, and nothing drafted.
-    pub fn unchanged(baseline: &Baseline<'a>) -> Self {
-        let changes = baseline
-            .requirements()
-            .map(|requirement| {
-                let before = requirement.stated();
-                Change {
-                    id: requirement.id,
-                    subject: requirement.subject.clone(),
-                    class: ChangeClass::Unchanged,
-                    before: before.clone(),
-                    after: before,
-                    sources: Vec::new(),
-                    scope: None,
-                }
-            })
-            .collect();
+    fn unchanged(baseline: &Baseline) -> Self {
         Self {
-            changes,
+            changes: baseline.requirements().iter().map(Change::unchanged).collect(),
             drafted: Vec::new(),
         }
     }
@@ -73,7 +70,7 @@ impl<'a> ChangeSet<'a> {
     // claims cover, or one whose base citations name that source alone. A
     // prose source's scope retires nothing, and the first source in
     // declaration order to match is the one named.
-    pub fn retire_by_scope(&mut self, baseline: &Baseline<'_>, extracts: &[Extract]) {
+    fn retire_by_scope(&mut self, baseline: &Baseline, extracts: &[Extract]) {
         for extract in extracts.iter().filter(|extract| extract.scope == Scope::Whole) {
             if extract.kind != SourceKind::Behaviour {
                 tracing::info!(
@@ -84,19 +81,18 @@ impl<'a> ChangeSet<'a> {
                 );
                 continue;
             }
-            let covered: BTreeSet<&str> = extract
+            let covered_stems: BTreeSet<String> = extract
                 .evidence
                 .claims
                 .iter()
                 .filter(|claim| claim.kind == ClaimKind::Requirement)
                 .filter_map(|claim| claim.id.as_deref())
-                .map(revision::stem)
+                .map(|id| revision::stem(id).to_owned())
                 .collect();
             for change in &mut self.changes {
-                let silent = change.class == ChangeClass::Unchanged && change.sources.is_empty();
-                let owned = covered.contains(change.stem())
+                let in_scope = covered_stems.contains(change.stem())
                     || baseline.cites_only(change.id, &extract.source);
-                if !silent || !owned {
+                if !change.is_untouched() || !in_scope {
                     continue;
                 }
                 tracing::info!(
@@ -105,9 +101,7 @@ impl<'a> ChangeSet<'a> {
                     subject = %change.subject,
                     "retired by scope: the source read whole states nothing of it"
                 );
-                change.class = ChangeClass::Retired;
-                change.after = None;
-                change.scope = Some(extract.source.clone());
+                change.retire_by_scope(&extract.source);
             }
         }
     }
@@ -116,8 +110,8 @@ impl<'a> ChangeSet<'a> {
     // revises; its absence is a requirement the base lacks. A `retire` is
     // ranked as a statement is, so a withdrawal and a revision at one rank
     // are a conflict and the higher-ranked of the two decides.
-    pub fn derive(baseline: &Baseline<'a>, bases: Vec<Basis<'a>>) -> Result<Self, Error> {
-        let unmatched: Vec<&Contributor<'_>> = bases
+    fn from_bases(baseline: &Baseline, bases: Vec<Basis>) -> Result<Self, Error> {
+        let unmatched: Vec<&Contributor> = bases
             .iter()
             .filter(|basis| baseline.matched(basis).is_none())
             .flat_map(Basis::withdrawals)
@@ -165,9 +159,9 @@ impl<'a> ChangeSet<'a> {
                     (class, after)
                 };
                 let subject = if class == ChangeClass::Retired {
-                    requirement.subject.as_str()
+                    requirement.subject.clone()
                 } else {
-                    basis.subject
+                    basis.subject.clone()
                 };
                 (requirement.id, subject, class, before, after)
             } else {
@@ -177,11 +171,11 @@ impl<'a> ChangeSet<'a> {
                 let after = basis.statement().map(str::to_owned);
                 let class =
                     if after.is_some() { ChangeClass::Added } else { ChangeClass::Conflict };
-                (id, basis.subject, class, None, after)
+                (id, basis.subject.clone(), class, None, after)
             };
             let change = Change {
                 id,
-                subject: subject.to_owned(),
+                subject,
                 class,
                 before,
                 after,
@@ -210,10 +204,21 @@ impl<'a> ChangeSet<'a> {
     }
 }
 
+// Whether any claim of `extracts` states or withdraws a requirement, so the
+// change is matched against the standing requirements. A change of other
+// claims alone, a `decision` or a `type`, informs the design and nothing of
+// the specification.
+fn states_requirements(extracts: &[Extract]) -> bool {
+    extracts
+        .iter()
+        .flat_map(|extract| &extract.evidence.claims)
+        .any(|claim| matches!(claim.kind, ClaimKind::Requirement | ClaimKind::Retire))
+}
+
 // The `retire-unmatched` refusal: `retires` withdraw behaviours no
 // requirement of the current revision states, so there is nothing for the
 // amendment to retire and a silent pass would lose the withdrawal.
-fn retire_unmatched(retires: &[&Contributor<'_>]) -> Error {
+fn retire_unmatched(retires: &[&Contributor]) -> Error {
     let named = retires
         .iter()
         .map(|retire| format!("`{}` from `{}`", retire.id, retire.source))

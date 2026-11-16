@@ -35,7 +35,7 @@ pub const SPEC_CHUNK: usize = 25;
 // requirement bases.
 pub struct SpecBrief<'a> {
     extracts: &'a [Extract],
-    bases: Vec<&'a Basis<'a>>,
+    bases: Vec<&'a Basis>,
     lead: Lead,
     lexicon: Lexicon,
 }
@@ -48,7 +48,7 @@ impl<'a> SpecBrief<'a> {
     // one `Lexicon`: the fixed names, and the packages the run's `call`
     // claims spell.
     #[must_use]
-    pub fn chunked(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Vec<Self> {
+    pub fn chunked(extracts: &'a [Extract], bases: &'a [Basis]) -> Vec<Self> {
         Self::cut(extracts, bases, false)
     }
 
@@ -60,13 +60,13 @@ impl<'a> SpecBrief<'a> {
     // since the base's stands, and each is told it amends the current
     // specification. An empty slice yields no brief and spends no turn.
     #[must_use]
-    pub fn amending(extracts: &'a [Extract], bases: &'a [Basis<'a>]) -> Vec<Self> {
+    pub fn amending(extracts: &'a [Extract], bases: &'a [Basis]) -> Vec<Self> {
         Self::cut(extracts, bases, true)
     }
 
-    fn cut(extracts: &'a [Extract], bases: &'a [Basis<'a>], amending: bool) -> Vec<Self> {
+    fn cut(extracts: &'a [Extract], bases: &'a [Basis], amending: bool) -> Vec<Self> {
         let lexicon = Lexicon::from_packages(sections::packages(extracts).into_keys());
-        let mut stems: Vec<(&str, Vec<&'a Basis<'a>>)> = Vec::new();
+        let mut stems: Vec<(&str, Vec<&'a Basis>)> = Vec::new();
         for basis in bases {
             let stem = basis.stem();
             match stems.iter_mut().find(|(known, _)| *known == stem) {
@@ -75,8 +75,8 @@ impl<'a> SpecBrief<'a> {
             }
         }
 
-        let mut chunks: Vec<Vec<&'a Basis<'a>>> = Vec::new();
-        let mut current: Vec<&'a Basis<'a>> = Vec::new();
+        let mut chunks: Vec<Vec<&'a Basis>> = Vec::new();
+        let mut current: Vec<&'a Basis> = Vec::new();
         for (_, under) in stems {
             if under.len() > SPEC_CHUNK {
                 if !current.is_empty() {
@@ -214,8 +214,8 @@ impl Brief for SpecBrief<'_> {
         }
 
         // each draft against its requirement
-        let by_subject: BTreeMap<&str, &Basis<'_>> =
-            self.bases.iter().map(|basis| (basis.subject, *basis)).collect();
+        let by_subject: BTreeMap<&str, &Basis> =
+            self.bases.iter().map(|basis| (basis.subject.as_str(), *basis)).collect();
         let mut seen = BTreeSet::new();
         let mut outcomes: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
         for draft in &answer.requirements {
@@ -234,7 +234,7 @@ impl Brief for SpecBrief<'_> {
         }
 
         // requirements no draft covers
-        for basis in self.bases.iter().filter(|basis| !seen.contains(basis.subject)) {
+        for basis in self.bases.iter().filter(|basis| !seen.contains(basis.subject.as_str())) {
             review.note(format_args!("requirement `{}` is not drafted", basis.subject));
         }
 
@@ -260,7 +260,7 @@ impl Brief for SpecBrief<'_> {
             .collect();
         let mut requirements = Vec::with_capacity(self.bases.len());
         for basis in self.bases {
-            let scenarios = drafts.remove(basis.subject).ok_or_else(|| {
+            let scenarios = drafts.remove(&basis.subject).ok_or_else(|| {
                 server_error!("requirement `{}` was accepted without a draft", basis.subject)
             })?;
             requirements.push(basis.requirement(scenarios));
@@ -326,19 +326,20 @@ enum Lead {
 // of those requirement claims is anchored in, the detail beside them. The
 // first chunk carries the preamble, which describes the whole, so it lists
 // every claim instead.
-struct Scope<'a> {
-    stems: BTreeSet<&'a str>,
-    files: BTreeSet<&'a str>,
+struct Scope {
+    stems: BTreeSet<String>,
+    files: BTreeSet<String>,
 }
 
-impl<'a> Scope<'a> {
-    fn of(extracts: &'a [Extract], bases: &[&Basis<'a>]) -> Self {
-        let stems: BTreeSet<&str> = bases
+impl Scope {
+    fn of(extracts: &[Extract], bases: &[&Basis]) -> Self {
+        let stems: BTreeSet<String> = bases
             .iter()
             .flat_map(|basis| {
                 std::iter::once(basis.stem())
                     .chain(basis.classes.iter().flatten().map(Contributor::stem))
             })
+            .map(str::to_owned)
             .collect();
         let files = extracts
             .iter()
@@ -348,7 +349,7 @@ impl<'a> Scope<'a> {
                 claim.id.as_deref().is_some_and(|id| stems.contains(revision::stem(id)))
             })
             .filter_map(|claim| claim.path.as_deref())
-            .map(shape::file)
+            .map(|path| shape::file(path).to_owned())
             .collect();
         Self { stems, files }
     }
@@ -401,7 +402,7 @@ pub struct Draft {
 impl Draft {
     // Returns each evidenced `then` outcome the scenarios state, normalised,
     // for the check across requirements.
-    fn verify(&self, basis: &Basis<'_>, lexicon: &Lexicon, review: &mut Review) -> Vec<String> {
+    fn verify(&self, basis: &Basis, lexicon: &Lexicon, review: &mut Review) -> Vec<String> {
         let label = format!("`{}`", self.subject);
         if self.scenarios.is_empty() {
             review.note(format_args!("{label} has no scenario"));

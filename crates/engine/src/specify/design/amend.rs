@@ -32,7 +32,7 @@ pub struct DesignAmend<'a> {
     extracts: &'a [Extract],
     // The requirements the change adds, revises, or leaves in conflict, each
     // under the id it takes.
-    drafted: &'a [Basis<'a>],
+    drafted: &'a [Basis],
     // The current design less the types the change's retirements orphaned,
     // its `parent` the base revision.
     base: &'a Design,
@@ -58,7 +58,7 @@ impl<'a> DesignAmend<'a> {
     // pruned it.
     #[must_use]
     pub fn new(
-        extracts: &'a [Extract], drafted: &'a [Basis<'a>], changes: &'a [Change], base: &'a Design,
+        extracts: &'a [Extract], drafted: &'a [Basis], changes: &'a [Change], base: &'a Design,
     ) -> Option<Self> {
         let outline = Outline::amend(extracts, base);
         let retired: BTreeMap<ReqId, &'a str> = changes

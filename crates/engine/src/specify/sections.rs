@@ -23,10 +23,10 @@ use crate::specify::basis::Basis;
 // does.
 pub struct BasesSection<'a, B>(pub &'a [B]);
 
-impl<'a, B: Borrow<Basis<'a>>> Display for BasesSection<'a, B> {
+impl<B: Borrow<Basis>> Display for BasesSection<'_, B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         for basis in self.0 {
-            let basis: &Basis<'a> = basis.borrow();
+            let basis: &Basis = basis.borrow();
             let coverage = if basis.covered {
                 "evidenced"
             } else {

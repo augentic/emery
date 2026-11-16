@@ -14,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use strum::VariantArray;
 
 use crate::revision::{
-    self, Cited, Design, DesignDiff, HEADING, ID, NOTE, PartId, Plan, PlanDiff, ReqId, SOURCES,
-    Spec,
+    self, Cited, Design, DesignDiff, HEADING, ID, NOTE, PartId, Plan, PlanDiff, ReqId, Requirement,
+    SOURCES, Spec,
 };
 
 const PART: &str = "### Part:";
@@ -296,6 +296,29 @@ impl Change {
     #[must_use]
     pub fn by_scope(&self) -> bool {
         self.class == ChangeClass::Retired && self.scope.is_some()
+    }
+
+    pub(crate) fn unchanged(requirement: &Requirement) -> Self {
+        let before = requirement.stated();
+        Self {
+            id: requirement.id,
+            subject: requirement.subject.clone(),
+            class: ChangeClass::Unchanged,
+            before: before.clone(),
+            after: before,
+            sources: Vec::new(),
+            scope: None,
+        }
+    }
+
+    pub(crate) fn is_untouched(&self) -> bool {
+        self.class == ChangeClass::Unchanged && self.sources.is_empty()
+    }
+
+    pub(crate) fn retire_by_scope(&mut self, source: impl Into<String>) {
+        self.class = ChangeClass::Retired;
+        self.after = None;
+        self.scope = Some(source.into());
     }
 }
 

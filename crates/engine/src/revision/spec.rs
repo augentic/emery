@@ -145,6 +145,12 @@ impl Requirement {
         Ok(())
     }
 
+    // Returns whether this requirement cites `source` and no other source.
+    #[must_use]
+    pub fn cites_only(&self, source: &str) -> bool {
+        !self.sources.is_empty() && self.sources.iter().all(|cited| cited.source == source)
+    }
+
     // Returns how many anchors this requirement and `other` cite in common:
     // the pairs of their citations that overlap.
     #[must_use]

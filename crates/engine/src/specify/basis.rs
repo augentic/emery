@@ -32,24 +32,24 @@ pub const BASELINE: &str = "baseline";
 // criterion identifier. Source authority is withheld from the model. An
 // amend run's brief carries the current revision's requirements after the
 // claims, as the standing requirements the claims are matched against.
-pub struct GroupingBrief<'a> {
-    contributors: Vec<Contributor<'a>>,
-    criteria: Vec<&'a str>,
-    contracts: Vec<Contract<'a>>,
+pub struct GroupingBrief {
+    contributors: Vec<Contributor>,
+    criteria: Vec<String>,
+    contracts: Vec<Contract>,
     sources: usize,
     baseline: Grouping,
     // How many contributors the run's sources contributed; the rest are
     // the standing requirements.
     changes: usize,
     // The claims anchored where a standing requirement was read.
-    hints: Vec<Hint<'a>>,
+    hints: Vec<Hint>,
 }
 
-impl<'a> GroupingBrief<'a> {
+impl GroupingBrief {
     // A `retire` claim is passed over: with no standing requirements there
     // is nothing for it to withdraw.
     #[must_use]
-    pub fn new(extracts: &'a [Extract]) -> Self {
+    pub fn new(extracts: &[Extract]) -> Self {
         Self::assemble(extracts, Vec::new(), Vec::new(), false)
     }
 
@@ -63,17 +63,16 @@ impl<'a> GroupingBrief<'a> {
     // nothing.
     #[must_use]
     pub fn with_standing(
-        extracts: &'a [Extract], standing: Vec<Contributor<'a>>, criteria: Vec<&'a str>,
+        extracts: &[Extract], standing: Vec<Contributor>, criteria: Vec<String>,
     ) -> Self {
         Self::assemble(extracts, standing, criteria, true)
     }
 
     fn assemble(
-        extracts: &'a [Extract], standing: Vec<Contributor<'a>>, criteria: Vec<&'a str>,
+        extracts: &[Extract], standing: Vec<Contributor>, mut criteria: Vec<String>,
         withdrawals: bool,
     ) -> Self {
-        let mut contributors: Vec<Contributor<'a>> = Vec::new();
-        let mut criteria = criteria;
+        let mut contributors: Vec<Contributor> = Vec::new();
         let mut contracts = Vec::new();
 
         // the ids each source states a requirement under, so a withdrawal
@@ -102,7 +101,7 @@ impl<'a> GroupingBrief<'a> {
                                 claim: claim.id.clone().unwrap_or_default(),
                                 path: claim.path.clone(),
                             },
-                            id: claim.id.as_deref(),
+                            id: claim.id.clone(),
                             trigger,
                         });
                     }
@@ -124,21 +123,21 @@ impl<'a> GroupingBrief<'a> {
                         true
                     }
                     ClaimKind::Criterion => {
-                        criteria.push(id);
+                        criteria.push(id.to_owned());
                         continue;
                     }
                     _ => continue,
                 };
                 contributors.push(Contributor {
-                    source: &extract.source,
+                    source: extract.source.clone(),
                     kind: extract.kind,
                     rank: extract.rank,
-                    id,
-                    path: claim.path.as_deref(),
+                    id: id.to_owned(),
+                    path: claim.path.clone(),
                     statement: claim.statement(),
-                    synopsis: claim.synopsis.as_deref(),
+                    synopsis: claim.synopsis.clone(),
                     withdraws,
-                    citations: &[],
+                    citations: Vec::new(),
                     index: contributors.len(),
                 });
             }
@@ -152,7 +151,8 @@ impl<'a> GroupingBrief<'a> {
         }));
 
         // count the sources that contribute a requirement claim
-        let sources = contributors.iter().map(|claim| claim.source).collect::<BTreeSet<_>>().len();
+        let sources =
+            contributors.iter().map(|claim| claim.source.as_str()).collect::<BTreeSet<_>>().len();
         let baseline = Grouping::baseline(&contributors);
         let hints = Hint::all(&contributors[..changes], &contributors[changes..]);
 
@@ -185,7 +185,7 @@ impl<'a> GroupingBrief<'a> {
     // - Returns `Error::ServerError` when required prose is missing or a
     //   grouping cannot be reconciled with the claims.
     // - Returns `Error::BadGateway` when the model operation fails.
-    pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis<'a>>, Error> {
+    pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis>, Error> {
         if self.claims().is_empty() {
             return Err(bad_request!("no source contributed a requirement claim"));
         }
@@ -203,18 +203,18 @@ impl<'a> GroupingBrief<'a> {
         self.contributors.iter().map(Contributor::stem).collect::<BTreeSet<_>>().len()
     }
 
-    fn claims(&self) -> &[Contributor<'a>] {
+    fn claims(&self) -> &[Contributor] {
         &self.contributors[..self.changes]
     }
 
-    fn standing(&self) -> &[Contributor<'a>] {
+    fn standing(&self) -> &[Contributor] {
         &self.contributors[self.changes..]
     }
 }
 
-impl<'a> Brief for GroupingBrief<'a> {
+impl Brief for GroupingBrief {
     type Answer = Grouping;
-    type Output = Vec<Basis<'a>>;
+    type Output = Vec<Basis>;
 
     const NAME: &'static str = "grouping";
     const PROSE: &'static [&'static str] = &["grouping.md"];
@@ -291,7 +291,7 @@ impl<'a> Brief for GroupingBrief<'a> {
             let standing: BTreeSet<&str> = members
                 .iter()
                 .filter(|&&index| index >= self.changes)
-                .filter_map(|&index| self.contributors.get(index).map(|member| member.id))
+                .filter_map(|&index| self.contributors.get(index).map(|member| member.id.as_str()))
                 .collect();
             if standing.len() > 1 {
                 let ids =
@@ -312,18 +312,18 @@ impl<'a> Brief for GroupingBrief<'a> {
             let positions: BTreeSet<&usize> =
                 group.claims.iter().filter_map(|index| placed.get(index)).collect();
             if positions.len() > 1 {
-                let id = self.contributors[group.claims[0]].id;
+                let id = &self.contributors[group.claims[0]].id;
                 review.note(format_args!("claims sharing the id `{id}` are split across groups"));
             }
         }
     }
 
-    fn into_output(self, answer: Grouping) -> Result<Vec<Basis<'a>>, Error> {
+    fn into_output(self, answer: Grouping) -> Result<Vec<Basis>, Error> {
         answer.split(&self.contributors).bases(self.contributors, &self.criteria, &self.contracts)
     }
 }
 
-impl Display for GroupingBrief<'_> {
+impl Display for GroupingBrief {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let standing = self.standing();
         if standing.is_empty() {
@@ -334,7 +334,7 @@ impl Display for GroupingBrief<'_> {
         f.write_str("## Requirement claims (index, source, id, statement, synopsis)\n\n")?;
 
         for claim in self.claims() {
-            let synopsis = claim.synopsis.unwrap_or("-");
+            let synopsis = claim.synopsis.as_deref().unwrap_or("-");
             let kind = if claim.withdraws { " (retire)" } else { "" };
             writeln!(
                 f,
@@ -367,7 +367,7 @@ impl Display for GroupingBrief<'_> {
         }
 
         for group in merged {
-            let id = self.contributors[group.claims[0]].id;
+            let id = &self.contributors[group.claims[0]].id;
             let indices =
                 group.claims.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
             writeln!(
@@ -412,16 +412,16 @@ impl Display for GroupingBrief<'_> {
 // its id, which the requirement's subject leads with, or its anchor, which a
 // contributor's citation meets.
 #[derive(Debug)]
-struct Contract<'a> {
+struct Contract {
     cited: Cited,
-    id: Option<&'a str>,
+    id: Option<String>,
     trigger: Trigger,
 }
 
-impl Contract<'_> {
+impl Contract {
     // Whether `id` is this contract's id or a dotted child of it.
     fn leads(&self, id: &str) -> bool {
-        self.id.is_some_and(|own| revision::leads(own, id))
+        self.id.as_deref().is_some_and(|own| revision::leads(own, id))
     }
 }
 
@@ -429,23 +429,23 @@ impl Contract<'_> {
 // source and file, lines that meet. A hint to the grouping, never a
 // pre-merge, since line numbers drift as code changes.
 #[derive(Debug)]
-struct Hint<'a> {
+struct Hint {
     claim: usize,
     standing: usize,
-    path: &'a str,
+    path: String,
 }
 
-impl<'a> Hint<'a> {
+impl Hint {
     // One hint per claim and standing requirement it anchors within. A claim
     // at a standing requirement's id is pre-merged already, so none is
     // hinted for it.
-    fn all(claims: &[Contributor<'a>], standing: &[Contributor<'a>]) -> Vec<Self> {
+    fn all(claims: &[Contributor], standing: &[Contributor]) -> Vec<Self> {
         if standing.is_empty() {
             return Vec::new();
         }
         let mut hints = Vec::new();
         for claim in claims {
-            let Some(path) = claim.path else { continue };
+            let Some(path) = claim.path.as_deref() else { continue };
             if standing.iter().any(|member| member.id == claim.id) {
                 continue;
             }
@@ -455,7 +455,7 @@ impl<'a> Hint<'a> {
                     hints.push(Self {
                         claim: claim.index,
                         standing: member.index,
-                        path,
+                        path: path.to_owned(),
                     });
                 }
             }
@@ -464,7 +464,7 @@ impl<'a> Hint<'a> {
     }
 }
 
-impl Display for Hint<'_> {
+impl Display for Hint {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -488,11 +488,11 @@ impl Grouping {
     // Byte-equal ids are one group, in first-appearance order, and
     // whitespace-equal statements one class; every answer must contain this
     // grouping.
-    fn baseline(contributors: &[Contributor<'_>]) -> Self {
+    fn baseline(contributors: &[Contributor]) -> Self {
         let mut groups: Vec<Group> = Vec::new();
         let mut by_id: BTreeMap<&str, usize> = BTreeMap::new();
         for (index, claim) in contributors.iter().enumerate() {
-            let position = *by_id.entry(claim.id).or_insert_with(|| {
+            let position = *by_id.entry(claim.id.as_str()).or_insert_with(|| {
                 groups.push(Group::default());
                 groups.len() - 1
             });
@@ -517,15 +517,15 @@ impl Grouping {
     // merges them is split without a round: the first such id keeps the group
     // and every other member, each further id takes its own claims into a new
     // group, and each group's classes are the answer's cut to its members.
-    fn split(self, contributors: &[Contributor<'_>]) -> Self {
+    fn split(self, contributors: &[Contributor]) -> Self {
         let mut groups = Vec::with_capacity(self.groups.len());
         for group in self.groups {
             // (source, stem) → the distinct ids the group holds under it, in order
             let mut by_stem: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
             for claim in group.claims.iter().filter_map(|&index| contributors.get(index)) {
-                let ids = by_stem.entry((claim.source, claim.stem())).or_default();
-                if !ids.contains(&claim.id) {
-                    ids.push(claim.id);
+                let ids = by_stem.entry((claim.source.as_str(), claim.stem())).or_default();
+                if !ids.contains(&claim.id.as_str()) {
+                    ids.push(&claim.id);
                 }
             }
             let spun: BTreeSet<&str> = by_stem
@@ -545,7 +545,7 @@ impl Grouping {
                 groups.push(group);
                 continue;
             }
-            let id_of = |index: usize| contributors.get(index).map(|claim| claim.id);
+            let id_of = |index: usize| contributors.get(index).map(|claim| claim.id.as_str());
             let cut = |keep: &dyn Fn(usize) -> bool| Group {
                 claims: group.claims.iter().copied().filter(|&index| keep(index)).collect(),
                 classes: group
@@ -566,13 +566,12 @@ impl Grouping {
     // Ordered by each group's earliest claim and numbered from `REQ-001` in
     // that order. The grouping was verified to place every contributor exactly
     // once, so an index it misses or repeats is the engine's own defect.
-    fn bases<'a>(
-        &self, contributors: Vec<Contributor<'a>>, criteria: &[&str], contracts: &[Contract<'a>],
-    ) -> Result<Vec<Basis<'a>>, Error> {
-        let mut contributors: Vec<Option<Contributor<'a>>> =
+    fn bases(
+        &self, contributors: Vec<Contributor>, criteria: &[String], contracts: &[Contract],
+    ) -> Result<Vec<Basis>, Error> {
+        let mut contributors: Vec<Option<Contributor>> =
             contributors.into_iter().map(Some).collect();
-        let mut groups: Vec<(usize, Vec<Vec<Contributor<'a>>>)> =
-            Vec::with_capacity(self.groups.len());
+        let mut groups: Vec<(usize, Vec<Vec<Contributor>>)> = Vec::with_capacity(self.groups.len());
         for group in &self.groups {
             let first = group.claims.iter().copied().min().unwrap_or_default();
             let mut classes = Vec::with_capacity(group.classes.len());
@@ -615,11 +614,11 @@ pub struct Group {
 //
 // Contributors are grouped by agreement, with the winning class first.
 #[derive(Debug)]
-pub struct Basis<'a> {
+pub struct Basis {
     // The requirement identifier, assigned from `REQ-001`.
     pub id: ReqId,
     // The heading derived from the highest-authority claim identifier.
-    pub subject: &'a str,
+    pub subject: String,
     // The reconciliation outcome.
     pub status: Status,
     // Whether any criterion claim covers the requirement.
@@ -627,13 +626,12 @@ pub struct Basis<'a> {
     // What reaches the requirement, where a `contract` claim binds it.
     pub trigger: Option<Trigger>,
     // Agreement classes, with the winning class first.
-    pub classes: Vec<Vec<Contributor<'a>>>,
+    pub classes: Vec<Vec<Contributor>>,
 }
 
-impl<'a> Basis<'a> {
+impl Basis {
     fn of(
-        id: ReqId, mut classes: Vec<Vec<Contributor<'a>>>, criteria: &[&str],
-        contracts: &[Contract<'a>],
+        id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[String], contracts: &[Contract],
     ) -> Result<Self, Error> {
         // refuse an empty class, so every class below has a lead
         if classes.is_empty() || classes.iter().any(Vec::is_empty) {
@@ -648,14 +646,14 @@ impl<'a> Basis<'a> {
         let covered = classes
             .iter()
             .flatten()
-            .any(|member| criteria.iter().any(|id| revision::leads(member.id, id)));
+            .any(|member| criteria.iter().any(|id| revision::leads(&member.id, id)));
 
         let status = Self::settle(&classes, covered);
         let trigger = Self::trigger_of(&classes, contracts);
 
         Ok(Self {
             id,
-            subject: classes[0][0].id,
+            subject: classes[0][0].id.clone(),
             status,
             covered,
             trigger,
@@ -666,7 +664,7 @@ impl<'a> Basis<'a> {
     // The status sorted, non-empty `classes` settle to: one class agreed or
     // unknown by `covered`, a class alone at the top rank a divergence, two
     // tied there a conflict.
-    fn settle(classes: &[Vec<Contributor<'a>>], covered: bool) -> Status {
+    fn settle(classes: &[Vec<Contributor>], covered: bool) -> Status {
         let top = classes[0][0].rank;
         match classes.len() {
             1 if covered => Status::Agreed,
@@ -707,14 +705,14 @@ impl<'a> Basis<'a> {
     // contract whose id the member's leads with, the longest such id for
     // the member highest in authority; else by anchor, the contract whose
     // citation the member's meets, in the same order.
-    fn trigger_of(classes: &[Vec<Contributor<'a>>], contracts: &[Contract<'a>]) -> Option<Trigger> {
-        let mut members: Vec<&Contributor<'a>> = classes.iter().flatten().collect();
+    fn trigger_of(classes: &[Vec<Contributor>], contracts: &[Contract]) -> Option<Trigger> {
+        let mut members: Vec<&Contributor> = classes.iter().flatten().collect();
         members.sort_by_key(|member| (member.rank, member.index));
         let by_id = members.iter().find_map(|member| {
             contracts
                 .iter()
-                .filter(|contract| contract.leads(member.id))
-                .max_by_key(|contract| contract.id.map_or(0, str::len))
+                .filter(|contract| contract.leads(&member.id))
+                .max_by_key(|contract| contract.id.as_deref().map_or(0, str::len))
         });
         by_id
             .or_else(|| {
@@ -728,13 +726,13 @@ impl<'a> Basis<'a> {
 
     // Returns the stem of the subject: the first segment of its dotted id.
     #[must_use]
-    pub fn stem(&self) -> &'a str {
-        revision::stem(self.subject)
+    pub fn stem(&self) -> &str {
+        revision::stem(&self.subject)
     }
 
     // Returns contributors by descending authority and then source order.
-    pub fn contributors(&self) -> impl Iterator<Item = &Contributor<'a>> {
-        let mut members: Vec<&Contributor<'a>> = self.classes.iter().flatten().collect();
+    pub fn contributors(&self) -> impl Iterator<Item = &Contributor> {
+        let mut members: Vec<&Contributor> = self.classes.iter().flatten().collect();
         members.sort_by_key(|member| (member.rank, member.index));
         members.into_iter()
     }
@@ -764,7 +762,7 @@ impl<'a> Basis<'a> {
     }
 
     // Returns the `retire` claims among the contributors, by descending authority.
-    pub fn withdrawals(&self) -> impl Iterator<Item = &Contributor<'a>> {
+    pub fn withdrawals(&self) -> impl Iterator<Item = &Contributor> {
         self.contributors().filter(|member| member.withdraws)
     }
 
@@ -776,7 +774,7 @@ impl<'a> Basis<'a> {
     #[must_use]
     pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
         let body = self.statement().map_or_default(|statement| vec![statement.to_owned()]);
-        let noted: &[Vec<Contributor<'a>>] = match self.status {
+        let noted: &[Vec<Contributor>] = match self.status {
             Status::Agreed | Status::Unknown => &[],
             Status::Divergence => &self.classes[1..],
             Status::Conflict => &self.classes,
@@ -786,10 +784,10 @@ impl<'a> Basis<'a> {
             .map(|class| {
                 let lead = &class[0];
                 Loser {
-                    sources: class.iter().map(|member| member.source.to_string()).collect(),
+                    sources: class.iter().map(|member| member.source.clone()).collect(),
                     kind: lead.kind,
                     rank: lead.rank,
-                    claim: lead.id.to_string(),
+                    claim: lead.id.clone(),
                     statement: lead.statement.clone(),
                 }
             })
@@ -797,7 +795,7 @@ impl<'a> Basis<'a> {
 
         Requirement {
             id: self.id,
-            subject: self.subject.to_string(),
+            subject: self.subject.clone(),
             status: self.status,
             covered: self.covered,
             trigger: self.trigger.clone(),
@@ -811,35 +809,35 @@ impl<'a> Basis<'a> {
 
 // A source claim contributing to a requirement.
 #[derive(Debug)]
-pub struct Contributor<'a> {
-    pub source: &'a str,
+pub struct Contributor {
+    pub source: String,
     pub kind: SourceKind,
     pub rank: Rank,
-    pub id: &'a str,
-    pub path: Option<&'a str>,
+    pub id: String,
+    pub path: Option<String>,
     pub statement: String,
-    pub synopsis: Option<&'a str>,
+    pub synopsis: Option<String>,
     pub withdraws: bool,
     // Where a standing requirement was read, for the brief's anchor hints;
     // empty for a claim.
-    pub citations: &'a [Cited],
+    pub citations: Vec<Cited>,
     // Position in source order, used to break authority ties.
     pub index: usize,
 }
 
-impl<'a> Contributor<'a> {
+impl Contributor {
     #[must_use]
-    pub fn stem(&self) -> &'a str {
-        revision::stem(self.id)
+    pub fn stem(&self) -> &str {
+        revision::stem(&self.id)
     }
 }
 
-impl From<&Contributor<'_>> for Cited {
-    fn from(member: &Contributor<'_>) -> Self {
+impl From<&Contributor> for Cited {
+    fn from(member: &Contributor) -> Self {
         Self {
-            source: member.source.to_string(),
-            claim: member.id.to_string(),
-            path: member.path.map(str::to_owned),
+            source: member.source.clone(),
+            claim: member.id.clone(),
+            path: member.path.clone(),
         }
     }
 }

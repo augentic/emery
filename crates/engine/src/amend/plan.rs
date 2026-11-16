@@ -88,7 +88,7 @@ impl<'a> Pruned<'a> {
     // Returns `Error::ServerError` for a settled plan the rules refuse, since
     // nothing of it is the model's.
     pub fn assemble(
-        mut self, spec: &'a Spec, types: &'a Types, drafted: &'a [Basis<'a>],
+        mut self, spec: &'a Spec, types: &'a Types, drafted: &'a [Basis],
     ) -> Result<Assembled<'a>, Error> {
         let floors = Floors::from_spec(spec);
         let mut open = self.place(spec, &floors);

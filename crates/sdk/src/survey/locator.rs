@@ -17,7 +17,7 @@ pub struct SurfaceLocator<'t, R: Recogniser> {
     entries: Vec<String>,
     roots: Vec<String>,
     handed: BTreeSet<(String, String)>,
-    locating: BTreeSet<&'t str>,
+    locating: BTreeSet<String>,
 }
 
 impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
@@ -34,7 +34,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
             .modules
             .values()
             .filter(|module| locator.locates(module))
-            .map(|module| module.path.as_str())
+            .map(|module| module.path.clone())
             .collect();
         locator
     }
@@ -167,7 +167,8 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
                     continue;
                 };
                 let decorator = decorated.name.join(".");
-                let argument = decorated.literal.as_ref().map_or_default(|l| format!("(\"{l}\")"));
+                let argument =
+                    decorated.literal.as_ref().map_or_default(|literal| format!("(\"{literal}\")"));
                 let on = match (&decorated.class, &decorated.member) {
                     (Some(class), Some(member)) => format!("`{class}.{member}`"),
                     (None, Some(member)) => format!("`{member}`"),
@@ -288,7 +289,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
         for path in tree
             .modules
             .keys()
-            .filter(|path| self.locating.contains(path.as_str()))
+            .filter(|path| self.locating.contains(*path))
             .chain(&self.entries)
             .chain(&self.roots)
             .chain(tree.modules.keys())
@@ -332,7 +333,7 @@ impl<'t, R: Recogniser> SurfaceLocator<'t, R> {
             .filter(|path| {
                 !covered.contains(path.as_str())
                     && !unreached.contains(path.as_str())
-                    && (self.entries.contains(path) || self.locating.contains(path.as_str()))
+                    && (self.entries.contains(path) || self.locating.contains(*path))
             })
             .collect();
         if !missing.is_empty() {

@@ -19,7 +19,6 @@ use omnia_sdk::api::Context;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
 use serde::{Deserialize, Serialize};
 
-use self::baseline::Baseline;
 use self::change::ChangeSet;
 use self::plan::{Assembled, Pruned};
 pub use crate::apply::ApplyOutput;
@@ -30,8 +29,7 @@ pub use crate::revision::{
 };
 use crate::revision::{Design, EMERY};
 use crate::specify::{
-    BASELINE, Bound, DesignAmend, Extracted, GroupingBrief, RepositorySource, SourceConfig,
-    SpecBrief, Types,
+    BASELINE, Bound, DesignAmend, Extracted, RepositorySource, SourceConfig, SpecBrief, Types,
 };
 use crate::vcs::{BuildRepo, TargetRef};
 use crate::{Files, apply, store};
@@ -143,21 +141,10 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
 
     // the change matched against the base, and what it did to each
     // requirement; a change stating none leaves every requirement as it is
-    // with no grouping spent, and a behaviour source read whole then retires
+    // with no grouping spent, and a behaviour source read whole retires
     // what it falls silent on
-    let baseline = Baseline::new(&revision.spec, &extracts);
-    let mut change_set = if ChangeSet::states(&extracts) {
-        let bases =
-            GroupingBrief::with_standing(&extracts, baseline.contributors(), baseline.criteria())
-                .derive(provider)
-                .await?;
-        ChangeSet::derive(&baseline, bases)?
-    } else {
-        tracing::info!("the change states no requirement; the specification stands");
-        ChangeSet::unchanged(&baseline)
-    };
-    change_set.retire_by_scope(&baseline, &extracts);
-    let ChangeSet { changes, drafted } = change_set;
+    let ChangeSet { changes, drafted } =
+        ChangeSet::derive(provider, &revision.spec, &extracts).await?;
 
     // the retired requirements leave their parts before the design turn,
     // an emptied part goes, and the types it owned leave the design with
