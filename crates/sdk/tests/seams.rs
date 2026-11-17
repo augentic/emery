@@ -1378,7 +1378,7 @@ fn within(callee: Callee, args: Vec<Arg>, value: Use, at: Lines) -> Call {
 // made, on a member of `self`, on an untyped parameter, through two packages,
 // and on a cursor a `with` bound — beside the services module it imports.
 fn handling() -> Vec<Plain> {
-    let mut api = module("app/api.py", 16);
+    let mut api = module("app/api.py", 18);
     api.0.imports = vec![
         named_import("user_list", ".services", Target::Module("app/services.py".to_owned())),
         named_import("OrdersRepository", ".services", Target::Module("app/services.py".to_owned())),
@@ -1386,7 +1386,7 @@ fn handling() -> Vec<Plain> {
         from_package("psycopg2", "psycopg2"),
     ];
     api.0.bindings = vec![
-        class("Handler", &[], span(4, 15)),
+        class("Handler", &[], span(4, 17)),
         param("customers", line(5)),
         param("limit", line(5)),
         local("users", &["user_list"], 0, line(6)),
@@ -1397,7 +1397,8 @@ fn handling() -> Vec<Plain> {
         local("resp", &["requests", "get"], 6, line(12)),
         local("conn", &["psycopg2", "connect"], 7, line(13)),
         local("cur", &["conn", "cursor"], 8, line(14)),
-        value("cache", Some(&["user_list"]), Some(10), None, Init::Construction, line(16)),
+        local("mapped", &["self", "reporter", "map"], 10, line(16)),
+        value("cache", Some(&["user_list"]), Some(12), None, Init::Construction, line(18)),
     ];
     api.0.calls = vec![
         within(callee("user_list", &[]), vec![name(&["limit"], line(6))], Use::Bound, line(6)),
@@ -1443,13 +1444,25 @@ fn handling() -> Vec<Plain> {
             Use::Discarded,
             line(15),
         ),
-        call(callee("user_list", &[]), Vec::new(), Use::Bound, line(16)),
+        within(
+            callee("self", &["reporter", "map"]),
+            vec![name(&["orders"], line(16))],
+            Use::Bound,
+            line(16),
+        ),
+        within(
+            callee("orders", &["map"]),
+            vec![name(&["user_list"], line(17))],
+            Use::Bound,
+            line(17),
+        ),
+        call(callee("user_list", &[]), Vec::new(), Use::Bound, line(18)),
     ];
     api.0.classes = vec![class_decl(
         "Handler",
         "class Handler:",
-        span(4, 15),
-        vec![member("run", MemberKind::Method, "def run(self, customers, limit)", span(5, 15))],
+        span(4, 17),
+        vec![member("run", MemberKind::Method, "def run(self, customers, limit)", span(5, 17))],
     )];
     let mut services = module("app/services.py", 6);
     services.0.bindings =
@@ -1463,12 +1476,14 @@ fn handling() -> Vec<Plain> {
 
 // A call into the tree whose result is bound to a name is a step the method
 // takes, as one for its effect alone or awaited is: into an imported
-// function, on a local a tree class constructed, on a member of `self`. The
-// construction that made the local only wires, a call on an untyped
-// parameter leads nowhere the tree knows, a call passed on is a value in
-// hand, and a module-level binding takes no step. A call through a package
-// is anchored and listed whatever becomes of its value — the one on a cursor
-// a `with` bound among them — and a bare call bound is kept off the list.
+// function, on a local a tree class constructed, on a member of `self`
+// (even when its method name is in `dialect.structural` and no handler is
+// handed). The construction that made the local only wires, a call handed a
+// handler is no step, a call on an untyped parameter leads nowhere the tree
+// knows, a call passed on is a value in hand, and a module-level binding
+// takes no step. A call through a package is anchored and listed whatever
+// becomes of its value — the one on a cursor a `with` bound among them — and
+// a bare call bound is kept off the list.
 #[tokio::test]
 async fn bound_steps() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -1494,10 +1509,16 @@ async fn bound_steps() {
     assert!(at(6), "a call into an imported function, bound: {:?}", seam.anchors);
     assert!(at(8), "a call on a local a tree class constructed, bound: {:?}", seam.anchors);
     assert!(at(9), "a call on a member of `self`, bound: {:?}", seam.anchors);
+    assert!(
+        at(16),
+        "a tree method sharing a dialect structural name with no handler is anchored: {:?}",
+        seam.anchors
+    );
     assert!(!at(7), "the construction that made the local only wires: {:?}", seam.anchors);
     assert!(!at(10), "a call on an untyped parameter leads nowhere: {:?}", seam.anchors);
     assert!(!at(11), "a call passed on is a value in hand: {:?}", seam.anchors);
-    assert!(!at(16), "a module-level binding takes no step: {:?}", seam.anchors);
+    assert!(!at(17), "a call handing a handler is no step: {:?}", seam.anchors);
+    assert!(!at(18), "a module-level binding takes no step: {:?}", seam.anchors);
     for through in [12, 13, 14, 15] {
         assert!(at(through), "every call through a package is anchored: {:?}", seam.anchors);
     }

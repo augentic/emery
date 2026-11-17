@@ -405,15 +405,15 @@ fn defaulted<'m>(
 
 // A call for its effect alone, awaited, or bound to a name, into the tree or
 // on a member of its class. Not a construction bound to a name, which only
-// wires the local the steps on it are traced through; a registration handed
-// a handler; a structural call; or a call at module level.
+// wires the local the steps on it are traced through; a call handed a
+// handler; or a call at module level.
 fn step<R: Recogniser>(tree: &Tree<R>, module: &R::Module, call: &Call) -> bool {
     let wires = match call.value {
         Use::Consumed => true,
         Use::Bound => call.constructs,
         Use::Discarded | Use::Awaited => false,
     };
-    if wires || call.frames.is_empty() || call.structural(tree.dialect) {
+    if wires || call.frames.is_empty() {
         return false;
     }
     if call.args.iter().any(|arg| tree.recogniser.handler(tree, module, arg, &call.frames)) {
