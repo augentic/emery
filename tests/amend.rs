@@ -1121,6 +1121,309 @@ async fn amend_scoped_all_vanished() {
     assert!(provider.model.seen().is_empty(), "no turn when no claim states a requirement");
 }
 
+// Under `scope = "whole"`, re-extracted claims on untouched behaviour whose
+// wording or leaf/sub-stem slug drifted yet share the standing requirement's
+// winning equivalence class stay `unchanged` byte for byte: original subjects,
+// bodies, scenarios, triggers, design, and untouched parts are preserved,
+// standing scenarios and extracted criteria appear in the grouping brief, and
+// only the requirement placed in its own class is redrafted.
+#[tokio::test]
+async fn amend_scoped_equivalent() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+
+    // base spec citing `code` alone, with an untriggered helper under `orders`
+    // where `REQ-003` already holds `POST /orders`
+    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+    for req in base_spec["requirements"].as_array_mut().expect("requirements") {
+        req["sources"][0]["source"] = Value::from("code");
+    }
+    base_spec["requirements"][3]["subject"] = Value::from("orders.validate-sku");
+    base_spec["requirements"][3]["trigger"] = Value::Null;
+    base_spec["requirements"][3]["sources"][0]["claim"] = Value::from("orders.validate-sku");
+    base_spec["requirements"][3]["body"] =
+        serde_json::json!(["An order referencing an unknown SKU is rejected."]);
+    let base_bytes = serde_json::to_vec(&base_spec).expect("serialise base spec");
+
+    // indices 0..=3 are `code`'s re-extracted claims, 4..=7 the standing requirements
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1, 5], "classes": [[1, 5]]},
+        {"claims": [2, 6], "classes": [[2], [6]]},
+        {"claims": [3, 7], "classes": [[3, 7]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.post.place", "scenarios": [
+            {"name": "Bulk cap", "when": "a signed-in caller places an order of up to 20 units", "then": "the order is created"}
+        ]}
+    ]}"#;
+    let design = format!(
+        r#"{{"sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}], "revised": []}},
+            {{"kind": "apis", "blocks": [{{"text": "Inbound HTTP exposes POST /orders (REQ-003)."}}], "revised": []}}
+        ]}}"#
+    );
+    let mut provider = Provider::answering([grouping, draft, design.as_str()]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement("auth.sign-in", "Callers authenticate with a credential."),
+            requirement("session.idle-expiry", "Idle sessions time out after sixty minutes."),
+            requirement("orders.post.place", "A signed-in user places an order of up to 20 units."),
+            claim(
+                ClaimKind::Criterion,
+                "orders.post.place.max-units",
+                ("criterion", "MAX_UNITS is 20."),
+            ),
+            requirement(
+                "orders.post.unknown-sku",
+                "Placing an order rejects a line whose SKU is absent.",
+            ),
+            claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders")),
+        ],
+    );
+    seed(&provider.files, &base_bytes, DESIGN, PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 1, "retired": 0, "conflict": 0, "unchanged": 3, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    assert_eq!(envelope["stems"], serde_json::json!(["orders"]), "{envelope}");
+    assert_eq!(envelope["parts"], Value::Null, "no part membership changed: {envelope}");
+
+    // standing scenarios and extracted criteria appear in the grouping brief
+    let grouping_turn = provider.model.seen()[0].messages.join("\n");
+    assert!(
+        grouping_turn.contains("  - criterion `orders.post.place.max-units`: MAX_UNITS is 20."),
+        "{grouping_turn}"
+    );
+    assert!(
+        grouping_turn
+            .contains("  - scenario `Timeout`: when a session is idle for an hour -> it times out"),
+        "{grouping_turn}"
+    );
+
+    // only `REQ-003` is drafted anew; the other three stay byte for byte the base's
+    let spec_turn = provider.model.seen()[1].messages.join("\n");
+    assert!(spec_turn.contains("- REQ-003 `orders.post.place`"), "{spec_turn}");
+    assert!(!spec_turn.contains("REQ-001"), "{spec_turn}");
+    assert!(!spec_turn.contains("REQ-002"), "{spec_turn}");
+    assert!(!spec_turn.contains("REQ-004"), "{spec_turn}");
+
+    let (_, amendment) = staged_amendment(&provider);
+    for (idx, req_id) in [(0, "REQ-001"), (1, "REQ-002"), (3, "REQ-004")] {
+        assert_eq!(amendment["changes"][idx]["id"], req_id, "{amendment}");
+        assert_eq!(amendment["changes"][idx]["class"], "unchanged", "{amendment}");
+        assert_eq!(
+            amendment["changes"][idx]["subject"], base_spec["requirements"][idx]["subject"],
+            "{amendment}"
+        );
+        assert_eq!(
+            amendment["changes"][idx]["after"], amendment["changes"][idx]["before"],
+            "{amendment}"
+        );
+        assert_eq!(
+            amendment["spec"]["requirements"][idx], base_spec["requirements"][idx],
+            "{amendment}"
+        );
+    }
+    let base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+    assert_eq!(amendment["plan"]["parts"][0], base_plan["parts"][0], "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+// Under `scope = "whole"`, re-extraction granularity drift on untouched code
+// neither manufactures spurious `added` requirements nor retires covered
+// standing requirements by scope:
+// - multiple finer-grained claims of one `(source, stem)` placed in one
+//   standing requirement's class stay unsplit on that requirement (`unchanged`);
+// - one consolidated claim covering distinct standing requirements may join
+//   each standing requirement's group without merging the standing requirements
+//   (while invalid multi-group placements are refused and corrected);
+// - a standing requirement whose behaviour was extracted only as an `excerpt`
+//   in `## Whole-source detail` and named in `evidenced` is preserved rather
+//   than retired by scope.
+#[tokio::test]
+async fn amend_scoped_granularity() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+
+    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+    for req in base_spec["requirements"].as_array_mut().expect("requirements") {
+        req["sources"][0]["source"] = Value::from("code");
+    }
+    let base_bytes = serde_json::to_vec(&base_spec).expect("serialise base spec");
+
+    // indices 0..=2 are `code`'s requirement claims; 3..=6 the standing requirements
+    let invalid = r#"{"groups": [
+        {"claims": [0, 1, 3], "classes": [[0, 1, 3]]},
+        {"claims": [4], "classes": [[4]]},
+        {"claims": [2, 5], "classes": [[2], [5]]},
+        {"claims": [2, 6], "classes": [[2], [6]]}
+    ], "evidenced": [3, 4]}"#;
+    let valid = r#"{"groups": [
+        {"claims": [0, 1, 3], "classes": [[0, 1, 3]]},
+        {"claims": [4], "classes": [[4]]},
+        {"claims": [2, 5], "classes": [[2, 5]]},
+        {"claims": [2, 6], "classes": [[2, 6]]}
+    ], "evidenced": [4]}"#;
+    let design = format!(
+        r#"{{"sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}], "revised": []}},
+            {{"kind": "technical-logic", "blocks": [{{"text": "Idle sessions expire after 60 minutes (REQ-002)."}}], "revised": []}}
+        ]}}"#
+    );
+    let mut provider = Provider::answering([invalid, valid, design.as_str()]);
+    let mut session_excerpt = Claim::new(ClaimKind::Excerpt)
+        .at("src/session.ts#L10-L14")
+        .with_extra("excerpt", "Idle sessions are evicted after 60 minutes without activity.");
+    session_excerpt.id = None;
+    code_with(
+        &mut provider,
+        vec![
+            requirement("auth.login.credentials", "Callers sign in by presenting a credential."),
+            requirement(
+                "auth.login.normalise",
+                "Presented sign-in identifiers are trimmed before lookup.",
+            ),
+            requirement(
+                "orders.lifecycle",
+                "A signed-in user places an order and may cancel an open order.",
+            ),
+            session_excerpt,
+        ],
+    );
+    seed(&provider.files, &base_bytes, DESIGN, PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 0, "conflict": 0, "unchanged": 4, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    assert_eq!(envelope["stems"], Value::Null, "{envelope}");
+    assert_eq!(envelope["parts"], Value::Null, "{envelope}");
+
+    let grouping_turn = provider.model.seen()[0].messages.join("\n");
+    assert!(grouping_turn.contains("## Whole-source detail"), "{grouping_turn}");
+    assert!(
+        grouping_turn.contains("`code` `src/session.ts#L10-L14` — Idle sessions are evicted"),
+        "{grouping_turn}"
+    );
+    let exchanges = provider.model.exchanges();
+    let finding = exchanges[0].outcome.as_ref().expect_err("invalid multi-group answer rejected");
+    assert!(
+        finding.contains("claim 2 is placed outside the standing requirement's class"),
+        "{finding}"
+    );
+    assert!(finding.contains("standing requirement 3 is already matched to a claim"), "{finding}");
+
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(amendment["spec"]["requirements"], base_spec["requirements"], "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+#[tokio::test]
+async fn amend_scoped_facets() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+
+    // two facet claims revising one standing requirement join their statements
+    let revised_grouping = r#"{"groups": [
+        {"claims": [0, 1, 4], "classes": [[0, 1], [4]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [5], "classes": [[5]]}
+    ]}"#;
+    let revised_draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.post.totals", "scenarios": [
+            {"name": "Bulk discount at 20", "when": "an order has 20 units", "then": "the 5 percent bulk discount applies"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([revised_grouping, revised_draft]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement("orders.post.totals", "Order totals sum priced lines and shipping."),
+            requirement(
+                "orders.post.bulk-discount",
+                "A 5 percent bulk discount applies from 20 units.",
+            ),
+        ],
+    );
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 1, "retired": 1, "conflict": 0, "unchanged": 2, "by-scope": 1
+        }),
+        "{envelope}"
+    );
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        amendment["changes"][2]["after"],
+        "Order totals sum priced lines and shipping. A 5 percent bulk discount applies from 20 \
+         units.",
+        "{amendment}"
+    );
+    provider.model.assert_exhausted();
+
+    // a second same-stem claim in a separate class spins out as added without self-conflict
+    let mixed_class_grouping = r#"{"groups": [
+        {"claims": [0, 1, 4], "classes": [[0, 4], [1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [5, 0], "classes": [[0, 5]]}
+    ]}"#;
+    let added_draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.post.gift-note", "scenarios": [
+            {"name": "Gift note stored", "when": "an order includes a gift note", "then": "the gift note is stored"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([mixed_class_grouping, added_draft]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement(
+                "orders.lifecycle",
+                "A signed-in user places an order and may cancel an open order.",
+            ),
+            requirement("orders.post.gift-note", "An order may carry an optional gift note."),
+        ],
+    );
+    seed(&provider.files, SPEC, DESIGN, PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 1, "changed": 0, "retired": 0, "conflict": 0, "unchanged": 4, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(amendment["changes"][4]["id"], "REQ-005", "{amendment}");
+    assert_eq!(amendment["changes"][4]["subject"], "orders.post.gift-note", "{amendment}");
+    assert_eq!(amendment["changes"][4]["class"], "added", "{amendment}");
+    provider.model.assert_exhausted();
+}
+
 // `SPEC` with `auth.login` citing `login_source`, `session.timeout` citing
 // both `docs` and `code`, and `orders.*` citing `code` alone.
 fn spec_citing_code(login_source: &str) -> Vec<u8> {
@@ -1180,19 +1483,21 @@ async fn amend_anchored() {
     );
     // index 0 is `docs`, 1..=4 the standing requirements in id order
     let grouping = r#"{"groups": [
-        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [0, 4], "classes": [[0], [4]]},
         {"claims": [1], "classes": [[1]]},
         {"claims": [2], "classes": [[2]]},
         {"claims": [3], "classes": [[3]]}
     ]}"#;
     let draft = r#"{"preamble": [], "requirements": [
         {"subject": "orders.cancellation", "scenarios": [
-            {"name": "Cancel", "when": "a signed-in caller cancels an order", "then": "the order is cancelled"}
+            {"name": "Cancel", "when": "a signed-in caller cancels an order within an hour", "then": "the order is cancelled"}
         ]}
     ]}"#;
     let mut provider = Provider::answering([grouping, draft]);
-    let mut anchored =
-        requirement("orders.cancellation", "A signed-in user cancels an open order.");
+    let mut anchored = requirement(
+        "orders.cancellation",
+        "A signed-in user cancels an open order within an hour.",
+    );
     anchored.path = Some("docs/orders.md#L25-L40".to_owned());
     provider.source.evidence.insert("docs".to_owned(), Ok(evidence(vec![anchored])));
     seed(&provider.files, base.as_bytes(), DESIGN, PLAN);

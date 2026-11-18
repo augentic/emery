@@ -10,7 +10,7 @@
 use emery_adapter::source::SourceKind;
 
 use crate::Rank;
-use crate::revision::{ReqId, Requirement, Spec};
+use crate::revision::{ReqId, Requirement, Scenario, Spec, Status};
 use crate::specify::{BASELINE, Basis, Contributor, Extract};
 
 // The base specification as the grouping and the change set read it.
@@ -36,28 +36,37 @@ impl Baseline {
     // One contributor per requirement, its statement what the requirement
     // states as it stands (`Requirement::stated`): its body, or the
     // competing statements of a conflict, so the model sees one standing
-    // requirement however many statements the base reads as its. The kind
-    // is nominal, since no adapter extracted the base; `index` is the
-    // position among the standing alone, which the brief re-indexes; the
-    // citations are where the requirement was read, for the brief's anchor
-    // hints.
+    // requirement however many statements the base reads as its, with its
+    // scenarios summarised underneath so evidenced thresholds and facets are
+    // visible to the grouping. The kind is nominal, since no adapter
+    // extracted the base; `index` is the position among the standing alone,
+    // which the brief re-indexes; the citations are where the requirement
+    // was read, for the brief's anchor hints.
     pub fn contributors(&self) -> Vec<Contributor> {
         self.spec
             .requirements
             .iter()
             .filter_map(|requirement| Some((requirement, requirement.stated()?)))
             .enumerate()
-            .map(|(index, (requirement, statement))| Contributor {
-                source: BASELINE.to_owned(),
-                kind: SourceKind::Documentation,
-                rank: self.rank,
-                id: requirement.subject.clone(),
-                path: None,
-                statement,
-                synopsis: None,
-                withdraws: false,
-                citations: requirement.sources.clone(),
-                index,
+            .map(|(index, (requirement, statement))| {
+                let notes = if requirement.status == Status::Conflict {
+                    Vec::new()
+                } else {
+                    requirement.scenarios.iter().map(scenario_note).collect()
+                };
+                Contributor {
+                    source: BASELINE.to_owned(),
+                    kind: SourceKind::Documentation,
+                    rank: self.rank,
+                    id: requirement.subject.clone(),
+                    path: None,
+                    statement,
+                    synopsis: None,
+                    notes,
+                    withdraws: false,
+                    citations: requirement.sources.clone(),
+                    index,
+                }
             })
             .collect()
     }
@@ -100,10 +109,44 @@ impl Baseline {
         self.spec.requirement(id).is_some_and(|requirement| requirement.cites_only(source))
     }
 
+    // Whether `basis` leaves `requirement`'s trigger unchanged. A change
+    // silent on the trigger keeps the base's, and a trigger bound from an
+    // already-cited source that the base already holds under the same stem is
+    // sub-stem slug drift on a shared helper rather than a new surface.
+    pub fn same_trigger(&self, requirement: &Requirement, basis: &Basis) -> bool {
+        let Some(trigger) = &basis.trigger else {
+            return true;
+        };
+        if requirement.trigger.as_ref() == Some(trigger) {
+            return true;
+        }
+        requirement.trigger.is_none()
+            && basis.agrees_with_baseline()
+            && basis
+                .contributors()
+                .filter(|member| member.source != BASELINE)
+                .all(|member| requirement.sources.iter().any(|cited| cited.source == member.source))
+            && self.spec.requirements.iter().any(|other| {
+                other.stem() == requirement.stem() && other.trigger.as_ref() == Some(trigger)
+            })
+    }
+
     // The ids an added requirement takes, from the first above every id the
     // base holds: an id the base once held is never reused, a retired one
     // included.
     pub fn free_ids(&self) -> impl Iterator<Item = ReqId> {
         ReqId::free_after(self.spec.requirements.iter().map(|requirement| requirement.id))
     }
+}
+
+fn scenario_note(scenario: &Scenario) -> String {
+    let mut clauses = Vec::new();
+    if !scenario.given.is_empty() {
+        clauses.push(format!("given {}", scenario.given.join("; ")));
+    }
+    clauses.push(format!("when {} -> {}", scenario.when, scenario.then));
+    if !scenario.and.is_empty() {
+        clauses.push(format!("and {}", scenario.and.join("; ")));
+    }
+    format!("scenario `{}`: {}", scenario.name, clauses.join("; "))
 }

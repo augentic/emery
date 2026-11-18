@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::Trigger;
-use emery_adapter::source::{ClaimKind, SourceKind};
+use emery_adapter::source::{Claim, ClaimKind, SourceKind};
 use omnia_sdk::{Error, Model, bad_request, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use crate::Rank;
 use crate::brief::{Brief, Review};
 use crate::revision::{self, Cited, Loser, ReqId, Requirement, Scenario, Status};
-use crate::specify::Extract;
+use crate::specify::{Extract, Scope};
 
 // The reserved source name the current revision's requirements contribute under.
 //
@@ -43,6 +43,9 @@ pub struct GroupingBrief {
     changes: usize,
     // The claims anchored where a standing requirement was read.
     hints: Vec<Hint>,
+    // Non-requirement detail (`excerpt` and `call` claims) from whole-scope
+    // behaviour sources during an amend run.
+    details: Vec<Detail>,
 }
 
 impl GroupingBrief {
@@ -74,37 +77,29 @@ impl GroupingBrief {
     ) -> Self {
         let mut contributors: Vec<Contributor> = Vec::new();
         let mut contracts = Vec::new();
+        let mut details = Vec::new();
+        let has_standing = !standing.is_empty();
 
         // the ids each source states a requirement under, so a withdrawal
         // of one of its own is passed over: a source cannot conflict with
         // itself, and one that withdraws and restates has restated
-        let restated: BTreeSet<(&str, &str)> = extracts
-            .iter()
-            .flat_map(|extract| {
-                extract
-                    .evidence
-                    .claims
-                    .iter()
-                    .filter(|claim| claim.kind == ClaimKind::Requirement)
-                    .filter_map(move |claim| Some((extract.source.as_str(), claim.id.as_deref()?)))
-            })
-            .collect();
+        let restated = restated_ids(extracts);
 
         for extract in extracts {
+            let extract_criteria = if has_standing { criterion_notes(extract) } else { Vec::new() };
+            let whole_behaviour = has_standing
+                && extract.scope == Scope::Whole
+                && extract.kind == SourceKind::Behaviour;
+
             for claim in &extract.evidence.claims {
                 // a contract binds by its id or its anchor, so it needs no id
                 if claim.kind == ClaimKind::Contract {
-                    if let Some(Ok(trigger)) = claim.trigger() {
-                        contracts.push(Contract {
-                            cited: Cited {
-                                source: extract.source.clone(),
-                                claim: claim.id.clone().unwrap_or_default(),
-                                path: claim.path.clone(),
-                            },
-                            id: claim.id.clone(),
-                            trigger,
-                        });
-                    }
+                    contracts.extend(Contract::from_claim(&extract.source, claim));
+                    continue;
+                }
+                if whole_behaviour && let Some(detail) = Detail::from_claim(&extract.source, claim)
+                {
+                    details.push(detail);
                     continue;
                 }
                 let Some(id) = claim.id.as_deref() else { continue };
@@ -128,6 +123,15 @@ impl GroupingBrief {
                     }
                     _ => continue,
                 };
+                let notes = if withdraws {
+                    Vec::new()
+                } else {
+                    extract_criteria
+                        .iter()
+                        .filter(|(criterion_id, _)| revision::leads(id, criterion_id))
+                        .map(|(criterion_id, text)| format!("criterion `{criterion_id}`: {text}"))
+                        .collect()
+                };
                 contributors.push(Contributor {
                     source: extract.source.clone(),
                     kind: extract.kind,
@@ -136,6 +140,7 @@ impl GroupingBrief {
                     path: claim.path.clone(),
                     statement: claim.statement(),
                     synopsis: claim.synopsis.clone(),
+                    notes,
                     withdraws,
                     citations: Vec::new(),
                     index: contributors.len(),
@@ -164,6 +169,7 @@ impl GroupingBrief {
             baseline,
             changes,
             hints,
+            details,
         }
     }
 
@@ -191,7 +197,7 @@ impl GroupingBrief {
         }
 
         if self.sources < 2 && self.stems() < 2 {
-            self.baseline.bases(self.contributors, &self.criteria, &self.contracts)
+            self.baseline.bases(&self.contributors, &self.criteria, &self.contracts)
         } else {
             self.judge(model).await
         }
@@ -210,6 +216,153 @@ impl GroupingBrief {
     fn standing(&self) -> &[Contributor] {
         &self.contributors[self.changes..]
     }
+
+    fn verify_placements(
+        &self, placed: &BTreeMap<usize, Vec<usize>>, revising: &BTreeMap<usize, Vec<usize>>,
+        group_has_standing: &[bool], review: &mut Review,
+    ) {
+        let count = self.contributors.len();
+        let has_standing = !self.standing().is_empty();
+
+        // a change claim may join multiple groups only when it covers distinct
+        // standing requirements and revises at most one of them
+        for (&index, groups) in placed {
+            if groups.len() <= 1 {
+                continue;
+            }
+            if !has_standing || index >= self.changes {
+                review.note(format_args!("claim {index} appears in more than one group"));
+                continue;
+            }
+            if groups.iter().any(|&pos| !group_has_standing[pos]) {
+                review.note(format_args!(
+                    "claim {index} appears in more than one group, including one without a \
+                     standing requirement; a claim may join multiple groups only when each holds \
+                     a distinct standing requirement it covers"
+                ));
+                continue;
+            }
+            if revising.get(&index).is_some_and(|revisions| revisions.len() > 1) {
+                review.note(format_args!(
+                    "claim {index} is placed outside the standing requirement's class in more \
+                     than one group; share the standing requirement's class for each standing \
+                     requirement whose behaviour stands unchanged"
+                ));
+            }
+        }
+
+        for index in (0..count).filter(|index| !placed.contains_key(index)) {
+            review.note(format_args!("claim {index} is in no group"));
+        }
+
+        // byte-equal ids may not be split across groups
+        for group in &self.baseline.groups {
+            if group.claims.len() <= 1
+                || !group.claims.iter().all(|index| placed.contains_key(index))
+            {
+                continue;
+            }
+            let mut shared: Option<BTreeSet<usize>> = None;
+            for index in &group.claims {
+                let positions: BTreeSet<usize> =
+                    placed.get(index).into_iter().flatten().copied().collect();
+                shared = Some(match shared {
+                    None => positions,
+                    Some(prev) => prev.intersection(&positions).copied().collect(),
+                });
+            }
+            if shared.is_some_and(|common| common.is_empty()) {
+                let id = &self.contributors[group.claims[0]].id;
+                review.note(format_args!("claims sharing the id `{id}` are split across groups"));
+            }
+        }
+    }
+
+    fn verify_evidenced(
+        &self, answer: &Grouping, placed: &BTreeMap<usize, Vec<usize>>, review: &mut Review,
+    ) {
+        if self.details.is_empty() {
+            if !answer.evidenced.is_empty() {
+                review.note(
+                    "`evidenced` is only used when `## Whole-source detail` is listed; leave it \
+                     empty",
+                );
+            }
+            return;
+        }
+        let count = self.contributors.len();
+        let mut seen_evidenced = BTreeSet::new();
+        for &index in &answer.evidenced {
+            if index < self.changes || index >= count {
+                review
+                    .note(format_args!("`evidenced` index {index} is not a standing requirement"));
+            } else if !seen_evidenced.insert(index) {
+                review.note(format_args!(
+                    "standing requirement {index} appears in `evidenced` more than once"
+                ));
+            } else if placed
+                .get(&index)
+                .and_then(|positions| positions.first())
+                .and_then(|&pos| answer.groups.get(pos))
+                .is_some_and(|group| group.claims.len() > 1)
+            {
+                review.note(format_args!(
+                    "standing requirement {index} is already matched to a claim; list in \
+                     `evidenced` only standing requirements that stand alone"
+                ));
+            }
+        }
+    }
+
+    fn write_instructions(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            "\nAnswer with every index in a group, and every group's claims in exactly one \
+             agreeing class. Two claims of one source that describe one requirement under \
+             different stems — the first segment of their ids — are one group, whatever nouns \
+             their seams gave them. Without a standing requirement, two claims of one source \
+             with different ids under one stem are distinct requirements: the call that minted \
+             them under one noun told them apart, and a group that merges them is split, each id \
+             its own requirement.\n",
+        )?;
+        if !self.standing().is_empty() {
+            f.write_str(
+                "\nEach standing requirement is one requirement of the current specification, \
+                 shown with its scenarios; claims carry any criteria extracted under them. A \
+                 claim that restates, revises, or narrows the behaviour a standing requirement \
+                 states joins its group, in the standing requirement's class when the behaviour, \
+                 values, thresholds, and outcomes match (even if reworded or given another \
+                 sub-stem or leaf id) and in a class of its own when a value, a condition, or an \
+                 outcome changed. Multiple claims of one source under one stem that together \
+                 state facets of one standing requirement join that standing requirement's group \
+                 in one class — the standing requirement's class when nothing changed, or one \
+                 class of their own when revised — rather than adding separate groups for \
+                 already-stated facets. When a single claim consolidates behaviours the current \
+                 specification holds as distinct standing requirements, place that claim in each \
+                 covered standing requirement's group (in the standing requirement's class for \
+                 each whose behaviour is unchanged, and outside it in at most one group). A \
+                 claim stating a behaviour no standing requirement covers is a group of its own. \
+                 A standing requirement no claim touches is a group of its own too. Two standing \
+                 requirements never share a group: an answer that merges them is refused.\n\nA \
+                 claim marked `(retire)` withdraws the behaviour its id names rather than \
+                 stating one: it joins the group of the standing requirement that states the \
+                 behaviour, in a class of its own, and is never a group of its own or of other \
+                 claims alone, since a withdrawal of a behaviour the specification does not hold \
+                 is refused after your answer.\n",
+            )?;
+            if !self.details.is_empty() {
+                f.write_str(
+                    "\nWhen a standing requirement stands alone in its group only because this \
+                     extraction recorded its behaviour in `## Whole-source detail` as an \
+                     `excerpt` or `call` rather than a `requirement` claim, and that detail \
+                     shows the behaviour is still implemented unchanged, list that standing \
+                     requirement's index in `evidenced` so whole-source scope does not retire \
+                     it. Leave out of `evidenced` any standing requirement matched to a claim or \
+                     absent from both the claims and `## Whole-source detail`.\n",
+                )?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Brief for GroupingBrief {
@@ -227,27 +380,40 @@ impl Brief for GroupingBrief {
             Self::at(schema, pointer)?.insert("maximum".to_owned(), json!(last));
         }
         Self::at(schema, "/properties/groups")?.insert("minItems".to_owned(), json!(1));
+        if self.details.is_empty() {
+            Self::at(schema, "/properties")?.remove("evidenced");
+        } else {
+            let items = Self::at(schema, "/properties/evidenced/items")?;
+            items.insert("minimum".to_owned(), json!(self.changes));
+            items.insert("maximum".to_owned(), json!(last));
+        }
         Ok(())
     }
 
     fn verify(&self, answer: &Grouping, review: &mut Review) {
         let count = self.contributors.len();
-        let mut placed: BTreeMap<usize, usize> = BTreeMap::new();
+        let mut placed: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut revising: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut group_has_standing = Vec::with_capacity(answer.groups.len());
 
         for (position, group) in answer.groups.iter().enumerate() {
             if group.claims.is_empty() {
                 review.note(format_args!("group {position} has no claims"));
             }
 
+            let mut members = BTreeSet::new();
             for &index in &group.claims {
                 if index >= count {
                     review.note(format_args!("group {position}: claim {index} does not exist"));
-                } else if placed.insert(index, position).is_some() {
-                    review.note(format_args!("claim {index} appears in more than one group"));
+                } else if !members.insert(index) {
+                    review.note(format_args!(
+                        "group {position}: claim {index} appears more than once in the group"
+                    ));
+                } else {
+                    placed.entry(index).or_default().push(position);
                 }
             }
 
-            let members: BTreeSet<usize> = group.claims.iter().copied().collect();
             let mut classed = BTreeSet::new();
             for class in &group.classes {
                 if class.is_empty() {
@@ -288,38 +454,45 @@ impl Brief for GroupingBrief {
             }
 
             // two standing requirements are two requirements already
-            let standing: BTreeSet<&str> = members
-                .iter()
-                .filter(|&&index| index >= self.changes)
-                .filter_map(|&index| self.contributors.get(index).map(|member| member.id.as_str()))
-                .collect();
-            if standing.len() > 1 {
+            let standing_indices: Vec<usize> =
+                members.iter().copied().filter(|&index| index >= self.changes).collect();
+            group_has_standing.push(!standing_indices.is_empty());
+            if standing_indices.len() > 1 {
+                let standing: BTreeSet<&str> = standing_indices
+                    .iter()
+                    .filter_map(|&index| {
+                        self.contributors.get(index).map(|member| member.id.as_str())
+                    })
+                    .collect();
                 let ids =
                     standing.iter().map(|id| format!("`{id}`")).collect::<Vec<_>>().join(", ");
                 review.note(format_args!(
                     "group {position} merges the standing requirements {ids}, which the current \
                      specification holds as distinct requirements"
                 ));
+            } else if let [standing_index] = standing_indices.as_slice() {
+                let standing_class =
+                    group.classes.iter().find(|class| class.contains(standing_index));
+                for &index in members.iter().filter(|&&index| index < self.changes) {
+                    if self.contributors.get(index).is_some_and(|member| !member.withdraws)
+                        && !standing_class.is_some_and(|class| class.contains(&index))
+                    {
+                        revising.entry(index).or_default().push(position);
+                    }
+                }
             }
         }
 
-        for index in (0..count).filter(|index| !placed.contains_key(index)) {
-            review.note(format_args!("claim {index} is in no group"));
-        }
-
-        // byte-equal ids may not be split across groups
-        for group in &self.baseline.groups {
-            let positions: BTreeSet<&usize> =
-                group.claims.iter().filter_map(|index| placed.get(index)).collect();
-            if positions.len() > 1 {
-                let id = &self.contributors[group.claims[0]].id;
-                review.note(format_args!("claims sharing the id `{id}` are split across groups"));
-            }
-        }
+        self.verify_placements(&placed, &revising, &group_has_standing, review);
+        self.verify_evidenced(answer, &placed, review);
     }
 
     fn into_output(self, answer: Grouping) -> Result<Vec<Basis>, Error> {
-        answer.split(&self.contributors).bases(self.contributors, &self.criteria, &self.contracts)
+        answer.split(&self.contributors, self.changes).bases(
+            &self.contributors,
+            &self.criteria,
+            &self.contracts,
+        )
     }
 }
 
@@ -344,6 +517,9 @@ impl Display for GroupingBrief {
                 id = claim.id,
                 statement = claim.statement,
             )?;
+            for note in &claim.notes {
+                writeln!(f, "  - {note}")?;
+            }
         }
 
         if !standing.is_empty() {
@@ -356,6 +532,19 @@ impl Display for GroupingBrief {
                     id = claim.id,
                     statement = claim.statement,
                 )?;
+                for note in &claim.notes {
+                    writeln!(f, "  - {note}")?;
+                }
+            }
+        }
+
+        if !self.details.is_empty() {
+            f.write_str(
+                "\n## Whole-source detail (source, path, detail)\n\nNon-requirement detail \
+                 (`excerpt` and `call` claims) extracted from whole-scope sources:\n\n",
+            )?;
+            for detail in &self.details {
+                writeln!(f, "{detail}")?;
             }
         }
 
@@ -379,32 +568,82 @@ impl Display for GroupingBrief {
         for hint in &self.hints {
             writeln!(f, "{hint}")?;
         }
+        self.write_instructions(f)
+    }
+}
 
-        f.write_str(
-            "\nAnswer with every index in exactly one group, and every group's claims in exactly \
-             one agreeing class. Two claims of one source that describe one requirement under \
-             different stems — the first segment of their ids — are one group, whatever nouns \
-             their seams gave them. Two claims of one source with different ids under one stem \
-             are distinct requirements: the call that minted them under one noun told them \
-             apart, and a group that merges them is split, each id its own requirement.\n",
-        )?;
-        if !standing.is_empty() {
-            f.write_str(
-                "\nEach standing requirement is one requirement of the current specification. A \
-                 claim that restates, revises, or narrows the behaviour a standing requirement \
-                 states joins its group, in the standing requirement's class when it says the \
-                 same thing and in a class of its own when it changes a value, a condition, or \
-                 an outcome. A claim stating a behaviour no standing requirement covers is a \
-                 group of its own. A standing requirement no claim touches is a group of its own \
-                 too. Two standing requirements never share a group: an answer that merges them \
-                 is refused.\n\nA claim marked `(retire)` withdraws the behaviour its id names \
-                 rather than stating one: it joins the group of the standing requirement that \
-                 states the behaviour, in a class of its own, and is never a group of its own or \
-                 of other claims alone, since a withdrawal of a behaviour the specification does \
-                 not hold is refused after your answer.\n",
-            )?;
+fn restated_ids(extracts: &[Extract]) -> BTreeSet<(&str, &str)> {
+    extracts
+        .iter()
+        .flat_map(|extract| {
+            extract
+                .evidence
+                .claims
+                .iter()
+                .filter(|claim| claim.kind == ClaimKind::Requirement)
+                .filter_map(move |claim| Some((extract.source.as_str(), claim.id.as_deref()?)))
+        })
+        .collect()
+}
+
+fn criterion_notes(extract: &Extract) -> Vec<(&str, String)> {
+    let mut notes = Vec::new();
+    for claim in &extract.evidence.claims {
+        if claim.kind == ClaimKind::Criterion
+            && let Some(id) = claim.id.as_deref()
+            && let Some(condition) = claim.criterion()
+        {
+            let collapsed = condition.split_whitespace().collect::<Vec<_>>().join(" ");
+            if !collapsed.is_empty() {
+                notes.push((id, collapsed));
+            }
         }
-        Ok(())
+    }
+    notes
+}
+
+// Non-requirement detail (`excerpt` or `call`) extracted from a whole-scope
+// behaviour source, shown so a standing requirement still implemented there is
+// not retired by scope when an extraction pass emitted no `requirement` claim
+// for it.
+#[derive(Debug)]
+struct Detail {
+    source: String,
+    path: Option<String>,
+    text: String,
+}
+
+impl Detail {
+    fn from_claim(source: &str, claim: &Claim) -> Option<Self> {
+        let collapse = |raw: &str| raw.split_whitespace().collect::<Vec<_>>().join(" ");
+        let text = match claim.kind {
+            ClaimKind::Excerpt => collapse(claim.extra("excerpt")?),
+            ClaimKind::Call => {
+                let callee = claim.callee()?;
+                match claim.synopsis.as_deref().map(collapse) {
+                    Some(synopsis) if !synopsis.is_empty() => format!("{callee} — {synopsis}"),
+                    _ => callee.to_owned(),
+                }
+            }
+            _ => return None,
+        };
+        if text.is_empty() {
+            return None;
+        }
+        Some(Self {
+            source: source.to_owned(),
+            path: claim.path.clone(),
+            text,
+        })
+    }
+}
+
+impl Display for Detail {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.path {
+            Some(path) => write!(f, "- `{}` `{path}` — {}", self.source, self.text),
+            None => write!(f, "- `{}` — {}", self.source, self.text),
+        }
     }
 }
 
@@ -419,6 +658,19 @@ struct Contract {
 }
 
 impl Contract {
+    fn from_claim(source: &str, claim: &Claim) -> Option<Self> {
+        let trigger = claim.trigger()?.ok()?;
+        Some(Self {
+            cited: Cited {
+                source: source.to_owned(),
+                claim: claim.id.clone().unwrap_or_default(),
+                path: claim.path.clone(),
+            },
+            id: claim.id.clone(),
+            trigger,
+        })
+    }
+
     // Whether `id` is this contract's id or a dotted child of it.
     fn leads(&self, id: &str) -> bool {
         self.id.as_deref().is_some_and(|own| revision::leads(own, id))
@@ -476,12 +728,16 @@ impl Display for Hint {
 }
 
 /// A partition of requirement claims into requirements and agreement classes.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "Emery grouping answer")]
 pub struct Grouping {
     /// One group per requirement.
     pub groups: Vec<Group>,
+    /// Standing requirement indices that stand alone in `groups` yet are still
+    /// evidenced unchanged in `## Whole-source detail`.
+    #[serde(default)]
+    pub evidenced: Vec<usize>,
 }
 
 impl Grouping {
@@ -509,38 +765,60 @@ impl Grouping {
             }
         }
 
-        Self { groups }
+        Self {
+            groups,
+            evidenced: Vec::new(),
+        }
     }
 
-    // One source's distinct ids under one stem are distinct requirements — the
-    // call that minted them under one noun told them apart — so a group that
-    // merges them is split without a round: the first such id keeps the group
-    // and every other member, each further id takes its own claims into a new
-    // group, and each group's classes are the answer's cut to its members.
-    fn split(self, contributors: &[Contributor]) -> Self {
+    // Without a standing requirement, one source's distinct ids under one stem
+    // are distinct requirements — the call that minted them under one noun told
+    // them apart — so a group that merges them is split without a round. In a
+    // group matched to a standing requirement, distinct ids of one `(source,
+    // stem)` placed in one agreeing class stay together as facets of that
+    // requirement, while any placed in another class spin out so one source
+    // never disagrees with itself.
+    fn split(self, contributors: &[Contributor], changes: usize) -> Self {
         let mut groups = Vec::with_capacity(self.groups.len());
         for group in self.groups {
-            // (source, stem) → the distinct ids the group holds under it, in order
-            let mut by_stem: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
-            for claim in group.claims.iter().filter_map(|&index| contributors.get(index)) {
-                let ids = by_stem.entry((claim.source.as_str(), claim.stem())).or_default();
-                if !ids.contains(&claim.id.as_str()) {
-                    ids.push(&claim.id);
+            let has_standing = group.claims.iter().any(|&index| index >= changes);
+            let spun: BTreeSet<&str> = if has_standing {
+                let mut lead_class: BTreeMap<(&str, &str), (&str, Option<usize>)> = BTreeMap::new();
+                let mut split_ids = BTreeSet::new();
+                for &index in group.claims.iter().filter(|&&index| index < changes) {
+                    let Some(claim) = contributors.get(index) else { continue };
+                    let class_pos = group.classes.iter().position(|class| class.contains(&index));
+                    let (lead_id, first_class) = lead_class
+                        .entry((claim.source.as_str(), claim.stem()))
+                        .or_insert((claim.id.as_str(), class_pos));
+                    if claim.id != *lead_id && class_pos != *first_class {
+                        split_ids.insert(claim.id.as_str());
+                    }
                 }
-            }
-            let spun: BTreeSet<&str> = by_stem
-                .iter()
-                .filter(|(_, ids)| ids.len() > 1)
-                .inspect(|((source, stem), ids)| {
-                    tracing::debug!(
-                        source,
-                        stem,
-                        ?ids,
-                        "the grouping merged one source's distinct ids under one stem; split"
-                    );
-                })
-                .flat_map(|(_, ids)| ids.iter().skip(1).copied())
-                .collect();
+                split_ids
+            } else {
+                // (source, stem) → the distinct ids the group holds under it, in order
+                let mut by_stem: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
+                for claim in group.claims.iter().filter_map(|&index| contributors.get(index)) {
+                    let ids = by_stem.entry((claim.source.as_str(), claim.stem())).or_default();
+                    if !ids.contains(&claim.id.as_str()) {
+                        ids.push(&claim.id);
+                    }
+                }
+                by_stem
+                    .iter()
+                    .filter(|(_, ids)| ids.len() > 1)
+                    .inspect(|((source, stem), ids)| {
+                        tracing::debug!(
+                            source,
+                            stem,
+                            ?ids,
+                            "the grouping merged one source's distinct ids under one stem; split"
+                        );
+                    })
+                    .flat_map(|(_, ids)| ids.iter().skip(1).copied())
+                    .collect()
+            };
             if spun.is_empty() {
                 groups.push(group);
                 continue;
@@ -560,44 +838,54 @@ impl Grouping {
                 groups.push(cut(&|index| id_of(index) == Some(id)));
             }
         }
-        Self { groups }
+        Self {
+            groups,
+            evidenced: self.evidenced,
+        }
     }
 
     // Ordered by each group's earliest claim and numbered from `REQ-001` in
-    // that order. The grouping was verified to place every contributor exactly
-    // once, so an index it misses or repeats is the engine's own defect.
+    // that order.
     fn bases(
-        &self, contributors: Vec<Contributor>, criteria: &[String], contracts: &[Contract],
+        &self, contributors: &[Contributor], criteria: &[String], contracts: &[Contract],
     ) -> Result<Vec<Basis>, Error> {
-        let mut contributors: Vec<Option<Contributor>> =
-            contributors.into_iter().map(Some).collect();
-        let mut groups: Vec<(usize, Vec<Vec<Contributor>>)> = Vec::with_capacity(self.groups.len());
+        let evidenced: BTreeSet<usize> = self.evidenced.iter().copied().collect();
+        let mut groups: Vec<OrderedGroup> = Vec::with_capacity(self.groups.len());
         for group in &self.groups {
             let first = group.claims.iter().copied().min().unwrap_or_default();
+            let last = group.claims.iter().copied().max().unwrap_or_default();
+            let is_evidenced = group.claims.len() == 1 && evidenced.contains(&group.claims[0]);
             let mut classes = Vec::with_capacity(group.classes.len());
             for class in &group.classes {
                 let members = class
                     .iter()
                     .map(|&index| {
-                        contributors.get_mut(index).and_then(Option::take).ok_or_else(|| {
-                            server_error!(
-                                "the grouping names claim {index}, which does not exist or is \
-                                 already placed"
-                            )
+                        contributors.get(index).cloned().ok_or_else(|| {
+                            server_error!("the grouping names claim {index}, which does not exist")
                         })
                     })
                     .collect::<Result<_, _>>()?;
                 classes.push(members);
             }
-            groups.push((first, classes));
+            groups.push(OrderedGroup {
+                order: (first, last),
+                classes,
+                evidenced: is_evidenced,
+            });
         }
-        groups.sort_by_key(|(first, _)| *first);
+        groups.sort_by_key(|group| group.order);
         groups
             .into_iter()
             .zip(ReqId::sequence())
-            .map(|((_, classes), id)| Basis::of(id, classes, criteria, contracts))
+            .map(|(group, id)| Basis::of(id, group.classes, criteria, contracts, group.evidenced))
             .collect()
     }
+}
+
+struct OrderedGroup {
+    order: (usize, usize),
+    classes: Vec<Vec<Contributor>>,
+    evidenced: bool,
 }
 
 /// The claims assigned to one requirement and their agreement classes.
@@ -627,11 +915,15 @@ pub struct Basis {
     pub trigger: Option<Trigger>,
     // Agreement classes, with the winning class first.
     pub classes: Vec<Vec<Contributor>>,
+    // Whether a standing requirement with no matching `requirement` claim is
+    // still evidenced in `## Whole-source detail`.
+    pub evidenced: bool,
 }
 
 impl Basis {
     fn of(
         id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[String], contracts: &[Contract],
+        evidenced: bool,
     ) -> Result<Self, Error> {
         // refuse an empty class, so every class below has a lead
         if classes.is_empty() || classes.iter().any(Vec::is_empty) {
@@ -658,6 +950,7 @@ impl Basis {
             covered,
             trigger,
             classes,
+            evidenced,
         })
     }
 
@@ -698,7 +991,17 @@ impl Basis {
             covered: self.covered,
             trigger,
             classes: self.classes,
+            evidenced: false,
         })
+    }
+
+    // Returns whether the standing `BASELINE` contributor belongs to the
+    // winning agreement class.
+    #[must_use]
+    pub fn agrees_with_baseline(&self) -> bool {
+        self.classes
+            .first()
+            .is_some_and(|class| class.iter().any(|member| member.source == BASELINE))
     }
 
     // The trigger a contract binds to the requirement: by id first, the
@@ -738,14 +1041,32 @@ impl Basis {
     }
 
     // Returns the winning statement, or `None` when the contributors are in
-    // conflict or the winning claim withdraws the requirement.
+    // conflict or the winning claim withdraws the requirement. Distinct facet
+    // ids from the winning `(source, stem)` merged onto one standing
+    // requirement join in source order so no facet is dropped when drafted.
     #[must_use]
-    pub fn statement(&self) -> Option<&str> {
+    pub fn statement(&self) -> Option<String> {
         match self.status {
             Status::Conflict => None,
             Status::Agreed | Status::Unknown | Status::Divergence => {
-                let lead = &self.classes[0][0];
-                (!lead.withdraws).then_some(lead.statement.as_str())
+                let winning = &self.classes[0];
+                let lead = &winning[0];
+                if lead.withdraws {
+                    return None;
+                }
+                let mut seen_ids = BTreeSet::from([lead.id.as_str()]);
+                let mut statements = vec![lead.statement.as_str()];
+                for member in winning.iter().skip(1) {
+                    if !member.withdraws
+                        && member.source == lead.source
+                        && member.stem() == lead.stem()
+                        && seen_ids.insert(member.id.as_str())
+                        && !statements.contains(&member.statement.as_str())
+                    {
+                        statements.push(member.statement.as_str());
+                    }
+                }
+                Some(statements.join(" "))
             }
         }
     }
@@ -773,7 +1094,7 @@ impl Basis {
     // sources' `contract` claims.
     #[must_use]
     pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
-        let body = self.statement().map_or_default(|statement| vec![statement.to_owned()]);
+        let body = self.statement().map_or_default(|statement| vec![statement]);
         let noted: &[Vec<Contributor>] = match self.status {
             Status::Agreed | Status::Unknown => &[],
             Status::Divergence => &self.classes[1..],
@@ -808,7 +1129,7 @@ impl Basis {
 }
 
 // A source claim contributing to a requirement.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Contributor {
     pub source: String,
     pub kind: SourceKind,
@@ -817,6 +1138,7 @@ pub struct Contributor {
     pub path: Option<String>,
     pub statement: String,
     pub synopsis: Option<String>,
+    pub notes: Vec<String>,
     pub withdraws: bool,
     // Where a standing requirement was read, for the brief's anchor hints;
     // empty for a claim.
