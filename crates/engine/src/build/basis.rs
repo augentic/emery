@@ -109,12 +109,7 @@ impl Ancestor {
     fn is_complete(
         &self, budget: NonZeroUsize, carried: &BTreeSet<ReqId>, retiring: &[Part],
     ) -> bool {
-        let mut done = self.merged.clone();
-        done.requirements.extend(carried.iter().copied());
-        Schedule::new(&self.revision, budget, &self.merged, &[], carried, retiring)
-            .unbuilt(&done)
-            .next()
-            .is_none()
+        Schedule::new(&self.revision, budget, &self.merged, &[], carried, retiring).is_complete()
     }
 }
 

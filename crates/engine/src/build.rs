@@ -35,7 +35,8 @@ pub use crate::revision::{BadId, PartId, ReqId, SliceId, Waves};
 use crate::revision::{Design, Part, Revision, Spec};
 pub use crate::store::StagedKind;
 use crate::vcs::{
-    BuildRepo, INTEGRATION, Integration, Labelled, MergedIds, Message, StagedSlice, WorkingCopy,
+    BuildRepo, INTEGRATION, Integration, Labelled, MergedIds, Message, StagedSlice, WaveMessage,
+    WorkingCopy,
 };
 use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, vcs};
 
@@ -758,6 +759,8 @@ impl<'a> Run<'a> {
             resolved = resolved.len(),
             "slice merged"
         );
+        progress.merged.slices.insert(slice);
+        progress.merged.verified_at_budget.insert(slice);
         progress.merged.requirements.extend(scheduled.requirements.iter().copied());
         progress.merged.departed.extend(scheduled.departed.iter().copied());
         progress.built.push(BuiltSlice {
@@ -825,13 +828,13 @@ impl<'a> Run<'a> {
         let pending = self.integration.pending(provider).await?;
         if !pending.is_empty() {
             gated(provider, self.integration.path(), "the verification", &pending).await?;
-            let ids: Vec<String> = merged.iter().map(ToString::to_string).collect();
-            let message = format!(
-                "Wave {wave} verified\n\nRevision: {}\nAdapter: {}\nSlices: {}",
-                self.revision,
-                self.reference,
-                ids.join(", ")
-            );
+            let message = WaveMessage {
+                wave,
+                revision: self.revision.to_owned(),
+                adapter: self.reference.to_string(),
+                slices: merged.to_vec(),
+            }
+            .to_string();
             let Some(commit) = self.integration.commit(provider, &message).await? else {
                 return Err(server_error!(
                     "the verification left {} paths pending, yet sealing them made no commit",
@@ -991,6 +994,7 @@ impl Progress {
         let schedule =
             Schedule::new(revision, budget, &self.merged, &staged, &carried, basis.removed_parts());
         self.resumed = schedule.resumed().to_vec();
+        self.merged = schedule.settled_merged().clone();
         self.merged.requirements.extend(carried);
         if !staged.is_empty() {
             self.head = head;

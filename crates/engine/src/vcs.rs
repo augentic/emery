@@ -3,12 +3,13 @@
 //! Wraps the [`Vcs`] capability over deployment-local paths beneath [`ROOT`]:
 //! [`SourceClone`] manages cached source clones, [`BuildRepo`] resolves the
 //! target repository a specification lives in and a build lands in,
-//! [`WorkingCopy`] manages isolated worktrees, and [`Message`] and
-//! [`RevisionMessage`] format and parse the trailers of a slice's commit and
-//! a revision's.
+//! [`WorkingCopy`] manages isolated worktrees, and [`Message`],
+//! [`WaveMessage`], and [`RevisionMessage`] format and parse the trailers of
+//! a slice's commit, a wave's verification, and a revision's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::num::NonZeroUsize;
 
 pub use emery_adapter::SPECIFICATION;
 use emery_adapter::target::{MergeRule, MergeStrategy};
@@ -242,6 +243,72 @@ impl fmt::Display for Message {
             adapter = self.adapter,
             base = self.base,
             wave = self.wave,
+        )
+    }
+}
+
+/// The message a build seals a wave's verification changes under.
+///
+/// The first line is `Wave <wave> verified`; the trailers tie the commit to
+/// its revision and list the slices verified in the wave, including any slice
+/// that wrote nothing of its own. [`Display`](fmt::Display) writes it and
+/// [`parse`](WaveMessage::parse) reads it back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WaveMessage {
+    /// The wave verified, from one.
+    pub wave: usize,
+    /// The revision whose wave was verified.
+    pub revision: String,
+    /// The adapter that verified it, as the run named it.
+    pub adapter: String,
+    /// The slices merged and verified in the wave.
+    pub slices: Vec<SliceId>,
+}
+
+impl WaveMessage {
+    /// Reads a wave verification message back from a commit's text; `None` when a verification did not write it.
+    ///
+    /// The first line must be `Wave <wave> verified` with a positive wave
+    /// number, and `Revision:`, `Adapter:`, and `Slices:` must be present and
+    /// well formed, so any other commit in the history is passed over.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        let mut lines = text.lines();
+        let wave: usize =
+            lines.next()?.strip_prefix("Wave ")?.strip_suffix(" verified")?.trim().parse().ok()?;
+        if wave == 0 {
+            return None;
+        }
+        let trailers: BTreeMap<&str, &str> = lines
+            .filter_map(|line| line.split_once(':'))
+            .map(|(key, value)| (key, value.trim()))
+            .collect();
+        let revision = trailers.get("Revision").copied().filter(|rev| !rev.is_empty())?;
+        let adapter = trailers.get("Adapter").copied().filter(|adp| !adp.is_empty())?;
+        let listed = trailers.get("Slices").copied()?;
+        if listed.is_empty() {
+            return None;
+        }
+        let slices = listed.split(", ").map(|id| id.parse().ok()).collect::<Option<Vec<_>>>()?;
+        Some(Self {
+            wave,
+            revision: revision.to_owned(),
+            adapter: adapter.to_owned(),
+            slices,
+        })
+    }
+}
+
+impl fmt::Display for WaveMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let slices: Vec<String> = self.slices.iter().map(ToString::to_string).collect();
+        write!(
+            f,
+            "Wave {} verified\n\nRevision: {}\nAdapter: {}\nSlices: {}",
+            self.wave,
+            self.revision,
+            self.adapter,
+            slices.join(", "),
         )
     }
 }
@@ -750,17 +817,17 @@ impl BuildRepo {
         }
     }
 
-    /// What `label` already holds over `base` for `revision`: the labelled head and the requirements and departed ids merged beneath it.
+    /// What `label` already holds over `base` for `revision`: the labelled head and the requirements, departed ids, and verified slices merged beneath it.
     ///
     /// The label is read back as a label alone, never a tag or a remote's
     /// branch of that spelling, and only where it descends from `base`. The
-    /// requirements and departed ids are read from the [`Message`]s a build
-    /// sealed along the label's first-parent chain; a commit a build did not
-    /// write, or one of another revision, is passed over, so a label that
-    /// descends from `base` is resumed from wherever it stands, with nothing
-    /// beneath it when the chain names none. `None` means the repository has
-    /// no such label, or the label does not descend from `base`, so a build
-    /// starts from `base`.
+    /// requirements, departed ids, and verified slices are read from the
+    /// [`Message`]s and [`WaveMessage`]s a build sealed along the label's
+    /// first-parent chain; a commit a build did not write, or one of another
+    /// revision, is passed over, so a label that descends from `base` is
+    /// resumed from wherever it stands, with nothing beneath it when the
+    /// chain names none. `None` means the repository has no such label, or
+    /// the label does not descend from `base`, so a build starts from `base`.
     ///
     /// # Errors
     ///
@@ -786,13 +853,27 @@ impl BuildRepo {
         let entries =
             vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?;
         let mut merged = MergedIds::default();
-        for message in entries
-            .iter()
-            .filter_map(|entry| Message::parse(&entry.message))
-            .filter(|message| message.revision == revision)
-        {
-            merged.requirements.extend(message.requirements);
-            merged.departed.extend(message.departed);
+        for entry in entries.iter().rev() {
+            if let Some(message) =
+                Message::parse(&entry.message).filter(|message| message.revision == revision)
+            {
+                merged.requirements.extend(message.requirements.iter().copied());
+                merged.departed.extend(message.departed.iter().copied());
+                merged.history.push(HistoryEntry::Slice {
+                    slice: message.slice,
+                    wave: message.wave,
+                    budget: NonZeroUsize::new(message.budget),
+                    requirements: message.requirements,
+                });
+            } else if let Some(wave) =
+                WaveMessage::parse(&entry.message).filter(|wave| wave.revision == revision)
+            {
+                merged.slices.extend(wave.slices.iter().copied());
+                merged.history.push(HistoryEntry::Wave {
+                    wave: wave.wave,
+                    slices: wave.slices,
+                });
+            }
         }
         if merged.is_empty() {
             tracing::info!(
@@ -997,24 +1078,42 @@ async fn project_clean<V: Vcs>(vcs: &V) -> Result<(), Error> {
     Ok(())
 }
 
-/// What stands merged in a revision's history: requirements and departed ids.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HistoryEntry {
+    Slice { slice: SliceId, wave: usize, budget: Option<NonZeroUsize>, requirements: Vec<ReqId> },
+    Wave { wave: usize, slices: Vec<SliceId> },
+}
+
+/// What stands merged in a revision's history: requirements, departed ids, and verified slices.
 ///
 /// Carried on [`Labelled`] and threaded through [`build`](crate::build::build)
-/// so that built requirements and retired departures travel together.
+/// so that built requirements, retired departures, and verified no-op slices
+/// travel together.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MergedIds {
     /// The requirement identifiers from `Requirements:` trailers (plus carried
-    /// requirements once the schedule is cut).
+    /// requirements and verified slices' requirements once the schedule is
+    /// cut).
     pub requirements: BTreeSet<ReqId>,
-    /// The departed requirement identifiers from `Departed:` trailers.
+    /// The departed requirement identifiers from `Departed:` trailers (plus
+    /// verified retiring slices' departed ids once the schedule is cut).
     pub departed: BTreeSet<ReqId>,
+    /// The slice identifiers from `Slices:` trailers on [`WaveMessage`]
+    /// commits.
+    pub slices: BTreeSet<SliceId>,
+    // Slice ids verified at the current schedule's budget, populated when
+    // `Schedule::new` settles `history`.
+    pub(crate) verified_at_budget: BTreeSet<SliceId>,
+    // Commits along the label chain in chronological order, used to resolve
+    // verified no-op slices against the schedule as each wave saw it.
+    pub(crate) history: Vec<HistoryEntry>,
 }
 
 impl MergedIds {
-    /// Whether neither a requirement nor a departed id stands merged.
+    /// Whether no requirement, departed id, or verified slice stands merged.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.requirements.is_empty() && self.departed.is_empty()
+        self.requirements.is_empty() && self.departed.is_empty() && self.slices.is_empty()
     }
 
     /// Records the requirements and departed ids of `slice` as merged.
@@ -1027,12 +1126,13 @@ impl MergedIds {
 /// What a revision's label already holds over the build's base.
 ///
 /// Returned by [`BuildRepo::merged_under`]: the commit the label stands at
-/// and the requirements and departed ids its slice commits record.
+/// and the requirements, departed ids, and verified slices its commits record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Labelled {
     /// The commit the label points at.
     pub head: String,
-    /// The requirements and departed ids recorded along the label's chain.
+    /// The requirements, departed ids, and verified slices recorded along the
+    /// label's chain.
     pub merged: MergedIds,
 }
 

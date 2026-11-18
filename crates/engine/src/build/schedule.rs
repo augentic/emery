@@ -7,6 +7,7 @@
 //! parts build in parallel waves.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
 use std::num::NonZeroUsize;
 
 use emery_adapter::target::Target;
@@ -20,7 +21,7 @@ use crate::revision::{
     Part, PartId, Plan, ReqId, Requirement, Revision, SliceId, Spec, Waves, ranks,
 };
 use crate::specify::Floors;
-use crate::vcs::{MergedIds, StagedSlice};
+use crate::vcs::{HistoryEntry, MergedIds, StagedSlice};
 
 /// The fallback requirement budget when neither `--budget`, `[target] budget`, nor the adapter's metadata sets one.
 pub const DEFAULT_BUDGET: NonZeroUsize = NonZeroUsize::new(12).expect("positive budget");
@@ -111,8 +112,12 @@ impl ScheduledSlice {
         self.requirements.is_empty() && !self.departed.is_empty()
     }
 
-    // Whether every requirement or departed id of this slice stands in `done`.
+    // Whether this slice was verified at this schedule's budget or every
+    // requirement or departed id of it stands in `done`.
     fn is_done(&self, done: &MergedIds) -> bool {
+        if done.verified_at_budget.contains(&self.id) {
+            return true;
+        }
         if self.is_retiring() {
             self.departed.iter().all(|id| done.departed.contains(id))
         } else {
@@ -135,20 +140,23 @@ pub struct Schedule {
     retiring: Vec<Part>,
     slices: Vec<ScheduledSlice>,
     resumed: Vec<SliceId>,
+    settled: MergedIds,
+    done: MergedIds,
 }
 
 impl Schedule {
     // Cuts `revision`'s plan into slices of at most `budget` requirements.
     //
-    // `merged` are the requirements and departed ids already committed on the
-    // label chain, `staged` the slice commits staged in the integration
-    // working copy by an earlier run, `carried` the requirements of parts
-    // carried from the built ancestor, and `retiring` the parts removed since
-    // the built ancestor. A slice whose requirements are all in `merged` or
-    // `staged` is recorded in `resumed` and not built again; a slice whose
-    // requirements are all in `carried` is skipped without being recorded in
-    // `resumed`; a partially built part has its remaining requirements cut
-    // into fresh slices; and each removed part is cut as one retiring slice.
+    // `merged` are the requirements, departed ids, and verified slices already
+    // committed on the label chain, `staged` the slice commits staged in the
+    // integration working copy by an earlier run, `carried` the requirements
+    // of parts carried from the built ancestor, and `retiring` the parts
+    // removed since the built ancestor. A slice verified on a `Wave <k>
+    // verified` commit or whose requirements are all in `merged` or `staged`
+    // is recorded in `resumed` and not built again; a slice whose requirements
+    // are all in `carried` is skipped without being recorded in `resumed`; a
+    // partially built part has its remaining requirements cut into fresh
+    // slices; and each removed part is cut as one retiring slice.
     #[must_use]
     pub fn new(
         revision: &Revision, budget: NonZeroUsize, merged: &MergedIds, staged: &[StagedSlice],
@@ -158,7 +166,8 @@ impl Schedule {
         let spec = &revision.spec;
         let floors = Floors::from_spec(spec);
         let cap = budget.get();
-        let mut resumed_ids = merged.clone();
+        let settled = settle_merged(revision, budget, merged, carried, retiring, &floors);
+        let mut resumed_ids = settled.clone();
         for slice in staged {
             resumed_ids.extend_slice(slice);
         }
@@ -166,7 +175,8 @@ impl Schedule {
         done.requirements.extend(carried.iter().copied());
 
         let mut slices = Vec::new();
-        let mut resumed: BTreeSet<SliceId> = staged.iter().map(|slice| slice.id).collect();
+        let mut resumed: BTreeSet<SliceId> = settled.verified_at_budget.clone();
+        resumed.extend(staged.iter().map(|slice| slice.id));
         let mut ids = SliceId::sequence();
 
         for part in &plan.parts {
@@ -226,7 +236,19 @@ impl Schedule {
             retiring: retiring.to_vec(),
             slices,
             resumed: resumed.into_iter().collect(),
+            settled,
+            done,
         }
+    }
+
+    #[must_use]
+    pub const fn settled_merged(&self) -> &MergedIds {
+        &self.settled
+    }
+
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.unbuilt(&self.done).next().is_none()
     }
 
     #[must_use]
@@ -341,6 +363,96 @@ struct Cut {
 struct Group {
     requirements: Vec<ReqId>,
     triggered: bool,
+}
+
+// Resolves `merged`'s wave-verified `Slices:` trailers against `revision` as
+// each wave cut its schedule, so a slice that wrote nothing and created no
+// slice commit still contributes its requirements, departed ids, and
+// same-budget slice id.
+fn settle_merged(
+    revision: &Revision, budget: NonZeroUsize, merged: &MergedIds, carried: &BTreeSet<ReqId>,
+    retiring: &[Part], floors: &Floors<'_>,
+) -> MergedIds {
+    if merged.slices.is_empty() {
+        return merged.clone();
+    }
+    let mut settled = merged.clone();
+    let mut done_reqs = carried.clone();
+    let mut last_budget = merged.history.iter().find_map(|entry| match entry {
+        HistoryEntry::Slice { budget, .. } => *budget,
+        HistoryEntry::Wave { .. } => None,
+    });
+    let mut pending: Vec<(SliceId, usize, Option<NonZeroUsize>, &[ReqId])> = Vec::new();
+
+    for entry in &merged.history {
+        match entry {
+            HistoryEntry::Slice {
+                slice,
+                wave,
+                budget: slice_budget,
+                requirements,
+            } => {
+                if slice_budget.is_some() {
+                    last_budget = *slice_budget;
+                }
+                pending.push((*slice, *wave, *slice_budget, requirements));
+            }
+            HistoryEntry::Wave { wave, slices } => {
+                // slice commits from earlier unsealed waves stood in `done`
+                // before this wave cut its schedule
+                let split = pending
+                    .iter()
+                    .position(|(id, w, _, _)| *w == *wave && slices.contains(id))
+                    .unwrap_or(pending.len());
+                for (_, _, _, reqs) in pending.drain(..split) {
+                    done_reqs.extend(reqs.iter().copied());
+                }
+                let wave_cap = pending
+                    .first()
+                    .and_then(|(_, _, b, _)| *b)
+                    .or(last_budget)
+                    .unwrap_or(budget)
+                    .get();
+
+                let mut wave_reqs = Vec::new();
+                let mut ids = SliceId::sequence();
+                for part in &revision.plan.parts {
+                    let cuts = cut_part(
+                        part,
+                        &revision.spec,
+                        floors,
+                        wave_cap,
+                        &done_reqs,
+                        &done_reqs,
+                        &[],
+                    );
+                    for (cut, id) in cuts.into_iter().zip(&mut ids) {
+                        if slices.contains(&id) {
+                            settled.requirements.extend(cut.requirements.iter().copied());
+                            wave_reqs.extend(cut.requirements);
+                            if wave_cap == budget.get() {
+                                settled.verified_at_budget.insert(id);
+                            }
+                        }
+                    }
+                }
+                for (part, id) in retiring.iter().zip(&mut ids) {
+                    if slices.contains(&id) {
+                        settled.departed.extend(part.requirements.iter().copied());
+                        if wave_cap == budget.get() {
+                            settled.verified_at_budget.insert(id);
+                        }
+                    }
+                }
+
+                done_reqs.extend(wave_reqs);
+                for (_, _, _, reqs) in mem::take(&mut pending) {
+                    done_reqs.extend(reqs.iter().copied());
+                }
+            }
+        }
+    }
+    settled
 }
 
 // Cuts `part` into slices. When every slice of the full cut is either wholly in

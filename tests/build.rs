@@ -4869,3 +4869,125 @@ async fn build_change_types_on_first_slice() {
     assert_eq!(sessions.change.as_ref().expect("change").types, [order_change]);
     provider.vcs.assert_exhausted();
 }
+
+// A slice that wrote no files (`commit: null`) and is recorded only on its
+// wave's `Wave <k> verified` `Slices:` trailer counts as built when settling
+// a child change build, whether the child uses the same or another `--budget`.
+#[tokio::test]
+async fn build_change_after_noop_slice() {
+    let provider = Provider::idle();
+    let parent = seed_at(&provider.files, LABELLED, SPEC, DESIGN, WIDE_PLAN);
+    let (spec, design, plan) = amended_documents(
+        &parent,
+        WIDE_PLAN,
+        Some("A signed-in user places an order with a discount."),
+    );
+    let child = seed(&provider.files, &spec, &design, &plan);
+    let parent_log = vec![
+        entry("m:SLICE-002", &message(&parent, WIDE_SESSIONS, "REQ-002", "REQ-002", HEAD, 2)),
+        entry(
+            "w1",
+            &format!(
+                "Wave 1 verified\n\nRevision: {parent}\nAdapter: {BUILDER}\nSlices: SLICE-001, \
+                 SLICE-003"
+            ),
+        ),
+        entry(
+            "m:SLICE-003",
+            &message(&parent, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+        ),
+    ];
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(parent_log.clone()));
+    wrote(&provider, WIDE_ORDERS);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], child, "{envelope}");
+    assert!(envelope.get("whole").is_none(), "{envelope}");
+    assert_eq!(
+        envelope["change"],
+        json!({
+            "from": parent,
+            "commit": LABELLED,
+            "rebuilt": [
+                {"id": "PART-003", "name": "orders", "reasons": ["requirements"]}
+            ],
+            "carried": ["PART-001", "PART-002"],
+            "retiring": []
+        }),
+        "{envelope}"
+    );
+    assert_eq!(
+        dispatched(&provider),
+        [("SLICE-003".to_owned(), HEAD.to_owned(), worktree("SLICE-003"))],
+        "only the changed part rebuilds; the parent's verified no-op slice counts as built"
+    );
+    assert!(provider.target.inits().is_empty(), "Initialise skipped on change build");
+    assert_eq!(provider.target.scopes().len(), 1);
+    provider.vcs.assert_exhausted();
+
+    // parent still settles as complete when the child runs under a smaller `--budget`
+    let provider = Provider::idle();
+    seed_at(&provider.files, LABELLED, SPEC, DESIGN, WIDE_PLAN);
+    seed(&provider.files, &spec, &design, &plan);
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(parent_log));
+    wrote(&provider, WIDE_ORDERS);
+    wrote(&provider, ("SLICE-004", "orders"));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "1"],
+    )
+    .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope.get("whole").is_none(), "{envelope}");
+    assert_eq!(envelope["change"]["from"], parent, "{envelope}");
+    assert_eq!(envelope["change"]["carried"], json!(["PART-001", "PART-002"]), "{envelope}");
+    provider.vcs.assert_exhausted();
+}
+
+// Resuming an interrupted build skips a verified no-op slice recorded on
+// `Wave <k> verified`'s `Slices:` trailer and unlocks parts that depend on it.
+#[tokio::test]
+async fn build_resumed_noop_slice() {
+    let (provider, id) = wide();
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry(
+                "w1",
+                &format!(
+                    "Wave 1 verified\n\nRevision: {id}\nAdapter: {BUILDER}\nSlices: SLICE-001, \
+                     SLICE-003"
+                ),
+            ),
+            entry(
+                "m:SLICE-003",
+                &message(&id, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+            ),
+        ]),
+    );
+    wrote(&provider, WIDE_SESSIONS);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["resumed"], json!(["SLICE-001", "SLICE-003"]), "{envelope}");
+    assert_eq!(
+        dispatched(&provider),
+        [("SLICE-002".to_owned(), LABELLED.to_owned(), worktree("SLICE-002"))],
+        "verified no-op SLICE-001 is resumed and unlocks dependent SLICE-002"
+    );
+    assert!(provider.target.inits().is_empty(), "Initialise skipped on resume");
+    assert_eq!(envelope["slices"].as_array().map(Vec::len), Some(1), "{envelope}");
+    assert_eq!(envelope["slices"][0]["id"], "SLICE-002", "{envelope}");
+    provider.vcs.assert_exhausted();
+}
