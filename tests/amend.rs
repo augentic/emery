@@ -9,6 +9,7 @@ mod verbs;
 use std::sync::Arc;
 
 use emery_adapter::source::{Claim, ClaimKind, SourceKind};
+use emery_adapter::{Route, Trigger};
 use emery_engine::amend::PartClass;
 use emery_engine::vcs::{PartSummary, REVISION, RevisionMessage, Summary};
 use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
@@ -1157,13 +1158,7 @@ async fn amend_scoped_equivalent() {
             {"name": "Bulk cap", "when": "a signed-in caller places an order of up to 20 units", "then": "the order is created"}
         ]}
     ]}"#;
-    let design = format!(
-        r#"{{"sections": [
-            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}], "revised": []}},
-            {{"kind": "apis", "blocks": [{{"text": "Inbound HTTP exposes POST /orders (REQ-003)."}}], "revised": []}}
-        ]}}"#
-    );
-    let mut provider = Provider::answering([grouping, draft, design.as_str()]);
+    let mut provider = Provider::answering([grouping, draft]);
     code_with(
         &mut provider,
         vec![
@@ -1195,6 +1190,7 @@ async fn amend_scoped_equivalent() {
         "{envelope}"
     );
     assert_eq!(envelope["stems"], serde_json::json!(["orders"]), "{envelope}");
+    assert_eq!(envelope["sections"], Value::Null, "design stands unchanged: {envelope}");
     assert_eq!(envelope["parts"], Value::Null, "no part membership changed: {envelope}");
 
     // standing scenarios and extracted criteria appear in the grouping brief
@@ -1258,6 +1254,7 @@ async fn amend_scoped_granularity() {
     for req in base_spec["requirements"].as_array_mut().expect("requirements") {
         req["sources"][0]["source"] = Value::from("code");
     }
+    base_spec["requirements"][1]["sources"][0]["path"] = Value::from("src/session.ts#L10-L14");
     let base_bytes = serde_json::to_vec(&base_spec).expect("serialise base spec");
 
     // indices 0..=2 are `code`'s requirement claims; 3..=6 the standing requirements
@@ -1712,6 +1709,610 @@ fn retired_lines_fixture(extra: Option<Claim>) -> RetiredLinesFixture {
     ];
     claims.extend(extra);
     RetiredLinesFixture { spec, design, claims }
+}
+
+// When `PUT /api/orders/{id}/lines` vanishes from the extracted contracts of a
+// whole-scope behaviour source while `orders.ts` and `server.ts` still carry
+// `excerpt` and `call` detail (plus untouched `start.omit-powered-by` setup on
+// `src/server.ts`), `verify_evidenced` refuses listing `REQ-047..049` in
+// `evidenced`, the corrected grouping retires all three by scope, and the
+// untouched bootstrap setup neither mints an added requirement nor dirties
+// `PART-001`.
+#[tokio::test]
+async fn amend_scoped_retire_route_not_evidenced() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let fixture = vanished_route_fixture();
+
+    // 0..=3 are `code`'s requirement claims; 4..=9 the standing requirements
+    // (`REQ-001`, `REQ-002`, `REQ-003`, `REQ-047`, `REQ-048`, `REQ-049`)
+    let invalid = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2, 5], "classes": [[2, 5]]},
+        {"claims": [3, 6], "classes": [[3, 6]]},
+        {"claims": [7], "classes": [[7]]},
+        {"claims": [8], "classes": [[8]]},
+        {"claims": [9], "classes": [[9]]}
+    ], "evidenced": [7, 8, 9]}"#;
+    let valid = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2, 5], "classes": [[2, 5]]},
+        {"claims": [3, 6], "classes": [[3, 6]]},
+        {"claims": [7], "classes": [[7]]},
+        {"claims": [8], "classes": [[8]]},
+        {"claims": [9], "classes": [[9]]}
+    ]}"#;
+    let design = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Customers and orders are exposed over HTTP (REQ-001, REQ-002, REQ-003)."}], "revised": [1]},
+        {"kind": "apis", "blocks": [{"text": "Inbound HTTP exposes POST /api/customers (REQ-002) and POST /api/orders (REQ-003)."}], "revised": [1]}
+    ]}"#;
+    let mut provider = Provider::answering([invalid, valid, design]);
+    code_with(&mut provider, fixture.claims);
+    seed(&provider.files, &fixture.spec, fixture.design.as_bytes(), &fixture.plan);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 3, "conflict": 0, "unchanged": 3, "by-scope": 3
+        }),
+        "{envelope}"
+    );
+    assert_eq!(envelope["stems"], serde_json::json!(["orders"]), "{envelope}");
+    assert_eq!(
+        envelope["parts"],
+        serde_json::json!([
+            {"id": "PART-002", "name": "orders", "class": "changed", "brief": "kept"}
+        ]),
+        "PART-001 (`start`) stays untouched: {envelope}"
+    );
+
+    let exchanges = provider.model.exchanges();
+    let finding =
+        exchanges[0].outcome.as_ref().expect_err("vanished route in `evidenced` rejected");
+    for (index, subject) in [
+        (7, "orders.put-id-lines.body-validation"),
+        (8, "orders.put-id-lines.pending-only"),
+        (9, "orders.put-id-lines.reprice-and-persist"),
+    ] {
+        assert!(
+            finding.contains(&format!(
+                "standing requirement {index} (`{subject}`) carries route \
+                 `PUT /api/orders/{{id}}/lines`, which no contract of its cited whole-scope \
+                 source declares"
+            )),
+            "{finding}"
+        );
+    }
+
+    let (_, amendment) = staged_amendment(&provider);
+    for (pos, id) in [(3, "REQ-047"), (4, "REQ-048"), (5, "REQ-049")] {
+        assert_eq!(amendment["changes"][pos]["id"], id, "{amendment}");
+        assert_eq!(amendment["changes"][pos]["class"], "retired", "{amendment}");
+        assert_eq!(amendment["changes"][pos]["scope"], "code", "{amendment}");
+    }
+    provider.model.assert_exhausted();
+}
+
+struct ScopedFixture {
+    spec: Vec<u8>,
+    design: String,
+    plan: Vec<u8>,
+    claims: Vec<Claim>,
+}
+
+struct SpecReq {
+    id: String,
+    subject: String,
+    source: String,
+    path: Option<String>,
+    trigger: Option<Trigger>,
+    body: String,
+}
+
+impl SpecReq {
+    fn new(id: &str, subject: &str, body: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            subject: subject.to_owned(),
+            source: "code".to_owned(),
+            path: None,
+            trigger: None,
+            body: body.to_owned(),
+        }
+    }
+
+    fn source(mut self, source: &str) -> Self {
+        self.source = source.to_owned();
+        self
+    }
+
+    fn at(mut self, path: &str) -> Self {
+        self.path = Some(path.to_owned());
+        self
+    }
+
+    fn route(mut self, route: &str) -> Self {
+        self.trigger = Some(Trigger::Http(Route::parse(route).expect("valid route")));
+        self
+    }
+
+    fn into_json(self, template: &Value) -> Value {
+        let mut entry = template.clone();
+        entry["id"] = Value::from(self.id);
+        entry["subject"] = Value::from(self.subject.as_str());
+        entry["trigger"] = serde_json::to_value(self.trigger).expect("serialise trigger");
+        entry["sources"] = serde_json::json!([{
+            "source": self.source,
+            "claim": self.subject,
+            "path": self.path,
+        }]);
+        entry["body"] = serde_json::json!([self.body]);
+        entry
+    }
+}
+
+fn vanished_route_fixture() -> ScopedFixture {
+    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+    let tpl = base_spec["requirements"][2].clone();
+    base_spec["requirements"] = serde_json::json!([
+        SpecReq::new(
+            "REQ-001",
+            "start.json-body-limit",
+            "JSON request bodies exceeding 256 kilobytes are rejected.",
+        )
+        .at("src/server.ts#L28")
+        .into_json(&tpl),
+        SpecReq::new(
+            "REQ-002",
+            "customers.post.create",
+            "A valid customer request persists the customer.",
+        )
+        .at("src/routes/customers.ts#L18-L31")
+        .route("POST /api/customers")
+        .into_json(&tpl),
+        SpecReq::new(
+            "REQ-003",
+            "orders.post.create",
+            "A valid order request creates a pending order.",
+        )
+        .at("src/routes/orders.ts#L30-L42")
+        .route("POST /api/orders")
+        .into_json(&tpl),
+        SpecReq::new(
+            "REQ-047",
+            "orders.put-id-lines.body-validation",
+            "An amend-lines request rejects an invalid line list.",
+        )
+        .at("src/routes/orders.ts#L47")
+        .route("PUT /api/orders/{id}/lines")
+        .into_json(&tpl),
+        SpecReq::new(
+            "REQ-048",
+            "orders.put-id-lines.pending-only",
+            "An amend-lines request is rejected when the order is not pending.",
+        )
+        .at("src/services/orders.ts#L64-L66")
+        .route("PUT /api/orders/{id}/lines")
+        .into_json(&tpl),
+        SpecReq::new(
+            "REQ-049",
+            "orders.put-id-lines.reprice-and-persist",
+            "A valid amend-lines request replaces lines and recomputes totals.",
+        )
+        .at("src/services/orders.ts#L67-L78")
+        .route("PUT /api/orders/{id}/lines")
+        .into_json(&tpl),
+    ]);
+    let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+    base_plan["parts"][0]["name"] = Value::from("start");
+    base_plan["parts"][0]["requirements"] = serde_json::json!(["REQ-001", "REQ-002"]);
+    base_plan["parts"][1]["requirements"] =
+        serde_json::json!(["REQ-003", "REQ-047", "REQ-048", "REQ-049"]);
+
+    let design = format!(
+        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
+            {{"kind": "overview", "blocks": [{{"text": "Customers and orders are exposed over HTTP, including line amendments (REQ-001, REQ-002, REQ-003, REQ-047, REQ-048, REQ-049)."}}]}},
+            {DOMAIN_MODEL},
+            {{"kind": "apis", "blocks": [{{"text": "Inbound HTTP exposes POST /api/customers (REQ-002), POST /api/orders (REQ-003), and PUT /api/orders/{{id}}/lines (REQ-047, REQ-048, REQ-049)."}}]}}
+        ]}}"#
+    );
+    ScopedFixture {
+        spec: serde_json::to_vec(&base_spec).expect("serialise base spec"),
+        design,
+        plan: serde_json::to_vec(&base_plan).expect("serialise base plan"),
+        claims: vanished_route_claims(),
+    }
+}
+
+fn vanished_route_claims() -> Vec<Claim> {
+    vec![
+        requirement(
+            "start.json-body-limit",
+            "JSON request bodies exceeding 256 kilobytes are rejected.",
+        )
+        .at("src/server.ts#L28"),
+        requirement("start.omit-powered-by", "Responses omit an X-Powered-By header.")
+            .at("src/server.ts#L31"),
+        requirement("customers.post.create", "A valid customer request persists the customer.")
+            .at("src/routes/customers.ts#L18-L31"),
+        requirement("orders.post.create", "A valid order request creates a pending order.")
+            .at("src/routes/orders.ts#L30-L42"),
+        claim(ClaimKind::Contract, "customers.post", ("route", "POST /api/customers"))
+            .at("src/routes/customers.ts#L18-L31"),
+        claim(ClaimKind::Contract, "orders.post", ("route", "POST /api/orders"))
+            .at("src/routes/orders.ts#L30-L42"),
+        claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+        claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        Claim::new(ClaimKind::Call).at("src/server.ts#L44").with_extra("callee", "pg:Pool.query"),
+        Claim::new(ClaimKind::Call)
+            .at("src/repositories/orders.ts#L94")
+            .with_extra("callee", "pg:Pool.query"),
+        Claim::new(ClaimKind::Excerpt)
+            .at("src/routes/orders.ts#L15-L25")
+            .with_extra("excerpt", "Order routes validate UUID path parameters."),
+        Claim::new(ClaimKind::Excerpt)
+            .at("src/services/orders.ts#L23-L33")
+            .with_extra("excerpt", "Order reads check the cache under order:{id}."),
+    ]
+}
+
+fn bootstrap_spec_and_plan() -> (Vec<u8>, Vec<u8>) {
+    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+    let tpl = base_spec["requirements"][0].clone();
+    base_spec["requirements"] = serde_json::json!([
+        SpecReq::new(
+            "REQ-001",
+            "start.json-body-limit",
+            "JSON request bodies exceeding 256 kilobytes are rejected.",
+        )
+        .at("src/server.ts#L28")
+        .into_json(&tpl),
+        SpecReq::new("REQ-002", "session.timeout", "Sessions expire after an hour of inactivity.",)
+            .at("src/session.ts#L10-L14")
+            .into_json(&tpl),
+        SpecReq::new("REQ-003", "orders.create", "A signed-in user places an order.",)
+            .at("src/orders.ts#L20-L35")
+            .into_json(&tpl),
+        SpecReq::new(
+            "REQ-004",
+            "orders.audit-note",
+            "Order mutations record an operator audit note.",
+        )
+        .at("src/audit.ts#L8-L12")
+        .into_json(&tpl),
+    ]);
+    let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+    base_plan["parts"][0]["name"] = Value::from("start");
+    (
+        serde_json::to_vec(&base_spec).expect("serialise base spec"),
+        serde_json::to_vec(&base_plan).expect("serialise base plan"),
+    )
+}
+
+// Listing an untriggered standing requirement in `evidenced` is refused when
+// none of `## Whole-source detail` is anchored in a file its citations name.
+#[tokio::test]
+async fn amend_scoped_evidenced_requires_cited_file() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let (spec_bytes, plan_bytes) = bootstrap_spec_and_plan();
+
+    let invalid = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2, 5], "classes": [[2, 5]]},
+        {"claims": [3, 6], "classes": [[3, 6]]},
+        {"claims": [7], "classes": [[7]]}
+    ], "evidenced": [7]}"#;
+    let valid = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2, 5], "classes": [[2, 5]]},
+        {"claims": [3, 6], "classes": [[3, 6]]},
+        {"claims": [7], "classes": [[7]]}
+    ]}"#;
+    let mut provider = Provider::answering([invalid, valid]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement(
+                "start.json-body-limit",
+                "JSON request bodies exceeding 256 kilobytes are rejected.",
+            )
+            .at("src/server.ts#L28"),
+            requirement("start.omit-powered-by", "Responses omit an X-Powered-By header.")
+                .at("src/server.ts#L31"),
+            requirement("session.timeout", "Sessions expire after an hour of inactivity.")
+                .at("src/session.ts#L10-L14"),
+            requirement("orders.create", "A signed-in user places an order.")
+                .at("src/orders.ts#L20-L35"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+            Claim::new(ClaimKind::Excerpt)
+                .at("src/orders.ts#L5-L12")
+                .with_extra("excerpt", "Order creation normalises SKU casing."),
+        ],
+    );
+    seed(&provider.files, &spec_bytes, DESIGN, &plan_bytes);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 1, "conflict": 0, "unchanged": 3, "by-scope": 1
+        }),
+        "{envelope}"
+    );
+    let exchanges = provider.model.exchanges();
+    let finding = exchanges[0].outcome.as_ref().expect_err("uncited file in `evidenced` rejected");
+    assert!(
+        finding.contains(
+            "standing requirement 7 (`orders.audit-note`) has no `## Whole-source detail` in any \
+             file its citations name"
+        ),
+        "{finding}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// On `start.*` bootstrap files under `scope = "whole"`, re-extraction noise on
+// an untouched file stages nothing while an added `start.*` claim in a newly
+// added file is admitted.
+#[tokio::test]
+async fn amend_scoped_bootstrap_guard() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let (spec_bytes, plan_bytes) = bootstrap_spec_and_plan();
+
+    let grouping = r#"{"groups": [
+        {"claims": [0, 5], "classes": [[0, 5]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2, 6], "classes": [[2, 6]]},
+        {"claims": [3, 7], "classes": [[3, 7]]},
+        {"claims": [4, 8], "classes": [[4, 8]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement(
+                "start.json-body-limit",
+                "JSON request bodies exceeding 256 kilobytes are rejected.",
+            )
+            .at("src/server.ts#L28"),
+            requirement("start.omit-powered-by", "Responses omit an X-Powered-By header.")
+                .at("src/server.ts#L31"),
+            requirement("session.timeout", "Sessions expire after an hour of inactivity.")
+                .at("src/session.ts#L10-L14"),
+            requirement("orders.create", "A signed-in user places an order.")
+                .at("src/orders.ts#L20-L35"),
+            requirement("orders.audit-note", "Order mutations record an operator audit note.")
+                .at("src/audit.ts#L8-L12"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    seed(&provider.files, &spec_bytes, DESIGN, &plan_bytes);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["staged"], false, "nothing staged on untouched bootstrap: {envelope}");
+    provider.model.assert_exhausted();
+
+    let bootstrap_draft = r#"{"preamble": [], "requirements": [
+        {"subject": "start.require-otlp-url", "scenarios": [
+            {"name": "Missing OTLP URL", "when": "OTLP_URL is unset at startup", "then": "startup fails"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, bootstrap_draft]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement(
+                "start.json-body-limit",
+                "JSON request bodies exceeding 256 kilobytes are rejected.",
+            )
+            .at("src/server.ts#L28"),
+            requirement(
+                "start.require-otlp-url",
+                "The program refuses to start when OTLP_URL is unset.",
+            )
+            .at("src/telemetry.ts#L4-L8"),
+            requirement("session.timeout", "Sessions expire after an hour of inactivity.")
+                .at("src/session.ts#L10-L14"),
+            requirement("orders.create", "A signed-in user places an order.")
+                .at("src/orders.ts#L20-L35"),
+            requirement("orders.audit-note", "Order mutations record an operator audit note.")
+                .at("src/audit.ts#L8-L12"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    seed(&provider.files, &spec_bytes, DESIGN, &plan_bytes);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 1, "changed": 0, "retired": 0, "conflict": 0, "unchanged": 4, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// Revising `orders.post.discount-rate` in `src/services/pricing.ts` under
+// `scope = "whole"` while untouched `src/lib/shipping.ts` (same `orders` stem)
+// carries an HTTP `fetch` `call` claim and `src/routes/orders.ts` carries the
+// standing `POST /api/orders` contract scopes `DesignAmend` to `pricing.ts`
+// alone: `## APIs and integrations` is not marked informed, preserving a prior
+// `intent` `x-api-key` decision paragraph byte for byte without conflict.
+#[tokio::test]
+async fn amend_scoped_drafted_file_isolates_design() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let fixture = isolated_design_fixture();
+
+    // 0..=3 are `code`'s requirement claims; 4..=7 the standing requirements
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1, 5], "classes": [[1, 5]]},
+        {"claims": [2, 6], "classes": [[2, 6]]},
+        {"claims": [3, 7], "classes": [[3], [7]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.post.discount-rate", "scenarios": [
+            {"name": "Gold discount at 10 units", "when": "a gold-tier order has 10 units", "then": "the 10 percent discount applies"}
+        ]}
+    ]}"#;
+    let design = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Orders fetch shipping quotes and apply tier discounts from 10 units (REQ-003, REQ-004)."}], "revised": [1]},
+        {"kind": "technical-logic", "blocks": [{"text": "Gold-tier orders of 10 or more units receive a 10 percent discount before shipping (REQ-004)."}], "revised": [1]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft, design]);
+    code_with(&mut provider, fixture.claims);
+    seed(&provider.files, &fixture.spec, fixture.design.as_bytes(), &fixture.plan);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 1, "retired": 0, "conflict": 0, "unchanged": 3, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    assert_eq!(
+        envelope["sections"],
+        serde_json::json!({
+            "preamble": false,
+            "added": [],
+            "removed": [],
+            "changed": ["overview", "technical-logic"]
+        }),
+        "`apis` is untouched: {envelope}"
+    );
+
+    let design_turn = provider.model.seen()[2].messages.join("\n");
+    assert!(!design_turn.contains("### APIs and integrations"), "{design_turn}");
+    assert!(!design_turn.contains("src/lib/shipping.ts"), "{design_turn}");
+    assert!(!design_turn.contains("Bearer"), "{design_turn}");
+    assert!(design_turn.contains("DISCOUNT_THRESHOLD is 10 units"), "{design_turn}");
+
+    let base_design: Value = serde_json::from_str(&fixture.design).expect("base design JSON");
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(
+        amendment["design"]["sections"][2], base_design["sections"][2],
+        "`apis` with `x-api-key` preserved byte for byte: {amendment}"
+    );
+    provider.model.assert_exhausted();
+}
+
+fn isolated_design_fixture() -> ScopedFixture {
+    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+    let tpl = base_spec["requirements"][2].clone();
+    base_spec["requirements"] = serde_json::json!([
+        SpecReq::new(
+            "REQ-001",
+            "start.require-database-url",
+            "The program refuses to start when DATABASE_URL is unset.",
+        )
+        .at("src/config.ts#L5-L7")
+        .into_json(&tpl),
+        SpecReq::new(
+            "REQ-002",
+            "start.upstream-error",
+            "Upstream dependency failures return 502 upstream-unavailable.",
+        )
+        .at("src/server.ts#L50-L55")
+        .into_json(&tpl),
+        SpecReq::new(
+            "REQ-003",
+            "orders.post.shipping-quote",
+            "Placing an order fetches a shipping quote for the destination postcode.",
+        )
+        .at("src/lib/shipping.ts#L15-L35")
+        .route("POST /api/orders")
+        .into_json(&tpl),
+        SpecReq::new(
+            "REQ-004",
+            "orders.post.discount-rate",
+            "Gold-tier orders of 20 or more units receive a 10 percent discount.",
+        )
+        .source("intent")
+        .route("POST /api/orders")
+        .into_json(&tpl),
+    ]);
+    let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+    base_plan["parts"][0]["name"] = Value::from("start");
+
+    let design = format!(
+        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
+            {{"kind": "overview", "blocks": [{{"text": "Orders fetch shipping quotes and apply tier discounts from 20 units (REQ-003, REQ-004)."}}]}},
+            {DOMAIN_MODEL},
+            {{"kind": "apis", "blocks": [
+                {{"text": "Inbound HTTP exposes POST /api/orders (REQ-003, REQ-004)."}},
+                {{"text": "Upstream delivery-rates calls GET ${{SHIPPING_API_URL}}/rates with header x-api-key: ${{SHIPPING_API_KEY}} (from intent) and surfaces failures as 502 upstream-unavailable (REQ-002, REQ-003)."}}
+            ]}},
+            {{"kind": "technical-logic", "blocks": [
+                {{"text": "Gold-tier orders of 20 or more units receive a 10 percent discount before shipping (REQ-004)."}}
+            ]}}
+        ]}}"#
+    );
+    let claims = vec![
+        requirement(
+            "start.require-database-url",
+            "The program refuses to start when DATABASE_URL is unset.",
+        )
+        .at("src/config.ts#L5-L7"),
+        requirement(
+            "start.upstream-error",
+            "Upstream dependency failures return 502 upstream-unavailable.",
+        )
+        .at("src/server.ts#L50-L55"),
+        requirement(
+            "orders.post.shipping-quote",
+            "Placing an order fetches a shipping quote for the destination postcode.",
+        )
+        .at("src/lib/shipping.ts#L15-L35"),
+        requirement(
+            "orders.post.discount-rate",
+            "Gold-tier orders of 10 or more units receive a 10 percent discount.",
+        )
+        .at("src/services/pricing.ts#L15-L21"),
+        claim(ClaimKind::Contract, "orders.post", ("route", "POST /api/orders"))
+            .at("src/routes/orders.ts#L30-L42"),
+        claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+        claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        Claim::new(ClaimKind::Call)
+            .at("src/lib/shipping.ts#L22")
+            .with_extra("callee", "fetch")
+            .with_synopsis(
+                "GET ${SHIPPING_API_URL}/rates with Authorization: Bearer ${SHIPPING_API_KEY}",
+            ),
+        Claim::new(ClaimKind::Excerpt).at("src/services/pricing.ts#L12-L24").with_extra(
+            "excerpt",
+            "DISCOUNT_THRESHOLD is 10 units for gold-tier 10 percent discount.",
+        ),
+    ];
+
+    ScopedFixture {
+        spec: serde_json::to_vec(&base_spec).expect("serialise base spec"),
+        design,
+        plan: serde_json::to_vec(&base_plan).expect("serialise base plan"),
+        claims,
+    }
 }
 
 // `SPEC` with `auth.login` citing `login_source`, `session.timeout` citing

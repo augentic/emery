@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::Trigger;
-use emery_adapter::source::{Anchor, SourceKind};
+use emery_adapter::source::{Anchor, Claim, SourceKind};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -253,6 +253,15 @@ pub struct Cited {
 }
 
 impl Cited {
+    #[must_use]
+    pub fn from_claim(source: &str, claim: &Claim) -> Self {
+        Self {
+            source: source.to_owned(),
+            claim: claim.id.clone().unwrap_or_default(),
+            path: claim.path.clone(),
+        }
+    }
+
     fn anchor(&self) -> Option<Anchor<'_>> {
         self.path.as_deref().and_then(|path| Anchor::parse(path).ok())
     }

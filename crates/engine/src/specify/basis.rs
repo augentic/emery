@@ -150,6 +150,7 @@ impl GroupingBrief {
                     synopsis: claim.synopsis.clone(),
                     notes,
                     withdraws,
+                    trigger: None,
                     citations: Vec::new(),
                     index: contributors.len(),
                 });
@@ -320,8 +321,45 @@ impl GroupingBrief {
                     "standing requirement {index} is already matched to a claim; list in \
                      `evidenced` only standing requirements that stand alone"
                 ));
+            } else {
+                match self.evidenced_gap(&self.contributors[index]) {
+                    Some(EvidencedGap::MissingContract(trigger)) => review.note(format_args!(
+                        "standing requirement {index} (`{}`) carries {}, which no contract of its \
+                         cited whole-scope source declares; omit it from `evidenced`",
+                        self.contributors[index].id,
+                        trigger_note(&trigger),
+                    )),
+                    Some(EvidencedGap::MissingDetail) => review.note(format_args!(
+                        "standing requirement {index} (`{}`) has no `## Whole-source detail` in \
+                         any file its citations name; omit it from `evidenced`",
+                        self.contributors[index].id,
+                    )),
+                    None => {}
+                }
             }
         }
+    }
+
+    fn evidenced_gap(&self, member: &Contributor) -> Option<EvidencedGap> {
+        let cites_only_whole = !member.citations.is_empty()
+            && member.citations.iter().all(|cited| self.whole_sources.contains(&cited.source));
+        if !cites_only_whole {
+            return None;
+        }
+        if let Some(trigger) = &member.trigger {
+            let has_contract = self.contracts.iter().any(|contract| {
+                contract.trigger == *trigger
+                    && member.citations.iter().any(|cited| cited.source == contract.cited.source)
+            });
+            if !has_contract {
+                return Some(EvidencedGap::MissingContract(trigger.clone()));
+            }
+        }
+        let has_detail = self
+            .details
+            .iter()
+            .any(|detail| member.citations.iter().any(|cited| cited.same_file(&detail.cited)));
+        (!has_detail).then_some(EvidencedGap::MissingDetail)
     }
 
     fn write_instructions(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -377,8 +415,9 @@ impl GroupingBrief {
                      when entity lookup and not-found shaping already stand), a validation or \
                      normalisation facet already covered by a standing requirement or scenario \
                      (including a claim spanning validation rules and default persistence across \
-                     two standing requirements, placed in both groups), or process startup and \
-                     listen mechanics (`listen` or `serve` after startup checks) joins the \
+                     two standing requirements, placed in both groups), or process startup, \
+                     framework header or middleware setup (`x-powered-by`), and listen mechanics \
+                     (`listen` or `serve` after startup checks) joins the \
                      covered standing requirement's group in the standing requirement's class \
                      rather than adding a standalone requirement. Leave a whole-scope claim in a \
                      singleton group only when it states behaviour absent from every standing \
@@ -390,11 +429,13 @@ impl GroupingBrief {
                 f.write_str(
                     "\nWhen a standing requirement stands alone in its group only because this \
                      extraction recorded its behaviour in `## Whole-source detail` as an \
-                     `excerpt` or `call` rather than a `requirement` claim, and that detail \
-                     shows the behaviour is still implemented unchanged, list that standing \
-                     requirement's index in `evidenced` so whole-source scope does not retire \
-                     it. Leave out of `evidenced` any standing requirement matched to a claim or \
-                     absent from both the claims and `## Whole-source detail`.\n",
+                     `excerpt` or `call` rather than a `requirement` claim, and that detail in \
+                     its cited file shows the behaviour (and any route or message trigger it \
+                     carries) is still implemented unchanged, list that standing requirement's \
+                     index in `evidenced` so whole-source scope does not retire it. Never list \
+                     in `evidenced` a standing requirement matched to a claim, one whose route \
+                     or message trigger vanished from the extracted contracts, or one whose \
+                     cited file holds no matching `## Whole-source detail`.\n",
                 )?;
             }
         }
@@ -685,19 +726,24 @@ pub fn trigger_note(trigger: &Trigger) -> String {
     }
 }
 
+enum EvidencedGap {
+    MissingContract(Trigger),
+    MissingDetail,
+}
+
 // Non-requirement detail (`excerpt` or `call`) extracted from a whole-scope
 // behaviour source, shown so a standing requirement still implemented there is
 // not retired by scope when an extraction pass emitted no `requirement` claim
 // for it.
 #[derive(Debug)]
-struct Detail {
-    source: String,
-    path: Option<String>,
+pub struct Detail {
+    pub cited: Cited,
     text: String,
 }
 
 impl Detail {
-    fn from_claim(source: &str, claim: &Claim) -> Option<Self> {
+    #[must_use]
+    pub fn from_claim(source: &str, claim: &Claim) -> Option<Self> {
         let collapse = |raw: &str| raw.split_whitespace().collect::<Vec<_>>().join(" ");
         let text = match claim.kind {
             ClaimKind::Excerpt => collapse(claim.extra("excerpt")?),
@@ -714,8 +760,7 @@ impl Detail {
             return None;
         }
         Some(Self {
-            source: source.to_owned(),
-            path: claim.path.clone(),
+            cited: Cited::from_claim(source, claim),
             text,
         })
     }
@@ -723,9 +768,9 @@ impl Detail {
 
 impl Display for Detail {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.path {
-            Some(path) => write!(f, "- `{}` `{path}` — {}", self.source, self.text),
-            None => write!(f, "- `{}` — {}", self.source, self.text),
+        match &self.cited.path {
+            Some(path) => write!(f, "- `{}` `{path}` — {}", self.cited.source, self.text),
+            None => write!(f, "- `{}` — {}", self.cited.source, self.text),
         }
     }
 }
@@ -744,11 +789,7 @@ impl Contract {
     fn from_claim(source: &str, claim: &Claim) -> Option<Self> {
         let trigger = claim.trigger()?.ok()?;
         Some(Self {
-            cited: Cited {
-                source: source.to_owned(),
-                claim: claim.id.clone().unwrap_or_default(),
-                path: claim.path.clone(),
-            },
+            cited: Cited::from_claim(source, claim),
             id: claim.id.clone(),
             trigger,
         })
@@ -1189,6 +1230,15 @@ impl Basis {
         self.contributors().filter(|member| !member.is_baseline())
     }
 
+    // Returns the sole non-`BASELINE` contributor when exactly one change
+    // claim contributed to this basis.
+    #[must_use]
+    pub fn sole_change_contributor(&self) -> Option<&Contributor> {
+        let mut iter = self.classes.iter().flatten().filter(|member| !member.is_baseline());
+        let sole = iter.next()?;
+        iter.next().is_none().then_some(sole)
+    }
+
     // Returns the winning statement, or `None` when the contributors are in
     // conflict or the winning claim withdraws the requirement. Distinct facet
     // ids from the winning `(source, stem)` merged onto one standing
@@ -1289,6 +1339,8 @@ pub struct Contributor {
     pub synopsis: Option<String>,
     pub notes: Vec<String>,
     pub withdraws: bool,
+    // What reaches a standing requirement; `None` for a claim.
+    pub trigger: Option<Trigger>,
     // Where a standing requirement was read, for the brief's anchor hints;
     // empty for a claim.
     pub citations: Vec<Cited>,

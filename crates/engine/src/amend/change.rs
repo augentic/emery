@@ -16,6 +16,7 @@
 
 use std::collections::BTreeSet;
 
+use emery_adapter::Trigger;
 use emery_adapter::source::{ClaimKind, SourceKind};
 use omnia_sdk::{Error, Model, server_error};
 
@@ -41,7 +42,7 @@ impl ChangeSet {
         model: &M, base: &Spec, extracts: &[Extract],
     ) -> Result<Self, Error> {
         let baseline = Baseline::new(base, extracts);
-        let (mut set, evidenced) = if states_requirements(extracts) {
+        if states_requirements(extracts) {
             let bases = GroupingBrief::with_standing(
                 extracts,
                 baseline.contributors(),
@@ -49,13 +50,13 @@ impl ChangeSet {
             )
             .derive(model)
             .await?;
-            Self::from_bases(&baseline, bases)?
+            Self::from_bases(&baseline, extracts, bases)
         } else {
             tracing::info!("the change states no requirement; the specification stands");
-            (Self::unchanged(&baseline), BTreeSet::new())
-        };
-        set.retire_by_scope(&baseline, extracts, &evidenced);
-        Ok(set)
+            let mut set = Self::unchanged(&baseline);
+            set.retire_by_scope(&baseline, extracts, &BTreeSet::new());
+            Ok(set)
+        }
     }
 
     fn unchanged(baseline: &Baseline) -> Self {
@@ -95,7 +96,9 @@ impl ChangeSet {
             for change in &mut self.changes {
                 let in_scope = covered_stems.contains(change.stem())
                     || baseline.cites_only(change.id, &extract.source);
-                if !change.is_untouched() || evidenced.contains(&change.id) || !in_scope {
+                let is_evidenced = evidenced.contains(&change.id)
+                    && baseline.admits_evidenced(change.id, extracts);
+                if !change.is_untouched() || is_evidenced || !in_scope {
                     continue;
                 }
                 tracing::info!(
@@ -114,8 +117,8 @@ impl ChangeSet {
     // ranked as a statement is, so a withdrawal and a revision at one rank
     // are a conflict and the higher-ranked of the two decides.
     fn from_bases(
-        baseline: &Baseline, bases: Vec<Basis>,
-    ) -> Result<(Self, BTreeSet<ReqId>), Error> {
+        baseline: &Baseline, extracts: &[Extract], bases: Vec<Basis>,
+    ) -> Result<Self, Error> {
         let unmatched: Vec<Contributor> = bases
             .iter()
             .filter(|basis| baseline.matched(basis).is_none())
@@ -126,43 +129,77 @@ impl ChangeSet {
             return Err(retire_unmatched(&unmatched));
         }
 
-        let mut free = baseline.free_ids();
-        let mut changes = Vec::with_capacity(bases.len());
-        let mut drafted = Vec::new();
-        let mut evidenced = BTreeSet::new();
-        for mut basis in bases {
-            let sources: Vec<Cited> = basis.change_contributors().map(Cited::from).collect();
-            let matched = baseline.matched(&basis);
-            let change = if let Some(requirement) = matched {
-                if basis.evidenced {
-                    evidenced.insert(requirement.id);
-                }
-                matched_change(baseline, requirement, &basis, sources)
+        // settle standing requirements
+        let mut matched_bases = Vec::new();
+        let mut added_bases = Vec::new();
+        for basis in bases {
+            if let Some(requirement) = baseline.matched(&basis) {
+                matched_bases.push((requirement, basis));
             } else {
-                let id = free
-                    .next()
-                    .ok_or_else(|| server_error!("the requirement ids are exhausted"))?;
-                added_change(id, &basis, sources)
-            };
-
-            if change.class.is_drafted() {
-                let trigger = basis
-                    .trigger
-                    .take()
-                    .or_else(|| matched.and_then(|requirement| requirement.trigger.clone()));
-                let amended = basis.amended(change.id, trigger).ok_or_else(|| {
-                    server_error!(
-                        "requirement {} is drafted anew with no claim to draft from",
-                        change.id
-                    )
-                })?;
-                drafted.push(amended);
+                added_bases.push(basis);
             }
-            changes.push(change);
         }
-        changes.sort_by_key(|change| change.id);
-        drafted.sort_by_key(|basis| basis.id);
-        Ok((Self { changes, drafted }, evidenced))
+
+        let mut set = Self {
+            changes: Vec::with_capacity(matched_bases.len() + added_bases.len()),
+            drafted: Vec::new(),
+        };
+        let mut evidenced = BTreeSet::new();
+        for (requirement, basis) in matched_bases {
+            let sources: Vec<Cited> = basis.change_contributors().map(Cited::from).collect();
+            if basis.evidenced {
+                evidenced.insert(requirement.id);
+            }
+            let change = matched_change(baseline, requirement, &basis, sources);
+            set.record(change, basis, requirement.trigger.clone())?;
+        }
+        set.changes.sort_by_key(|change| change.id);
+
+        // retire silent whole-scope requirements
+        set.retire_by_scope(baseline, extracts, &evidenced);
+        let unchanged: BTreeSet<ReqId> = set
+            .changes
+            .iter()
+            .filter(|change| change.class == ChangeClass::Unchanged)
+            .map(|change| change.id)
+            .collect();
+
+        // admit added requirements
+        let mut free = baseline.free_ids();
+        for basis in added_bases {
+            if baseline.is_untouched_bootstrap(&basis, &unchanged, extracts) {
+                tracing::info!(
+                    subject = %basis.subject,
+                    "untouched bootstrap re-extraction noise; standing `start` requirements stand"
+                );
+                continue;
+            }
+            let sources: Vec<Cited> = basis.change_contributors().map(Cited::from).collect();
+            let id =
+                free.next().ok_or_else(|| server_error!("the requirement ids are exhausted"))?;
+            let change = added_change(id, &basis, sources);
+            set.record(change, basis, None)?;
+        }
+        set.changes.sort_by_key(|change| change.id);
+        set.drafted.sort_by_key(|basis| basis.id);
+        Ok(set)
+    }
+
+    fn record(
+        &mut self, change: Change, mut basis: Basis, fallback_trigger: Option<Trigger>,
+    ) -> Result<(), Error> {
+        if change.class.is_drafted() {
+            let trigger = basis.trigger.take().or(fallback_trigger);
+            let amended = basis.amended(change.id, trigger).ok_or_else(|| {
+                server_error!(
+                    "requirement {} is drafted anew with no claim to draft from",
+                    change.id
+                )
+            })?;
+            self.drafted.push(amended);
+        }
+        self.changes.push(change);
+        Ok(())
     }
 }
 

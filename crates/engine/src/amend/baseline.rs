@@ -9,11 +9,13 @@
 
 use std::collections::BTreeSet;
 
-use emery_adapter::source::SourceKind;
+use emery_adapter::source::{ClaimKind, SourceKind};
 
 use crate::Rank;
-use crate::revision::{Cited, ReqId, Requirement, Scenario, Spec, Status};
-use crate::specify::{BASELINE, Basis, Contributor, Extract, trigger_note};
+use crate::revision::{self, Cited, ReqId, Requirement, Scenario, Spec, Status};
+use crate::specify::{BASELINE, Basis, Contributor, Detail, Extract, trigger_note};
+
+const START_STEM: &str = "start";
 
 // The base specification as the grouping and the change set read it.
 pub struct Baseline {
@@ -68,6 +70,7 @@ impl Baseline {
                 synopsis: None,
                 notes: standing_notes(requirement, include_whole_context),
                 withdraws: false,
+                trigger: requirement.trigger.clone(),
                 citations: requirement.sources.clone(),
                 index,
             })
@@ -110,6 +113,94 @@ impl Baseline {
     // Whether the base requirement `id` cites `source` and no other source.
     pub fn cites_only(&self, id: ReqId, source: &str) -> bool {
         self.spec.requirement(id).is_some_and(|requirement| requirement.cites_only(source))
+    }
+
+    // Whether `id` may be kept unchanged by `evidenced` alone: a standing
+    // requirement cited only to whole-scope behaviour sources must keep any
+    // route or message contract it carries and hold a detail claim in at least
+    // one file its citations name.
+    pub fn admits_evidenced(&self, id: ReqId, extracts: &[Extract]) -> bool {
+        let Some(requirement) = self.spec.requirement(id) else {
+            return false;
+        };
+        let cites_only_whole = !requirement.sources.is_empty()
+            && requirement.sources.iter().all(|cited| self.whole_sources.contains(&cited.source));
+        if !cites_only_whole {
+            return true;
+        }
+        if let Some(trigger) = &requirement.trigger {
+            let has_contract = extracts.iter().any(|extract| {
+                self.whole_sources.contains(&extract.source)
+                    && requirement.cites(&extract.source)
+                    && extract.evidence.claims.iter().any(|claim| {
+                        claim.kind == ClaimKind::Contract
+                            && claim.trigger().is_some_and(|parsed| parsed.as_ref() == Ok(trigger))
+                    })
+            });
+            if !has_contract {
+                return false;
+            }
+        }
+        extracts.iter().any(|extract| {
+            requirement.cites(&extract.source)
+                && extract
+                    .evidence
+                    .claims
+                    .iter()
+                    .filter_map(|claim| Detail::from_claim(&extract.source, claim))
+                    .any(|detail| requirement.cites_same_file(&detail.cited))
+        })
+    }
+
+    // Whether `basis` is whole-scope re-extraction noise on an untouched
+    // `start` bootstrap file: an untriggered singleton `start.*` claim from an
+    // already-cited whole-scope source whose cited file already holds standing
+    // `start.*` requirements, none of which changed or retired and with no new
+    // `start` contract.
+    pub fn is_untouched_bootstrap(
+        &self, basis: &Basis, unchanged: &BTreeSet<ReqId>, extracts: &[Extract],
+    ) -> bool {
+        if basis.stem() != START_STEM || basis.trigger.is_some() || basis.statement().is_none() {
+            return false;
+        }
+        let Some(member) = basis.sole_change_contributor() else {
+            return false;
+        };
+        if member.path.is_none()
+            || !self.whole_sources.contains(&member.source)
+            || !self.spec.requirements.iter().any(|requirement| requirement.cites(&member.source))
+        {
+            return false;
+        }
+        let cited = Cited::from(member);
+        let has_new_start_contract = extracts
+            .iter()
+            .filter(|extract| extract.source == member.source)
+            .flat_map(|extract| &extract.evidence.claims)
+            .filter(|claim| claim.kind == ClaimKind::Contract)
+            .any(|claim| {
+                let in_start =
+                    claim.id.as_deref().is_some_and(|id| revision::stem(id) == START_STEM)
+                        || cited.same_file(&Cited::from_claim(&member.source, claim));
+                in_start
+                    && claim
+                        .trigger()
+                        .and_then(Result::ok)
+                        .is_some_and(|trigger| !self.spec.has_trigger(&trigger))
+            });
+        if has_new_start_contract {
+            return false;
+        }
+        let mut standing = self
+            .spec
+            .requirements
+            .iter()
+            .filter(|requirement| {
+                requirement.stem() == START_STEM && requirement.cites_same_file(&cited)
+            })
+            .map(|requirement| requirement.id)
+            .peekable();
+        standing.peek().is_some() && standing.all(|id| unchanged.contains(&id))
     }
 
     // Whether `basis` agrees with `requirement` under its standing stem.

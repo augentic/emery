@@ -21,11 +21,13 @@ use serde_json::{Value, json};
 use strum::VariantArray as _;
 
 use crate::brief::{Brief, Review};
-use crate::revision::{self, Change, ChangeClass, Design, EMERY, ReqId, Section, SectionKind};
+use crate::revision::{
+    self, Change, ChangeClass, Cited, Design, EMERY, ReqId, Section, SectionKind,
+};
 use crate::specify::Extract;
 use crate::specify::basis::Basis;
 use crate::specify::design::{Block, DesignBrief, Outline, declared, type_key};
-use crate::specify::sections::{BasesSection, ClaimScope, ClaimsSection};
+use crate::specify::sections::{BasesSection, ClaimsSection};
 
 // The brief of an amendment's design turn: the sections the change informs,
 // redrafted over the current design.
@@ -447,23 +449,53 @@ impl Display for DesignAmend {
 
 // Narrows whole-scope behaviour extracts to the claims that inform this design
 // amendment: unchanged `type` claims are omitted, drafted amendments keep only
-// claims under drafted stems and files, and pure retirements omit surviving
-// whole-scope `call`, `contract`, and `excerpt` claims of unchanged code.
+// claims matching drafted contributors or their cited files, and pure
+// retirements omit surviving whole-scope `call`, `contract`, and `excerpt`
+// claims of unchanged code.
 struct ScopedExtracts {
     extracts: Vec<Extract>,
     types: BTreeMap<String, String>,
 }
 
+struct DraftedClaims {
+    ids: BTreeSet<String>,
+    citations: Vec<Cited>,
+}
+
+impl DraftedClaims {
+    fn of(drafted: &[Basis]) -> Self {
+        let mut ids = BTreeSet::new();
+        let mut citations = Vec::new();
+        for member in drafted.iter().flat_map(Basis::change_contributors) {
+            ids.insert(member.id.clone());
+            citations.push(Cited::from(member));
+        }
+        Self { ids, citations }
+    }
+
+    fn contains(&self, source: &str, claim: &Claim) -> bool {
+        let cited = Cited::from_claim(source, claim);
+        if let Some(claim_id) = claim.id.as_deref() {
+            return self.ids.iter().any(|id| revision::leads(id, claim_id))
+                || self.citations.iter().any(|member| member.overlaps(&cited));
+        }
+        if claim.kind == ClaimKind::Contract {
+            return self.citations.iter().any(|member| member.overlaps(&cited));
+        }
+        self.citations.iter().any(|member| member.same_file(&cited))
+    }
+}
+
 enum WholeClaims {
-    Drafted(ClaimScope),
+    Drafted(DraftedClaims),
     RetiredOnly,
     All,
 }
 
 impl WholeClaims {
-    fn new(extracts: &[Extract], drafted: &[Basis], has_retired: bool) -> Self {
+    fn new(drafted: &[Basis], has_retired: bool) -> Self {
         if !drafted.is_empty() {
-            Self::Drafted(ClaimScope::of(extracts, drafted))
+            Self::Drafted(DraftedClaims::of(drafted))
         } else if has_retired {
             Self::RetiredOnly
         } else {
@@ -471,9 +503,9 @@ impl WholeClaims {
         }
     }
 
-    fn keeps(&self, claim: &Claim) -> bool {
+    fn keeps(&self, source: &str, claim: &Claim) -> bool {
         match self {
-            Self::Drafted(scope) => scope.contains(claim),
+            Self::Drafted(drafted) => drafted.contains(source, claim),
             Self::RetiredOnly => false,
             Self::All => true,
         }
@@ -482,7 +514,7 @@ impl WholeClaims {
 
 impl ScopedExtracts {
     fn new(extracts: &[Extract], drafted: &[Basis], has_retired: bool, base: &Design) -> Self {
-        let policy = WholeClaims::new(extracts, drafted, has_retired);
+        let policy = WholeClaims::new(drafted, has_retired);
         let mut taken: BTreeMap<String, String> = BTreeMap::new();
         let mut types = BTreeMap::new();
         let mut scoped = Vec::with_capacity(extracts.len());
@@ -515,7 +547,7 @@ impl ScopedExtracts {
                     continue;
                 }
 
-                if !whole || policy.keeps(claim) {
+                if !whole || policy.keeps(&extract.source, claim) {
                     claims.push(claim.clone());
                 }
             }
