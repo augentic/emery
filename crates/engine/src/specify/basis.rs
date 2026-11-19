@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use crate::Rank;
 use crate::brief::{Brief, Review};
 use crate::revision::{self, Cited, Loser, ReqId, Requirement, Scenario, Status};
-use crate::specify::{Extract, Scope};
+use crate::specify::Extract;
 
 // The reserved source name the current revision's requirements contribute under.
 //
@@ -46,6 +46,9 @@ pub struct GroupingBrief {
     // Non-requirement detail (`excerpt` and `call` claims) from whole-scope
     // behaviour sources during an amend run.
     details: Vec<Detail>,
+    // Names of whole-scope behaviour sources reconciled against standing
+    // requirements.
+    whole_sources: BTreeSet<String>,
 }
 
 impl GroupingBrief {
@@ -78,26 +81,35 @@ impl GroupingBrief {
         let mut contributors: Vec<Contributor> = Vec::new();
         let mut contracts = Vec::new();
         let mut details = Vec::new();
+        let mut whole_sources = BTreeSet::new();
         let has_standing = !standing.is_empty();
 
-        // the ids each source states a requirement under, so a withdrawal
-        // of one of its own is passed over: a source cannot conflict with
-        // itself, and one that withdraws and restates has restated
-        let restated = restated_ids(extracts);
-
         for extract in extracts {
-            let extract_criteria = if has_standing { criterion_notes(extract) } else { Vec::new() };
-            let whole_behaviour = has_standing
-                && extract.scope == Scope::Whole
-                && extract.kind == SourceKind::Behaviour;
+            let extract_notes = ExtractNotes::new(extract, has_standing);
+            if extract_notes.whole_behaviour {
+                whole_sources.insert(extract.source.clone());
+            }
+            // a source cannot conflict with itself: a withdrawal beside its own
+            // restatement is passed over so the restatement stands
+            let stated_ids: BTreeSet<String> = if withdrawals {
+                extract
+                    .evidence
+                    .claims
+                    .iter()
+                    .filter(|claim| claim.kind == ClaimKind::Requirement)
+                    .filter_map(|claim| claim.id.clone())
+                    .collect()
+            } else {
+                BTreeSet::new()
+            };
 
             for claim in &extract.evidence.claims {
                 // a contract binds by its id or its anchor, so it needs no id
                 if claim.kind == ClaimKind::Contract {
-                    contracts.extend(Contract::from_claim(&extract.source, claim));
                     continue;
                 }
-                if whole_behaviour && let Some(detail) = Detail::from_claim(&extract.source, claim)
+                if extract_notes.whole_behaviour
+                    && let Some(detail) = Detail::from_claim(&extract.source, claim)
                 {
                     details.push(detail);
                     continue;
@@ -107,7 +119,7 @@ impl GroupingBrief {
                 let withdraws = match claim.kind {
                     ClaimKind::Requirement => false,
                     ClaimKind::Retire if withdrawals => {
-                        if restated.contains(&(extract.source.as_str(), id)) {
+                        if stated_ids.contains(id) {
                             tracing::debug!(
                                 source = %extract.source,
                                 id,
@@ -126,11 +138,7 @@ impl GroupingBrief {
                 let notes = if withdraws {
                     Vec::new()
                 } else {
-                    extract_criteria
-                        .iter()
-                        .filter(|(criterion_id, _)| revision::leads(id, criterion_id))
-                        .map(|(criterion_id, text)| format!("criterion `{criterion_id}`: {text}"))
-                        .collect()
+                    extract_notes.for_claim(id, claim.path.as_deref())
                 };
                 contributors.push(Contributor {
                     source: extract.source.clone(),
@@ -146,6 +154,7 @@ impl GroupingBrief {
                     index: contributors.len(),
                 });
             }
+            contracts.extend(extract_notes.contracts);
         }
 
         // the standing requirements after the claims, indexed in place
@@ -170,6 +179,7 @@ impl GroupingBrief {
             changes,
             hints,
             details,
+            whole_sources,
         }
     }
 
@@ -349,6 +359,33 @@ impl GroupingBrief {
                  claims alone, since a withdrawal of a behaviour the specification does not hold \
                  is refused after your answer.\n",
             )?;
+            if !self.whole_sources.is_empty() {
+                let sources = self
+                    .whole_sources
+                    .iter()
+                    .map(|name| format!("`{name}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(
+                    f,
+                    "\nWhole-scope re-extraction ({sources}): every file of the source was \
+                     re-extracted, including files the change did not touch, so untouched \
+                     routes, modules, and `start` bootstrap code appear again alongside any \
+                     edit. On an existing route, message surface, or `start` bootstrap, a claim \
+                     spelling out an inherited precondition or shared-helper outcome already \
+                     covered by standing requirements (such as per-action missing-entity lookup \
+                     when entity lookup and not-found shaping already stand), a validation or \
+                     normalisation facet already covered by a standing requirement or scenario \
+                     (including a claim spanning validation rules and default persistence across \
+                     two standing requirements, placed in both groups), or process startup and \
+                     listen mechanics (`listen` or `serve` after startup checks) joins the \
+                     covered standing requirement's group in the standing requirement's class \
+                     rather than adding a standalone requirement. Leave a whole-scope claim in a \
+                     singleton group only when it states behaviour absent from every standing \
+                     requirement and scenario, such as a newly added route or message surface, a \
+                     new stem, or a newly added domain rule."
+                )?;
+            }
             if !self.details.is_empty() {
                 f.write_str(
                     "\nWhen a standing requirement stands alone in its group only because this \
@@ -572,34 +609,80 @@ impl Display for GroupingBrief {
     }
 }
 
-fn restated_ids(extracts: &[Extract]) -> BTreeSet<(&str, &str)> {
-    extracts
-        .iter()
-        .flat_map(|extract| {
-            extract
-                .evidence
-                .claims
-                .iter()
-                .filter(|claim| claim.kind == ClaimKind::Requirement)
-                .filter_map(move |claim| Some((extract.source.as_str(), claim.id.as_deref()?)))
-        })
-        .collect()
+struct CriterionNote {
+    id: String,
+    condition: String,
 }
 
-fn criterion_notes(extract: &Extract) -> Vec<(&str, String)> {
-    let mut notes = Vec::new();
-    for claim in &extract.evidence.claims {
-        if claim.kind == ClaimKind::Criterion
-            && let Some(id) = claim.id.as_deref()
-            && let Some(condition) = claim.criterion()
-        {
-            let collapsed = condition.split_whitespace().collect::<Vec<_>>().join(" ");
-            if !collapsed.is_empty() {
-                notes.push((id, collapsed));
-            }
+impl CriterionNote {
+    fn from_claim(claim: &Claim) -> Option<Self> {
+        if claim.kind != ClaimKind::Criterion {
+            return None;
+        }
+        let id = claim.id.clone()?;
+        let condition = claim.criterion()?.split_whitespace().collect::<Vec<_>>().join(" ");
+        (!condition.is_empty()).then_some(Self { id, condition })
+    }
+}
+
+struct ExtractNotes {
+    source: String,
+    whole_behaviour: bool,
+    criteria: Vec<CriterionNote>,
+    contracts: Vec<Contract>,
+}
+
+impl ExtractNotes {
+    fn new(extract: &Extract, has_standing: bool) -> Self {
+        let criteria = if has_standing {
+            extract.evidence.claims.iter().filter_map(CriterionNote::from_claim).collect()
+        } else {
+            Vec::new()
+        };
+        let contracts = extract
+            .evidence
+            .claims
+            .iter()
+            .filter(|claim| claim.kind == ClaimKind::Contract)
+            .filter_map(|claim| Contract::from_claim(&extract.source, claim))
+            .collect();
+        Self {
+            source: extract.source.clone(),
+            whole_behaviour: has_standing && extract.is_whole_behaviour(),
+            criteria,
+            contracts,
         }
     }
-    notes
+
+    fn for_claim(&self, id: &str, path: Option<&str>) -> Vec<String> {
+        let mut notes: Vec<String> = self
+            .criteria
+            .iter()
+            .filter(|criterion| revision::leads(id, &criterion.id))
+            .map(|criterion| format!("criterion `{}`: {}", criterion.id, criterion.condition))
+            .collect();
+        if self.whole_behaviour {
+            let cited = Cited {
+                source: self.source.clone(),
+                claim: id.to_owned(),
+                path: path.map(str::to_owned),
+            };
+            if let Some(trigger) = Contract::trigger_for(&self.contracts, &cited) {
+                notes.push(trigger_note(&trigger));
+            }
+            if let Some(path) = path {
+                notes.push(format!("at `{path}`"));
+            }
+        }
+        notes
+    }
+}
+
+pub fn trigger_note(trigger: &Trigger) -> String {
+    match trigger {
+        Trigger::Http(route) => format!("route `{route}`"),
+        Trigger::Message(topic) => format!("message `{topic}`"),
+    }
 }
 
 // Non-requirement detail (`excerpt` or `call`) extracted from a whole-scope
@@ -674,6 +757,30 @@ impl Contract {
     // Whether `id` is this contract's id or a dotted child of it.
     fn leads(&self, id: &str) -> bool {
         self.id.as_deref().is_some_and(|own| revision::leads(own, id))
+    }
+
+    fn matches(&self, cited: &Cited) -> bool {
+        self.leads(&cited.claim) || cited.overlaps(&self.cited)
+    }
+
+    fn trigger_by_id(contracts: &[Self], id: &str) -> Option<Trigger> {
+        contracts
+            .iter()
+            .filter(|contract| contract.leads(id))
+            .max_by_key(|contract| contract.id.as_deref().map_or(0, str::len))
+            .map(|contract| contract.trigger.clone())
+    }
+
+    fn trigger_by_anchor(contracts: &[Self], cited: &Cited) -> Option<Trigger> {
+        contracts
+            .iter()
+            .find(|contract| cited.overlaps(&contract.cited))
+            .map(|contract| contract.trigger.clone())
+    }
+
+    fn trigger_for(contracts: &[Self], cited: &Cited) -> Option<Trigger> {
+        Self::trigger_by_id(contracts, &cited.claim)
+            .or_else(|| Self::trigger_by_anchor(contracts, cited))
     }
 }
 
@@ -781,61 +888,15 @@ impl Grouping {
     fn split(self, contributors: &[Contributor], changes: usize) -> Self {
         let mut groups = Vec::with_capacity(self.groups.len());
         for group in self.groups {
-            let has_standing = group.claims.iter().any(|&index| index >= changes);
-            let spun: BTreeSet<&str> = if has_standing {
-                let mut lead_class: BTreeMap<(&str, &str), (&str, Option<usize>)> = BTreeMap::new();
-                let mut split_ids = BTreeSet::new();
-                for &index in group.claims.iter().filter(|&&index| index < changes) {
-                    let Some(claim) = contributors.get(index) else { continue };
-                    let class_pos = group.classes.iter().position(|class| class.contains(&index));
-                    let (lead_id, first_class) = lead_class
-                        .entry((claim.source.as_str(), claim.stem()))
-                        .or_insert((claim.id.as_str(), class_pos));
-                    if claim.id != *lead_id && class_pos != *first_class {
-                        split_ids.insert(claim.id.as_str());
-                    }
-                }
-                split_ids
-            } else {
-                // (source, stem) → the distinct ids the group holds under it, in order
-                let mut by_stem: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
-                for claim in group.claims.iter().filter_map(|&index| contributors.get(index)) {
-                    let ids = by_stem.entry((claim.source.as_str(), claim.stem())).or_default();
-                    if !ids.contains(&claim.id.as_str()) {
-                        ids.push(&claim.id);
-                    }
-                }
-                by_stem
-                    .iter()
-                    .filter(|(_, ids)| ids.len() > 1)
-                    .inspect(|((source, stem), ids)| {
-                        tracing::debug!(
-                            source,
-                            stem,
-                            ?ids,
-                            "the grouping merged one source's distinct ids under one stem; split"
-                        );
-                    })
-                    .flat_map(|(_, ids)| ids.iter().skip(1).copied())
-                    .collect()
-            };
+            let spun = group.spun_ids(contributors, changes);
             if spun.is_empty() {
                 groups.push(group);
                 continue;
             }
             let id_of = |index: usize| contributors.get(index).map(|claim| claim.id.as_str());
-            let cut = |keep: &dyn Fn(usize) -> bool| Group {
-                claims: group.claims.iter().copied().filter(|&index| keep(index)).collect(),
-                classes: group
-                    .classes
-                    .iter()
-                    .map(|class| class.iter().copied().filter(|&index| keep(index)).collect())
-                    .filter(|class: &Vec<usize>| !class.is_empty())
-                    .collect(),
-            };
-            groups.push(cut(&|index| !id_of(index).is_some_and(|id| spun.contains(id))));
-            for id in spun {
-                groups.push(cut(&|index| id_of(index) == Some(id)));
+            groups.push(group.filtered(|index| !id_of(index).is_some_and(|id| spun.contains(id))));
+            for id in &spun {
+                groups.push(group.filtered(|index| id_of(index) == Some(id.as_str())));
             }
         }
         Self {
@@ -898,10 +959,65 @@ pub struct Group {
     pub classes: Vec<Vec<usize>>,
 }
 
+impl Group {
+    fn spun_ids(&self, contributors: &[Contributor], changes: usize) -> BTreeSet<String> {
+        let has_standing = self.claims.iter().any(|&index| index >= changes);
+        if has_standing {
+            let mut lead_class: BTreeMap<(String, String), (String, Option<usize>)> =
+                BTreeMap::new();
+            let mut split_ids = BTreeSet::new();
+            for &index in self.claims.iter().filter(|&&index| index < changes) {
+                let Some(claim) = contributors.get(index) else { continue };
+                let class_pos = self.classes.iter().position(|class| class.contains(&index));
+                let (lead_id, first_class) = lead_class
+                    .entry((claim.source.clone(), claim.stem().to_owned()))
+                    .or_insert_with(|| (claim.id.clone(), class_pos));
+                if claim.id != *lead_id && class_pos != *first_class {
+                    split_ids.insert(claim.id.clone());
+                }
+            }
+            return split_ids;
+        }
+
+        let mut by_stem: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
+        for claim in self.claims.iter().filter_map(|&index| contributors.get(index)) {
+            let ids = by_stem.entry((claim.source.clone(), claim.stem().to_owned())).or_default();
+            if !ids.contains(&claim.id) {
+                ids.push(claim.id.clone());
+            }
+        }
+        by_stem
+            .into_iter()
+            .filter(|(_, ids)| ids.len() > 1)
+            .inspect(|((source, stem), ids)| {
+                tracing::debug!(
+                    source,
+                    stem,
+                    ?ids,
+                    "the grouping merged one source's distinct ids under one stem; split"
+                );
+            })
+            .flat_map(|(_, ids)| ids.into_iter().skip(1))
+            .collect()
+    }
+
+    fn filtered(&self, keep: impl Fn(usize) -> bool) -> Self {
+        Self {
+            claims: self.claims.iter().copied().filter(|&index| keep(index)).collect(),
+            classes: self
+                .classes
+                .iter()
+                .map(|class| class.iter().copied().filter(|&index| keep(index)).collect())
+                .filter(|class: &Vec<usize>| !class.is_empty())
+                .collect(),
+        }
+    }
+}
+
 // Reconciled facts used to construct one requirement.
 //
 // Contributors are grouped by agreement, with the winning class first.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Basis {
     // The requirement identifier, assigned from `REQ-001`.
     pub id: ReqId,
@@ -918,6 +1034,8 @@ pub struct Basis {
     // Whether a standing requirement with no matching `requirement` claim is
     // still evidenced in `## Whole-source detail`.
     pub evidenced: bool,
+    // Stems of contracts bound by non-`BASELINE` contributors in `classes`.
+    contract_stems: BTreeSet<String>,
 }
 
 impl Basis {
@@ -942,6 +1060,7 @@ impl Basis {
 
         let status = Self::settle(&classes, covered);
         let trigger = Self::trigger_of(&classes, contracts);
+        let contract_stems = Self::contract_stems(&classes, contracts);
 
         Ok(Self {
             id,
@@ -951,6 +1070,7 @@ impl Basis {
             trigger,
             classes,
             evidenced,
+            contract_stems,
         })
     }
 
@@ -978,7 +1098,7 @@ impl Basis {
     #[must_use]
     pub fn amended(mut self, id: ReqId, trigger: Option<Trigger>) -> Option<Self> {
         for class in &mut self.classes {
-            class.retain(|member| member.source != BASELINE);
+            class.retain(|member| !member.is_baseline());
         }
         self.classes.retain(|class| !class.is_empty());
         if self.classes.is_empty() {
@@ -992,6 +1112,7 @@ impl Basis {
             trigger,
             classes: self.classes,
             evidenced: false,
+            contract_stems: self.contract_stems,
         })
     }
 
@@ -999,9 +1120,26 @@ impl Basis {
     // winning agreement class.
     #[must_use]
     pub fn agrees_with_baseline(&self) -> bool {
-        self.classes
-            .first()
-            .is_some_and(|class| class.iter().any(|member| member.source == BASELINE))
+        self.classes.first().is_some_and(|class| class.iter().any(Contributor::is_baseline))
+    }
+
+    // Returns the non-`BASELINE` contributors in the winning agreement class.
+    pub fn winning_changes(&self) -> impl Iterator<Item = &Contributor> {
+        self.classes.first().into_iter().flatten().filter(|member| !member.is_baseline())
+    }
+
+    // Returns whether the winning agreement class holds a non-`BASELINE`
+    // contributor under `stem`.
+    #[must_use]
+    pub fn winning_class_has_stem(&self, stem: &str) -> bool {
+        self.winning_changes().any(|member| member.stem() == stem)
+    }
+
+    // Returns whether any contract bound to a change contributor of this basis
+    // belongs to `stem`.
+    #[must_use]
+    pub fn has_contract_under(&self, stem: &str) -> bool {
+        self.contract_stems.contains(stem)
     }
 
     // The trigger a contract binds to the requirement: by id first, the
@@ -1011,20 +1149,25 @@ impl Basis {
     fn trigger_of(classes: &[Vec<Contributor>], contracts: &[Contract]) -> Option<Trigger> {
         let mut members: Vec<&Contributor> = classes.iter().flatten().collect();
         members.sort_by_key(|member| (member.rank, member.index));
-        let by_id = members.iter().find_map(|member| {
-            contracts
-                .iter()
-                .filter(|contract| contract.leads(&member.id))
-                .max_by_key(|contract| contract.id.as_deref().map_or(0, str::len))
-        });
-        by_id
-            .or_else(|| {
+        members.iter().find_map(|member| Contract::trigger_by_id(contracts, &member.id)).or_else(
+            || {
                 members.iter().find_map(|member| {
-                    let cited = Cited::from(*member);
-                    contracts.iter().find(|contract| cited.overlaps(&contract.cited))
+                    Contract::trigger_by_anchor(contracts, &Cited::from(*member))
                 })
-            })
-            .map(|contract| contract.trigger.clone())
+            },
+        )
+    }
+
+    fn contract_stems(classes: &[Vec<Contributor>], contracts: &[Contract]) -> BTreeSet<String> {
+        let mut stems = BTreeSet::new();
+        for member in classes.iter().flatten().filter(|member| !member.is_baseline()) {
+            let cited = Cited::from(member);
+            for contract in contracts.iter().filter(|contract| contract.matches(&cited)) {
+                let stem = contract.id.as_deref().map_or_else(|| member.stem(), revision::stem);
+                stems.insert(stem.to_owned());
+            }
+        }
+        stems
     }
 
     // Returns the stem of the subject: the first segment of its dotted id.
@@ -1038,6 +1181,12 @@ impl Basis {
         let mut members: Vec<&Contributor> = self.classes.iter().flatten().collect();
         members.sort_by_key(|member| (member.rank, member.index));
         members.into_iter()
+    }
+
+    // Returns non-`BASELINE` contributors by descending authority and then
+    // source order.
+    pub fn change_contributors(&self) -> impl Iterator<Item = &Contributor> {
+        self.contributors().filter(|member| !member.is_baseline())
     }
 
     // Returns the winning statement, or `None` when the contributors are in
@@ -1151,6 +1300,11 @@ impl Contributor {
     #[must_use]
     pub fn stem(&self) -> &str {
         revision::stem(&self.id)
+    }
+
+    #[must_use]
+    pub fn is_baseline(&self) -> bool {
+        self.source == BASELINE
     }
 }
 

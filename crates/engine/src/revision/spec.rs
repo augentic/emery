@@ -39,6 +39,18 @@ impl Spec {
         self.requirements.iter().find(|requirement| requirement.id == id)
     }
 
+    #[must_use]
+    pub fn has_trigger(&self, trigger: &Trigger) -> bool {
+        self.requirements.iter().any(|requirement| requirement.trigger.as_ref() == Some(trigger))
+    }
+
+    #[must_use]
+    pub fn has_trigger_in_stem(&self, stem: &str, trigger: &Trigger) -> bool {
+        self.requirements.iter().any(|requirement| {
+            requirement.stem() == stem && requirement.trigger.as_ref() == Some(trigger)
+        })
+    }
+
     // Returns the stems the specification's requirements lead with, sorted.
     #[must_use]
     pub fn stems(&self) -> BTreeSet<String> {
@@ -145,10 +157,23 @@ impl Requirement {
         Ok(())
     }
 
+    // Returns whether this requirement cites `source`.
+    #[must_use]
+    pub fn cites(&self, source: &str) -> bool {
+        self.sources.iter().any(|cited| cited.source == source)
+    }
+
     // Returns whether this requirement cites `source` and no other source.
     #[must_use]
     pub fn cites_only(&self, source: &str) -> bool {
         !self.sources.is_empty() && self.sources.iter().all(|cited| cited.source == source)
+    }
+
+    // Returns whether any citation of this requirement anchors in the same file
+    // of the same source as `target`.
+    #[must_use]
+    pub fn cites_same_file(&self, target: &Cited) -> bool {
+        self.sources.iter().any(|cited| cited.same_file(target))
     }
 
     // Returns how many anchors this requirement and `other` cite in common:
@@ -228,6 +253,10 @@ pub struct Cited {
 }
 
 impl Cited {
+    fn anchor(&self) -> Option<Anchor<'_>> {
+        self.path.as_deref().and_then(|path| Anchor::parse(path).ok())
+    }
+
     // Returns whether this citation and `other` anchor at one place: the
     // same source and the same file, with line ranges that meet, or neither
     // naming lines. A citation without a `path` anchors nowhere.
@@ -236,10 +265,7 @@ impl Cited {
         if self.source != other.source {
             return false;
         }
-        let (Some(ours), Some(theirs)) = (self.path.as_deref(), other.path.as_deref()) else {
-            return false;
-        };
-        let (Ok(ours), Ok(theirs)) = (Anchor::parse(ours), Anchor::parse(theirs)) else {
+        let (Some(ours), Some(theirs)) = (self.anchor(), other.anchor()) else {
             return false;
         };
         ours.path == theirs.path
@@ -250,6 +276,17 @@ impl Cited {
                 (None, None) => true,
                 _ => false,
             }
+    }
+
+    // Returns whether this citation and `other` anchor in the same file of the
+    // same source, regardless of line range.
+    #[must_use]
+    pub fn same_file(&self, other: &Self) -> bool {
+        self.source == other.source
+            && matches!(
+                (self.anchor(), other.anchor()),
+                (Some(ours), Some(theirs)) if ours.path == theirs.path
+            )
     }
 }
 

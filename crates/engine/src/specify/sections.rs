@@ -1,32 +1,27 @@
 //! Renders the shared requirement basis and claim sections for synthesis briefs.
 
-use std::borrow::Borrow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::Trigger;
 use emery_adapter::source::{Claim, ClaimKind};
 use serde_json::Value;
 
-use crate::revision::Status;
-use crate::specify::Extract;
-use crate::specify::basis::Basis;
+use crate::revision::{self, Status};
+use crate::specify::basis::{Basis, Contributor};
+use crate::specify::{Extract, shape};
 
 // The requirement outline of a document brief's turn, one entry per basis.
 //
 // Each entry carries the engine's facts about the requirement: its id,
 // subject, status, sources, whether a criterion covers it, the trigger a
 // contract binds to it, and every contributing claim with its role. The
-// three drafts run from it together,
-// so none waits on another's answer. The bases are owned or borrowed, so a
-// brief over a chunk of the run's bases lists them as one over all of them
-// does.
-pub struct BasesSection<'a, B>(pub &'a [B]);
+// three drafts run from it together, so none waits on another's answer.
+pub struct BasesSection<'a>(pub &'a [Basis]);
 
-impl<B: Borrow<Basis>> Display for BasesSection<'_, B> {
+impl Display for BasesSection<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         for basis in self.0 {
-            let basis: &Basis = basis.borrow();
             let coverage = if basis.covered {
                 "evidenced"
             } else {
@@ -85,41 +80,71 @@ pub struct ClaimsSection<'a>(pub &'a [Extract]);
 
 impl Display for ClaimsSection<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        claims(f, self.0, |_| true)
+        f.write_str("## Claims\n")?;
+
+        for extract in self.0 {
+            write!(
+                f,
+                "\n### source `{source}` ({kind})\n\n",
+                source = extract.source,
+                kind = extract.kind
+            )?;
+
+            for claim in &extract.evidence.claims {
+                let id = claim.id.as_deref().unwrap_or("-");
+                let synopsis = claim.synopsis.as_deref().unwrap_or("");
+                writeln!(
+                    f,
+                    "- {kind} `{id}` — {synopsis} — {extras}",
+                    kind = claim.kind,
+                    extras = Value::Object(claim.extras.clone()),
+                )?;
+            }
+        }
+
+        Ok(())
     }
 }
 
-// Writes the `## Claims` section over the claims of `extracts` that `keep`
-// admits, each under its source's name and kind; a source none of whose
-// claims is kept is listed with none.
-//
-// Returns the formatter's error.
-pub fn claims(
-    f: &mut Formatter<'_>, extracts: &[Extract], keep: impl Fn(&Claim) -> bool,
-) -> fmt::Result {
-    f.write_str("## Claims\n")?;
+// The claims belonging to a subset of requirement `bases`: every claim whose id
+// leads with one of their stems, and every unidentified claim anchored in a
+// file where one of those requirement claims was read.
+pub struct ClaimScope {
+    stems: BTreeSet<String>,
+    files: BTreeSet<String>,
+}
 
-    for extract in extracts {
-        write!(
-            f,
-            "\n### source `{source}` ({kind})\n\n",
-            source = extract.source,
-            kind = extract.kind
-        )?;
-
-        for claim in extract.evidence.claims.iter().filter(|claim| keep(claim)) {
-            let id = claim.id.as_deref().unwrap_or("-");
-            let synopsis = claim.synopsis.as_deref().unwrap_or("");
-            writeln!(
-                f,
-                "- {kind} `{id}` — {synopsis} — {extras}",
-                kind = claim.kind,
-                extras = Value::Object(claim.extras.clone()),
-            )?;
-        }
+impl ClaimScope {
+    #[must_use]
+    pub fn of(extracts: &[Extract], bases: &[Basis]) -> Self {
+        let stems: BTreeSet<String> = bases
+            .iter()
+            .flat_map(|basis| {
+                std::iter::once(basis.stem())
+                    .chain(basis.classes.iter().flatten().map(Contributor::stem))
+            })
+            .map(str::to_owned)
+            .collect();
+        let files = extracts
+            .iter()
+            .flat_map(|extract| &extract.evidence.claims)
+            .filter(|claim| claim.kind == ClaimKind::Requirement)
+            .filter(|claim| {
+                claim.id.as_deref().is_some_and(|id| stems.contains(revision::stem(id)))
+            })
+            .filter_map(|claim| claim.path.as_deref())
+            .map(|path| shape::file(path).to_owned())
+            .collect();
+        Self { stems, files }
     }
 
-    Ok(())
+    #[must_use]
+    pub fn contains(&self, claim: &Claim) -> bool {
+        claim.id.as_deref().map_or_else(
+            || claim.path.as_deref().is_none_or(|path| self.files.contains(shape::file(path))),
+            |id| self.stems.contains(revision::stem(id)),
+        )
+    }
 }
 
 // The `call` claims of `extracts` by the package each reaches through: the
@@ -127,15 +152,15 @@ pub fn claims(
 // through none, and a wrapper of the tree (`src/lib/http.ts:HttpClient.post`)
 // spells a path the lexicon reads as a plain word and keeps nothing of. The
 // specification is held from naming these and the design to naming them.
-pub fn packages(extracts: &[Extract]) -> BTreeMap<&str, Vec<&Claim>> {
-    let mut packages: BTreeMap<&str, Vec<&Claim>> = BTreeMap::new();
+pub fn packages(extracts: &[Extract]) -> BTreeMap<String, Vec<Claim>> {
+    let mut packages: BTreeMap<String, Vec<Claim>> = BTreeMap::new();
     let calls = extracts
         .iter()
         .flat_map(|extract| &extract.evidence.claims)
         .filter(|claim| claim.kind == ClaimKind::Call);
     for claim in calls {
         if let Some((package, _)) = claim.callee().and_then(|callee| callee.split_once(':')) {
-            packages.entry(package).or_default().push(claim);
+            packages.entry(package.to_owned()).or_default().push(claim.clone());
         }
     }
     packages

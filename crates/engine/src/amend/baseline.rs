@@ -7,16 +7,19 @@
 //! so a change always wins over what it revises and the base decides
 //! nothing but which requirement a claim lands on.
 
+use std::collections::BTreeSet;
+
 use emery_adapter::source::SourceKind;
 
 use crate::Rank;
-use crate::revision::{ReqId, Requirement, Scenario, Spec, Status};
-use crate::specify::{BASELINE, Basis, Contributor, Extract};
+use crate::revision::{Cited, ReqId, Requirement, Scenario, Spec, Status};
+use crate::specify::{BASELINE, Basis, Contributor, Extract, trigger_note};
 
 // The base specification as the grouping and the change set read it.
 pub struct Baseline {
     spec: Spec,
     rank: Rank,
+    whole_sources: BTreeSet<String>,
 }
 
 impl Baseline {
@@ -27,9 +30,15 @@ impl Baseline {
             .map(|extract| extract.rank)
             .max()
             .unwrap_or_else(|| Rank::from(SourceKind::Behaviour));
+        let whole_sources = extracts
+            .iter()
+            .filter(|extract| extract.is_whole_behaviour())
+            .map(|extract| extract.source.clone())
+            .collect();
         Self {
             spec: spec.clone(),
             rank: lowest.below(),
+            whole_sources,
         }
     }
 
@@ -43,30 +52,24 @@ impl Baseline {
     // which the brief re-indexes; the citations are where the requirement
     // was read, for the brief's anchor hints.
     pub fn contributors(&self) -> Vec<Contributor> {
+        let include_whole_context = !self.whole_sources.is_empty();
         self.spec
             .requirements
             .iter()
             .filter_map(|requirement| Some((requirement, requirement.stated()?)))
             .enumerate()
-            .map(|(index, (requirement, statement))| {
-                let notes = if requirement.status == Status::Conflict {
-                    Vec::new()
-                } else {
-                    requirement.scenarios.iter().map(scenario_note).collect()
-                };
-                Contributor {
-                    source: BASELINE.to_owned(),
-                    kind: SourceKind::Documentation,
-                    rank: self.rank,
-                    id: requirement.subject.clone(),
-                    path: None,
-                    statement,
-                    synopsis: None,
-                    notes,
-                    withdraws: false,
-                    citations: requirement.sources.clone(),
-                    index,
-                }
+            .map(|(index, (requirement, statement))| Contributor {
+                source: BASELINE.to_owned(),
+                kind: SourceKind::Documentation,
+                rank: self.rank,
+                id: requirement.subject.clone(),
+                path: None,
+                statement,
+                synopsis: None,
+                notes: standing_notes(requirement, include_whole_context),
+                withdraws: false,
+                citations: requirement.sources.clone(),
+                index,
             })
             .collect()
     }
@@ -94,7 +97,7 @@ impl Baseline {
             .classes
             .iter()
             .flatten()
-            .find(|member| member.source == BASELINE)
+            .find(|member| member.is_baseline())
             .and_then(|member| self.requirement(&member.id))
     }
 
@@ -109,10 +112,31 @@ impl Baseline {
         self.spec.requirement(id).is_some_and(|requirement| requirement.cites_only(source))
     }
 
+    // Whether `basis` agrees with `requirement` under its standing stem.
+    //
+    // Co-grouped claims from two seams of a source (`start` and `health`)
+    // preserve the standing stem whenever the winning class holds a claim
+    // under it, or when every non-`BASELINE` winner comes from an
+    // already-cited whole-scope source in a file where `requirement` was
+    // already read.
+    pub fn agrees(&self, requirement: &Requirement, basis: &Basis) -> bool {
+        if requirement.status == Status::Conflict || !basis.agrees_with_baseline() {
+            return false;
+        }
+        if basis.winning_class_has_stem(requirement.stem()) {
+            return true;
+        }
+        basis.winning_changes().all(|member| {
+            self.whole_sources.contains(&member.source)
+                && requirement.cites_same_file(&Cited::from(member))
+        })
+    }
+
     // Whether `basis` leaves `requirement`'s trigger unchanged. A change
-    // silent on the trigger keeps the base's, and a trigger bound from an
-    // already-cited source that the base already holds under the same stem is
-    // sub-stem slug drift on a shared helper rather than a new surface.
+    // silent on the trigger keeps the base's, as does an untriggered
+    // standing requirement whose already-cited sources agree with the base
+    // and only pick up an existing trigger or a secondary co-grouped stem's
+    // contract on whole-scope re-extraction.
     pub fn same_trigger(&self, requirement: &Requirement, basis: &Basis) -> bool {
         let Some(trigger) = &basis.trigger else {
             return true;
@@ -120,15 +144,19 @@ impl Baseline {
         if requirement.trigger.as_ref() == Some(trigger) {
             return true;
         }
-        requirement.trigger.is_none()
-            && basis.agrees_with_baseline()
-            && basis
-                .contributors()
-                .filter(|member| member.source != BASELINE)
-                .all(|member| requirement.sources.iter().any(|cited| cited.source == member.source))
-            && self.spec.requirements.iter().any(|other| {
-                other.stem() == requirement.stem() && other.trigger.as_ref() == Some(trigger)
-            })
+        if requirement.trigger.is_some()
+            || !basis.agrees_with_baseline()
+            || !basis.change_contributors().all(|member| requirement.cites(&member.source))
+        {
+            return false;
+        }
+        if self.spec.has_trigger_in_stem(requirement.stem(), trigger) {
+            return true;
+        }
+        let all_whole =
+            basis.change_contributors().all(|member| self.whole_sources.contains(&member.source));
+        all_whole
+            && (!basis.has_contract_under(requirement.stem()) || self.spec.has_trigger(trigger))
     }
 
     // The ids an added requirement takes, from the first above every id the
@@ -137,6 +165,22 @@ impl Baseline {
     pub fn free_ids(&self) -> impl Iterator<Item = ReqId> {
         ReqId::free_after(self.spec.requirements.iter().map(|requirement| requirement.id))
     }
+}
+
+fn standing_notes(requirement: &Requirement, include_whole_context: bool) -> Vec<String> {
+    if requirement.status == Status::Conflict {
+        return Vec::new();
+    }
+    let mut notes: Vec<String> = requirement.scenarios.iter().map(scenario_note).collect();
+    if include_whole_context {
+        if let Some(trigger) = &requirement.trigger {
+            notes.push(trigger_note(trigger));
+        }
+        for path in requirement.sources.iter().filter_map(|cited| cited.path.as_deref()) {
+            notes.push(format!("read at `{path}`"));
+        }
+    }
+    notes
 }
 
 fn scenario_note(scenario: &Scenario) -> String {

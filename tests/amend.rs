@@ -1424,6 +1424,296 @@ async fn amend_scoped_facets() {
     provider.model.assert_exhausted();
 }
 
+// Under `scope = "whole"`, co-grouping a triggered secondary claim from
+// another stem (`health.get-ready.*`) onto an untriggered `start.*` standing
+// requirement keeps the base's `trigger: null`, `start.*` subject, and
+// `unchanged` standing; and co-grouping a `start.*` claim ahead of a
+// `health.*` claim onto a `health.*` standing requirement keeps the `health.*`
+// stem and `unchanged` standing too.
+#[tokio::test]
+async fn amend_scoped_co_grouped_trigger() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let fixture = co_grouped_trigger_fixture();
+
+    // 0..=1 from `start` seam, 2..=3 from `health` seam, 4..=5 from `orders` seam;
+    // 6..=9 the standing requirements in id order
+    let grouping = r#"{"groups": [
+        {"claims": [0, 2, 6], "classes": [[0, 2, 6]]},
+        {"claims": [1, 3, 7], "classes": [[1, 3, 7]]},
+        {"claims": [4, 8], "classes": [[4], [8]]},
+        {"claims": [5, 9], "classes": [[5, 9]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.create", "scenarios": [
+            {"name": "Place order", "when": "a signed-in caller places an order of up to 20 units", "then": "the order is created"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft]);
+    code_with(&mut provider, fixture.claims);
+    seed(&provider.files, &fixture.spec, DESIGN, &fixture.plan);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 1, "retired": 0, "conflict": 0, "unchanged": 3, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    assert_eq!(envelope["stems"], serde_json::json!(["orders"]), "{envelope}");
+
+    let grouping_turn = provider.model.seen()[0].messages.join("\n");
+    assert!(grouping_turn.contains("Whole-scope re-extraction (`code`)"), "{grouping_turn}");
+    assert!(grouping_turn.contains("  - route `GET /health/ready`"), "{grouping_turn}");
+
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(amendment["changes"][0]["class"], "unchanged", "{amendment}");
+    assert_eq!(amendment["changes"][0]["subject"], "start.health-probe-timeout", "{amendment}");
+    assert_eq!(amendment["spec"]["requirements"][0]["trigger"], Value::Null, "{amendment}");
+    assert_eq!(amendment["changes"][1]["class"], "unchanged", "{amendment}");
+    assert_eq!(amendment["changes"][1]["subject"], "health.get-ready.report-probes", "{amendment}");
+    assert_eq!(
+        amendment["spec"]["requirements"][1]["trigger"],
+        serde_json::json!({"http": {"method": "GET", "path": "/health/ready"}}),
+        "{amendment}"
+    );
+    provider.model.assert_exhausted();
+}
+
+struct TriggerFixture {
+    spec: Vec<u8>,
+    plan: Vec<u8>,
+    claims: Vec<Claim>,
+}
+
+fn co_grouped_trigger_fixture() -> TriggerFixture {
+    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+    for requirement in base_spec["requirements"].as_array_mut().expect("requirements") {
+        requirement["sources"][0]["source"] = Value::from("code");
+    }
+    base_spec["requirements"][0]["subject"] = Value::from("start.health-probe-timeout");
+    base_spec["requirements"][0]["trigger"] = Value::Null;
+    base_spec["requirements"][0]["sources"] = serde_json::json!([{
+        "source": "code",
+        "claim": "start.health-probe-timeout",
+        "path": "src/routes/health.ts#L7-L16"
+    }]);
+    base_spec["requirements"][0]["body"] =
+        serde_json::json!(["A readiness probe exceeding 2000 milliseconds fails."]);
+    base_spec["requirements"][1]["subject"] = Value::from("health.get-ready.report-probes");
+    base_spec["requirements"][1]["trigger"] =
+        serde_json::json!({"http": {"method": "GET", "path": "/health/ready"}});
+    base_spec["requirements"][1]["sources"] = serde_json::json!([{
+        "source": "code",
+        "claim": "health.get-ready.report-probes",
+        "path": "src/routes/health.ts#L26-L38"
+    }]);
+    base_spec["requirements"][1]["body"] = serde_json::json!([
+        "GET /health/ready reports whether the store and cache probes succeeded."
+    ]);
+
+    let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+    base_plan["parts"][0]["name"] = Value::from("health");
+
+    let claims = vec![
+        requirement(
+            "start.health-probe-timeout",
+            "A dependency probe exceeding 2000 milliseconds is treated as failed.",
+        )
+        .at("src/routes/health.ts#L7-L16"),
+        requirement(
+            "start.health-ready-body",
+            "GET /health/ready includes boolean fields for the store and cache probes.",
+        )
+        .at("src/routes/health.ts#L33-L37"),
+        requirement(
+            "health.get-ready.probe-timeout",
+            "A readiness probe that does not finish within 2000 milliseconds fails.",
+        )
+        .at("src/routes/health.ts#L26-L30"),
+        requirement(
+            "health.get-ready.report-probe-outcomes",
+            "The readiness response reports whether the store and cache probes succeeded.",
+        )
+        .at("src/routes/health.ts#L33-L37"),
+        claim(ClaimKind::Contract, "health.get-ready", ("route", "GET /health/ready"))
+            .at("src/routes/health.ts#L26-L38"),
+        requirement("orders.create", "A signed-in user places an order of up to 20 units."),
+        requirement("orders.cancel", "A signed-in user cancels an open order."),
+    ];
+    TriggerFixture {
+        spec: serde_json::to_vec(&base_spec).expect("serialise base spec"),
+        plan: serde_json::to_vec(&base_plan).expect("serialise base plan"),
+        claims,
+    }
+}
+
+// Retiring one route's requirement under `scope = "whole"` while whole-repo
+// `call`, `excerpt`, and unchanged `type` claims for `start`, `customers`, and
+// surviving `orders` remain in the extract neither marks `domain-model` or
+// `technical-logic` informed nor rejects a declared `revised` edit trimming
+// retired prose from a shared infrastructure paragraph citing unchanged ids.
+#[tokio::test]
+async fn amend_scoped_retired_design() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let fixture = retired_lines_fixture(None);
+
+    let grouping = r#"{"groups": [
+        {"claims": [0, 3], "classes": [[0, 3]]},
+        {"claims": [1, 4], "classes": [[1, 4]]},
+        {"claims": [2, 5], "classes": [[2, 5]]},
+        {"claims": [6], "classes": [[6]]}
+    ]}"#;
+    let design = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Sign-in issues a session; orders are placed under it."}], "revised": [1]},
+        {"kind": "apis", "blocks": [
+            {"text": "Inbound HTTP exposes POST /orders (REQ-003)."},
+            {"text": "The store connects via DATABASE_URL (REQ-001) and runs transactional updates on transitions."}
+        ], "revised": [1, 2]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, design]);
+    code_with(&mut provider, fixture.claims);
+    seed(&provider.files, &fixture.spec, fixture.design.as_bytes(), PLAN);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 1, "conflict": 0, "unchanged": 3, "by-scope": 1
+        }),
+        "{envelope}"
+    );
+    assert_eq!(
+        envelope["sections"],
+        serde_json::json!({"preamble": false, "added": [], "removed": [], "changed": ["overview", "apis"]}),
+        "{envelope}"
+    );
+    let design_turn = provider.model.seen()[1].messages.join("\n");
+    assert!(!design_turn.contains("### Domain model"), "{design_turn}");
+    assert!(!design_turn.contains("### Technical logic"), "{design_turn}");
+    assert!(!design_turn.contains("src/server.ts#L44"), "{design_turn}");
+    assert!(!design_turn.contains("src/services/orders.ts#L23-L33"), "{design_turn}");
+    provider.model.assert_exhausted();
+}
+
+#[tokio::test]
+async fn amend_scoped_retired_mixed() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let added_customer =
+        requirement("customers.delete-id", "A customer with no orders may be deleted.")
+            .at("src/routes/customers.ts#L41-L47");
+    let fixture = retired_lines_fixture(Some(added_customer));
+
+    let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+    base_plan["parts"][0]["name"] = Value::from("customers");
+    let plan_bytes = serde_json::to_vec(&base_plan).expect("serialise base plan");
+
+    let grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [1, 5], "classes": [[1, 5]]},
+        {"claims": [2, 6], "classes": [[2, 6]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [7], "classes": [[7]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "customers.delete-id", "scenarios": [
+            {"name": "Delete customer", "when": "a customer with no orders is deleted", "then": "204 is returned"}
+        ]}
+    ]}"#;
+    let design = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Sign-in issues a session; customers and orders are managed under it (REQ-005)."}], "revised": [1]},
+        {"kind": "apis", "blocks": [
+            {"text": "Inbound HTTP exposes POST /orders (REQ-003) and DELETE /customers/{id} (REQ-005)."},
+            {"text": "The store connects via DATABASE_URL (REQ-001) and runs transactional updates on transitions."}
+        ], "revised": [1, 2]}
+    ]}"#;
+
+    let mut provider = Provider::answering([grouping, draft, design]);
+    code_with(&mut provider, fixture.claims);
+    seed(&provider.files, &fixture.spec, fixture.design.as_bytes(), &plan_bytes);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 1, "changed": 0, "retired": 1, "conflict": 0, "unchanged": 3, "by-scope": 1
+        }),
+        "{envelope}"
+    );
+    let design_turn = provider.model.seen()[2].messages.join("\n");
+    assert!(!design_turn.contains("src/server.ts#L44"), "{design_turn}");
+    assert!(!design_turn.contains("src/repositories/orders.ts#L94"), "{design_turn}");
+    assert!(design_turn.contains("customers.delete-id"), "{design_turn}");
+    provider.model.assert_exhausted();
+}
+
+struct RetiredLinesFixture {
+    spec: Vec<u8>,
+    design: String,
+    claims: Vec<Claim>,
+}
+
+fn retired_lines_fixture(extra: Option<Claim>) -> RetiredLinesFixture {
+    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+    for requirement in base_spec["requirements"].as_array_mut().expect("requirements") {
+        requirement["sources"][0]["source"] = Value::from("code");
+    }
+    for (index, subject, body) in [
+        (
+            0,
+            "start.require-database-url",
+            "The program refuses to start when DATABASE_URL is unset.",
+        ),
+        (1, "customers.post.create", "A valid customer creation persists the customer."),
+        (3, "orders.put-id-lines", "A pending order's lines may be replaced."),
+    ] {
+        base_spec["requirements"][index]["subject"] = Value::from(subject);
+        base_spec["requirements"][index]["sources"][0]["claim"] = Value::from(subject);
+        base_spec["requirements"][index]["body"] = serde_json::json!([body]);
+    }
+    let spec = serde_json::to_vec(&base_spec).expect("serialise base spec");
+    let design = describing(&[
+        "Inbound HTTP exposes POST /orders (REQ-003) and PUT /orders/{id}/lines (REQ-004).",
+        "The store connects via DATABASE_URL (REQ-001) and runs transactional updates on line \
+         updates and transitions.",
+    ]);
+
+    let db_call =
+        |path: &str| Claim::new(ClaimKind::Call).at(path).with_extra("callee", "pg:Pool.query");
+    let excerpt = |path: &str, text: &str| {
+        Claim::new(ClaimKind::Excerpt).at(path).with_extra("excerpt", text)
+    };
+    let mut claims = vec![
+        requirement(
+            "start.require-database-url",
+            "The program refuses to start when DATABASE_URL is unset.",
+        )
+        .at("src/config.ts#L5-L7"),
+        requirement("customers.post.create", "A valid customer creation persists the customer.")
+            .at("src/services/customers.ts#L18-L31"),
+        requirement("orders.create", "A signed-in user places an order.")
+            .at("src/services/orders.ts#L40-L58"),
+        claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+        claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        db_call("src/server.ts#L44"),
+        db_call("src/repositories/customers.ts#L20"),
+        db_call("src/repositories/orders.ts#L94"),
+        excerpt("src/server.ts#L42-L60", "Startup probes the store before listening on PORT."),
+        excerpt("src/services/orders.ts#L23-L33", "Order reads check the cache under order:{id}."),
+    ];
+    claims.extend(extra);
+    RetiredLinesFixture { spec, design, claims }
+}
+
 // `SPEC` with `auth.login` citing `login_source`, `session.timeout` citing
 // both `docs` and `code`, and `orders.*` citing `code` alone.
 fn spec_citing_code(login_source: &str) -> Vec<u8> {

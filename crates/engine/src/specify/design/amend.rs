@@ -13,6 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
+use emery_adapter::source::{Claim, ClaimKind, Evidence};
 use omnia_sdk::Error;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -23,20 +24,20 @@ use crate::brief::{Brief, Review};
 use crate::revision::{self, Change, ChangeClass, Design, EMERY, ReqId, Section, SectionKind};
 use crate::specify::Extract;
 use crate::specify::basis::Basis;
-use crate::specify::design::{Block, DesignBrief, Outline};
-use crate::specify::sections::{BasesSection, ClaimsSection};
+use crate::specify::design::{Block, DesignBrief, Outline, declared, type_key};
+use crate::specify::sections::{BasesSection, ClaimScope, ClaimsSection};
 
 // The brief of an amendment's design turn: the sections the change informs,
 // redrafted over the current design.
-pub struct DesignAmend<'a> {
-    extracts: &'a [Extract],
+pub struct DesignAmend {
+    extracts: Vec<Extract>,
     // The requirements the change adds, revises, or leaves in conflict, each
     // under the id it takes.
-    drafted: &'a [Basis],
+    drafted: Vec<Basis>,
     // The current design less the types the change's retirements orphaned,
     // its `parent` the base revision.
-    base: &'a Design,
-    outline: Outline<'a>,
+    base: Design,
+    outline: Outline,
     // The sections the turn redrafts, in vocabulary order: `## Overview`,
     // which describes the whole, every section a change claim informs, and
     // every section a paragraph of which describes a retired requirement.
@@ -44,10 +45,10 @@ pub struct DesignAmend<'a> {
     // The requirements the change leaves as they stand.
     unchanged: BTreeSet<ReqId>,
     // The requirements the change retires, by id and subject.
-    retired: BTreeMap<ReqId, &'a str>,
+    retired: BTreeMap<ReqId, String>,
 }
 
-impl<'a> DesignAmend<'a> {
+impl DesignAmend {
     // Returns the brief, or `None` when no change claim informs a section
     // and no section describes a retired requirement, so the design is
     // `base` as it stands and no turn is spent.
@@ -58,14 +59,15 @@ impl<'a> DesignAmend<'a> {
     // pruned it.
     #[must_use]
     pub fn new(
-        extracts: &'a [Extract], drafted: &'a [Basis], changes: &'a [Change], base: &'a Design,
+        extracts: &[Extract], drafted: &[Basis], changes: &[Change], base: &Design,
     ) -> Option<Self> {
-        let outline = Outline::amend(extracts, base);
-        let retired: BTreeMap<ReqId, &'a str> = changes
+        let retired: BTreeMap<ReqId, String> = changes
             .iter()
             .filter(|change| change.class == ChangeClass::Retired)
-            .map(|change| (change.id, change.subject.as_str()))
+            .map(|change| (change.id, change.subject.clone()))
             .collect();
+        let scoped = ScopedExtracts::new(extracts, drafted, !retired.is_empty(), base);
+        let outline = Outline::amend(&scoped.extracts, scoped.types, base);
         let touches = |kind| outline.informed(kind) || describes(base, kind, &retired);
         if !SectionKind::VARIANTS.iter().copied().any(touches) {
             return None;
@@ -77,9 +79,9 @@ impl<'a> DesignAmend<'a> {
             .collect();
 
         Some(Self {
-            extracts,
-            drafted,
-            base,
+            extracts: scoped.extracts,
+            drafted: drafted.to_vec(),
+            base: base.clone(),
             outline,
             redrafted,
             unchanged: changes
@@ -118,10 +120,11 @@ impl<'a> DesignAmend<'a> {
 
     // Whether a paragraph of `kind` citing `cited` describes unchanged
     // requirements alone and must stay verbatim: outside `## Overview`, in a
-    // change that drafts a requirement.
+    // change that drafts a requirement and retires none.
     fn untouched(&self, kind: SectionKind, cited: &BTreeSet<ReqId>) -> bool {
         kind != SectionKind::Overview
             && !self.drafted.is_empty()
+            && self.retired.is_empty()
             && !cited.is_empty()
             && cited.is_subset(&self.unchanged)
     }
@@ -131,9 +134,9 @@ impl<'a> DesignAmend<'a> {
     // - it is kept verbatim or named `revised`, and a named one is reworded,
     //   never dropped: every id it cites that the change keeps is cited by
     //   some paragraph of the answered section, and, outside `## Overview`
-    //   where the change drafts a requirement, one citing unchanged
-    //   requirements alone is kept verbatim, since a change that drafts
-    //   none carries technology alone, which lands in the paragraphs
+    //   where the change drafts a requirement and retires none, one citing
+    //   unchanged requirements alone is kept verbatim, since a change that
+    //   drafts none carries technology alone, which lands in the paragraphs
     //   describing the behaviour it serves;
     // - citing retired requirements alone, it is withdrawn: dropped or
     //   reworded, named or not;
@@ -165,25 +168,25 @@ impl<'a> DesignAmend<'a> {
                 }
                 continue;
             };
+            let cited = cited(text);
+            let withdrawn =
+                !cited.is_empty() && cited.iter().all(|id| self.retired.contains_key(id));
             match (present.contains(&verbatim(text)), named) {
                 (true, true) => review.note(format_args!(
                     "{label} [{number}] is named in `revised` but is kept verbatim; drop it from \
                      `revised`"
                 )),
-                (false, false) if !self.withdrawn(text) => review.note(format_args!(
+                (false, _) if self.untouched(section.kind, &cited) => review.note(format_args!(
+                    "{label} [{number}] describes {}, which the change leaves unchanged; keep it \
+                     verbatim",
+                    listed(&cited)
+                )),
+                (false, false) if !withdrawn => review.note(format_args!(
                     "{label} [{number}] is dropped or reworded without being named in `revised`; \
                      keep it verbatim, or name it"
                 )),
+                (_, false) => {}
                 (false, true) => {
-                    let cited = cited(text);
-                    if self.untouched(section.kind, &cited) {
-                        review.note(format_args!(
-                            "{label} [{number}] describes {}, which the change leaves \
-                             unchanged; keep it verbatim",
-                            listed(&cited)
-                        ));
-                        continue;
-                    }
                     let undescribed: Vec<ReqId> = cited
                         .into_iter()
                         .filter(|id| !self.retired.contains_key(id) && !described.contains(id))
@@ -198,7 +201,6 @@ impl<'a> DesignAmend<'a> {
                         ));
                     }
                 }
-                _ => {}
             }
         }
 
@@ -212,7 +214,7 @@ impl<'a> DesignAmend<'a> {
     }
 }
 
-impl Brief for DesignAmend<'_> {
+impl Brief for DesignAmend {
     type Answer = DesignAmendAnswer;
     type Output = Design;
 
@@ -261,7 +263,7 @@ impl Brief for DesignAmend<'_> {
 
     fn verify(&self, answer: &DesignAmendAnswer, review: &mut Review) {
         let mut seen = BTreeSet::new();
-        let mut references: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut references: BTreeMap<String, usize> = BTreeMap::new();
         for section in &answer.sections {
             let kind = section.kind;
             let label = format!("`## {kind}`");
@@ -334,14 +336,14 @@ impl Brief for DesignAmend<'_> {
 
         Ok(Design {
             emery: EMERY,
-            parent: self.base.parent.clone(),
-            preamble: self.base.preamble.clone(),
+            parent: self.base.parent,
+            preamble: self.base.preamble,
             sections,
         })
     }
 }
 
-impl Display for DesignAmend<'_> {
+impl Display for DesignAmend {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -350,7 +352,7 @@ impl Display for DesignAmend<'_> {
              retires, and `## Overview`, which describes the whole. Every other section and the \
              preamble are the current design's and are kept as they stand, so answer those \
              sections alone.\n\n{claims}",
-            claims = ClaimsSection(self.extracts)
+            claims = ClaimsSection(&self.extracts)
         )?;
 
         f.write_str(
@@ -401,7 +403,7 @@ impl Display for DesignAmend<'_> {
                  that is a client, a retriever, a bootstrap, a settings carrier, or an error or \
                  exception class, which a build declares nothing for and no part owns.\n\n",
             )?;
-            for (key, &signature) in &self.outline.types {
+            for (key, signature) in &self.outline.types {
                 match self.base.type_block(key) {
                     Some((held, role)) if held == signature => {
                         writeln!(f, "- `{key}` — kept, {role}")?;
@@ -427,7 +429,7 @@ impl Display for DesignAmend<'_> {
                 f,
                 "The requirements the change adds or revises, drafted beside this \
                  design:\n\n{bases}",
-                bases = BasesSection(self.drafted)
+                bases = BasesSection(&self.drafted)
             )?;
         }
         if !self.retired.is_empty() {
@@ -443,8 +445,99 @@ impl Display for DesignAmend<'_> {
     }
 }
 
+// Narrows whole-scope behaviour extracts to the claims that inform this design
+// amendment: unchanged `type` claims are omitted, drafted amendments keep only
+// claims under drafted stems and files, and pure retirements omit surviving
+// whole-scope `call`, `contract`, and `excerpt` claims of unchanged code.
+struct ScopedExtracts {
+    extracts: Vec<Extract>,
+    types: BTreeMap<String, String>,
+}
+
+enum WholeClaims {
+    Drafted(ClaimScope),
+    RetiredOnly,
+    All,
+}
+
+impl WholeClaims {
+    fn new(extracts: &[Extract], drafted: &[Basis], has_retired: bool) -> Self {
+        if !drafted.is_empty() {
+            Self::Drafted(ClaimScope::of(extracts, drafted))
+        } else if has_retired {
+            Self::RetiredOnly
+        } else {
+            Self::All
+        }
+    }
+
+    fn keeps(&self, claim: &Claim) -> bool {
+        match self {
+            Self::Drafted(scope) => scope.contains(claim),
+            Self::RetiredOnly => false,
+            Self::All => true,
+        }
+    }
+}
+
+impl ScopedExtracts {
+    fn new(extracts: &[Extract], drafted: &[Basis], has_retired: bool, base: &Design) -> Self {
+        let policy = WholeClaims::new(extracts, drafted, has_retired);
+        let mut taken: BTreeMap<String, String> = BTreeMap::new();
+        let mut types = BTreeMap::new();
+        let mut scoped = Vec::with_capacity(extracts.len());
+
+        for extract in extracts {
+            let whole = extract.is_whole_behaviour();
+            let mut claims = Vec::with_capacity(extract.evidence.claims.len());
+
+            for claim in &extract.evidence.claims {
+                if claim.kind == ClaimKind::Type {
+                    let Some(signature) = claim.signature() else {
+                        if !whole {
+                            claims.push(claim.clone());
+                        }
+                        continue;
+                    };
+                    let Some(name) = declared(claim) else {
+                        if !whole {
+                            claims.push(claim.clone());
+                        }
+                        continue;
+                    };
+                    let key = type_key(&taken, name, claim.path.as_deref());
+                    let trimmed = signature.trim_end().to_owned();
+                    taken.insert(key.clone(), trimmed.clone());
+                    if !whole || base.signature(&key) != Some(trimmed.as_str()) {
+                        types.insert(key, trimmed);
+                        claims.push(claim.clone());
+                    }
+                    continue;
+                }
+
+                if !whole || policy.keeps(claim) {
+                    claims.push(claim.clone());
+                }
+            }
+
+            scoped.push(Extract {
+                source: extract.source.clone(),
+                kind: extract.kind,
+                rank: extract.rank,
+                scope: extract.scope,
+                evidence: Evidence { claims },
+            });
+        }
+
+        Self {
+            extracts: scoped,
+            types,
+        }
+    }
+}
+
 // Whether a paragraph of `base`'s `kind` section cites one of `retired`.
-fn describes(base: &Design, kind: SectionKind, retired: &BTreeMap<ReqId, &str>) -> bool {
+fn describes(base: &Design, kind: SectionKind, retired: &BTreeMap<ReqId, String>) -> bool {
     base.section(kind).is_some_and(|section| {
         section.blocks.iter().any(|block| match block {
             revision::Block::Text(text) => cited(text).iter().any(|id| retired.contains_key(id)),

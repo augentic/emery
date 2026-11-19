@@ -17,14 +17,14 @@ use std::path::Path;
 
 use emery_adapter::is_kebab;
 pub use emery_adapter::source::SourceContent;
-use emery_adapter::source::{Evidence, Source, SourceInput, SourceKind, SourceMetadata};
+use emery_adapter::source::{Claim, Evidence, Source, SourceInput, SourceKind, SourceMetadata};
 use futures::future;
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
-pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief};
+pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief, trigger_note};
 pub(crate) use self::design::{DesignAmend, DesignBrief};
 pub(crate) use self::plan::{Draft, Floors, Open, PartAmend, PartBrief, Types};
 pub use self::spec::SPEC_CHUNK;
@@ -355,17 +355,17 @@ pub struct RepositorySource {
 
 // A source as a run binds it: checked, its input prepared, and ready to
 // extract once its adapter is loaded.
-pub(crate) struct Bound<'a> {
-    adapter: &'a AdapterRef,
-    digest: Option<&'a Digest>,
-    repository: Option<&'a SourceRepository>,
+pub(crate) struct Bound {
+    adapter: AdapterRef,
+    digest: Option<Digest>,
+    repository: Option<SourceRepository>,
     rank: Option<Rank>,
     scope: Scope,
     input: SourceInput,
 }
 
-impl<'a> Bound<'a> {
-    pub(crate) fn all(sources: &'a [SourceConfig]) -> Result<Vec<Self>, Error> {
+impl Bound {
+    pub(crate) fn all(sources: &[SourceConfig]) -> Result<Vec<Self>, Error> {
         if sources.is_empty() {
             return Err(Error::BadRequest {
                 code: "specify-source-required".into(),
@@ -377,13 +377,13 @@ impl<'a> Bound<'a> {
         let mut bound = Vec::with_capacity(sources.len());
         for source in sources {
             let input = source.prepare()?;
-            if !names.insert(source.name.as_str()) {
+            if !names.insert(source.name.clone()) {
                 return Err(bad_request!("source `{}` appears twice", source.name));
             }
             bound.push(Self {
-                adapter: &source.adapter,
-                digest: source.digest.as_ref(),
-                repository: source.repository.as_ref(),
+                adapter: source.adapter.clone(),
+                digest: source.digest.clone(),
+                repository: source.repository.clone(),
                 rank: source.rank,
                 scope: source.scope,
                 input,
@@ -405,9 +405,11 @@ impl<'a> Bound<'a> {
     pub(crate) async fn extract_all<P: Source + Plugins + Vcs>(
         provider: &P, bound: &[Self],
     ) -> Result<Extracted, Error> {
-        let loaded =
-            &adapter::load(provider, bound.iter().map(|source| (source.adapter, source.digest)))
-                .await?;
+        let loaded = &adapter::load(
+            provider,
+            bound.iter().map(|source| (&source.adapter, source.digest.as_ref())),
+        )
+        .await?;
         let checkouts = Checkouts::prepare(provider, bound).await?;
         let extracted =
             future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await;
@@ -423,7 +425,7 @@ impl<'a> Bound<'a> {
         &self, provider: &S, loaded: &BTreeMap<AdapterRef, Loaded<SourceMetadata>>,
     ) -> Result<Extract, Error> {
         let source = &self.input.name;
-        let adapter = self.adapter;
+        let adapter = &self.adapter;
 
         let Loaded { id, metadata } = loaded
             .get(adapter)
@@ -467,13 +469,33 @@ pub(crate) struct Extracted {
 
 // What one source answered, under the kind, rank, and scope the run read it
 // with; `specify` reads nothing of the scope, which `amend` retires by.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Extract {
     pub(crate) source: String,
     pub(crate) kind: SourceKind,
     pub(crate) rank: Rank,
     pub(crate) scope: Scope,
     pub(crate) evidence: Evidence,
+}
+
+impl Extract {
+    #[must_use]
+    pub(crate) fn is_whole_behaviour(&self) -> bool {
+        self.scope == Scope::Whole && self.kind == SourceKind::Behaviour
+    }
+
+    #[must_use]
+    pub(crate) fn filtered(&self, mut keep: impl FnMut(&Claim) -> bool) -> Self {
+        Self {
+            source: self.source.clone(),
+            kind: self.kind,
+            rank: self.rank,
+            scope: self.scope,
+            evidence: Evidence {
+                claims: self.evidence.claims.iter().filter(|claim| keep(claim)).cloned().collect(),
+            },
+        }
+    }
 }
 
 // The working copies the repository sources are read in, one per source,
@@ -484,12 +506,12 @@ struct Checkouts {
 }
 
 impl Checkouts {
-    async fn prepare<V: Vcs>(vcs: &V, bound: &[Bound<'_>]) -> Result<Self, Error> {
+    async fn prepare<V: Vcs>(vcs: &V, bound: &[Bound]) -> Result<Self, Error> {
         let mut ensured = BTreeSet::new();
         let mut copies = Vec::new();
         let mut read = Vec::new();
         for source in bound {
-            let Some(repository) = source.repository else { continue };
+            let Some(repository) = &source.repository else { continue };
             let name = &source.input.name;
             let repo = SourceClone::new(&repository.url);
             if ensured.insert(repo.path()) {

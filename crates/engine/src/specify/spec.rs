@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::source::{CLAIM_ID_REGEX, Claim, ClaimKind};
+use emery_adapter::source::CLAIM_ID_REGEX;
 use emery_lexicon::Lexicon;
 use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
@@ -17,10 +17,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::brief::{Brief, Review};
-use crate::revision::{self, Change, ChangeClass, EMERY, Requirement, Scenario, Spec};
-use crate::specify::basis::{Basis, Contributor};
-use crate::specify::sections::{self, BasesSection, ClaimsSection};
-use crate::specify::{Extract, shape};
+use crate::revision::{Change, ChangeClass, EMERY, Requirement, Scenario, Spec};
+use crate::specify::Extract;
+use crate::specify::basis::Basis;
+use crate::specify::sections::{self, BasesSection, ClaimScope, ClaimsSection};
 
 /// How many requirements one `spec-draft` turn drafts at most.
 ///
@@ -33,14 +33,14 @@ pub const SPEC_CHUNK: usize = 25;
 //
 // The brief combines extracted claims with one chunk of their reconciled
 // requirement bases.
-pub struct SpecBrief<'a> {
-    extracts: &'a [Extract],
-    bases: Vec<&'a Basis>,
+pub struct SpecBrief {
+    extracts: Vec<Extract>,
+    bases: Vec<Basis>,
     lead: Lead,
     lexicon: Lexicon,
 }
 
-impl<'a> SpecBrief<'a> {
+impl SpecBrief {
     // Returns the briefs `bases` are drafted under, in requirement order:
     // one per chunk of at most `SPEC_CHUNK` requirements, grouped by
     // stem — a stem past the cap split, smaller ones merged up to it — the
@@ -48,7 +48,7 @@ impl<'a> SpecBrief<'a> {
     // one `Lexicon`: the fixed names, and the packages the run's `call`
     // claims spell.
     #[must_use]
-    pub fn chunked(extracts: &'a [Extract], bases: &'a [Basis]) -> Vec<Self> {
+    pub fn chunked(extracts: &[Extract], bases: &[Basis]) -> Vec<Self> {
         Self::cut(extracts, bases, false)
     }
 
@@ -60,23 +60,23 @@ impl<'a> SpecBrief<'a> {
     // since the base's stands, and each is told it amends the current
     // specification. An empty slice yields no brief and spends no turn.
     #[must_use]
-    pub fn amending(extracts: &'a [Extract], bases: &'a [Basis]) -> Vec<Self> {
+    pub fn amending(extracts: &[Extract], bases: &[Basis]) -> Vec<Self> {
         Self::cut(extracts, bases, true)
     }
 
-    fn cut(extracts: &'a [Extract], bases: &'a [Basis], amending: bool) -> Vec<Self> {
+    fn cut(extracts: &[Extract], bases: &[Basis], amending: bool) -> Vec<Self> {
         let lexicon = Lexicon::from_packages(sections::packages(extracts).into_keys());
-        let mut stems: Vec<(&str, Vec<&'a Basis>)> = Vec::new();
+        let mut stems: Vec<(String, Vec<Basis>)> = Vec::new();
         for basis in bases {
             let stem = basis.stem();
-            match stems.iter_mut().find(|(known, _)| *known == stem) {
-                Some((_, under)) => under.push(basis),
-                None => stems.push((stem, vec![basis])),
+            match stems.iter_mut().find(|(known, _)| known == stem) {
+                Some((_, under)) => under.push(basis.clone()),
+                None => stems.push((stem.to_owned(), vec![basis.clone()])),
             }
         }
 
-        let mut chunks: Vec<Vec<&'a Basis>> = Vec::new();
-        let mut current: Vec<&'a Basis> = Vec::new();
+        let mut chunks: Vec<Vec<Basis>> = Vec::new();
+        let mut current: Vec<Basis> = Vec::new();
         for (_, under) in stems {
             if under.len() > SPEC_CHUNK {
                 if !current.is_empty() {
@@ -97,15 +97,28 @@ impl<'a> SpecBrief<'a> {
         chunks
             .into_iter()
             .enumerate()
-            .map(|(index, bases)| Self {
-                extracts,
-                bases,
-                lead: match (amending, index) {
+            .map(|(index, bases)| {
+                let lead = match (amending, index) {
                     (true, _) => Lead::Amendment,
                     (false, 0) => Lead::Preamble,
                     (false, _) => Lead::Chunk,
-                },
-                lexicon: lexicon.clone(),
+                };
+                let extracts = match lead {
+                    Lead::Preamble => extracts.to_vec(),
+                    Lead::Chunk | Lead::Amendment => {
+                        let scope = ClaimScope::of(extracts, &bases);
+                        extracts
+                            .iter()
+                            .map(|extract| extract.filtered(|claim| scope.contains(claim)))
+                            .collect()
+                    }
+                };
+                Self {
+                    extracts,
+                    bases,
+                    lead,
+                    lexicon: lexicon.clone(),
+                }
             })
             .collect()
     }
@@ -165,7 +178,7 @@ impl<'a> SpecBrief<'a> {
     }
 }
 
-impl Brief for SpecBrief<'_> {
+impl Brief for SpecBrief {
     type Answer = SpecAnswer;
     type Output = (Vec<String>, Vec<Requirement>);
 
@@ -215,7 +228,7 @@ impl Brief for SpecBrief<'_> {
 
         // each draft against its requirement
         let by_subject: BTreeMap<&str, &Basis> =
-            self.bases.iter().map(|basis| (basis.subject.as_str(), *basis)).collect();
+            self.bases.iter().map(|basis| (basis.subject.as_str(), basis)).collect();
         let mut seen = BTreeSet::new();
         let mut outcomes: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
         for draft in &answer.requirements {
@@ -259,7 +272,7 @@ impl Brief for SpecBrief<'_> {
             })
             .collect();
         let mut requirements = Vec::with_capacity(self.bases.len());
-        for basis in self.bases {
+        for basis in &self.bases {
             let scenarios = drafts.remove(&basis.subject).ok_or_else(|| {
                 server_error!("requirement `{}` was accepted without a draft", basis.subject)
             })?;
@@ -270,11 +283,11 @@ impl Brief for SpecBrief<'_> {
     }
 }
 
-impl Display for SpecBrief<'_> {
+impl Display for SpecBrief {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self.lead {
             Lead::Preamble => {
-                write!(f, "Draft `spec.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
+                f.write_str("Draft `spec.md`.\n\n")?;
             }
             Lead::Chunk => {
                 f.write_str(
@@ -283,8 +296,6 @@ impl Display for SpecBrief<'_> {
                      listed are the ones under this chunk's stems and the detail anchored beside \
                      them; the source's other claims are other chunks' to draft from.\n\n",
                 )?;
-                let scope = Scope::of(self.extracts, &self.bases);
-                sections::claims(f, self.extracts, |claim| scope.keeps(claim))?;
             }
             Lead::Amendment => {
                 f.write_str(
@@ -297,14 +308,13 @@ impl Display for SpecBrief<'_> {
                      sources' other claims are other chunks' to draft from, or restate \
                      requirements that stand.\n\n",
                 )?;
-                let scope = Scope::of(self.extracts, &self.bases);
-                sections::claims(f, self.extracts, |claim| scope.keeps(claim))?;
             }
         }
 
         write!(
             f,
-            "\n## Requirements (draft one entry per subject)\n\n{bases}",
+            "{claims}\n## Requirements (draft one entry per subject)\n\n{bases}",
+            claims = ClaimsSection(&self.extracts),
             bases = BasesSection(&self.bases)
         )
     }
@@ -318,48 +328,6 @@ enum Lead {
     Preamble,
     Chunk,
     Amendment,
-}
-
-// The claims one chunk past the first is drafted from: every claim whose id
-// leads with one of the chunk's stems — its requirements, the criteria and
-// examples under them — and every unidentified claim anchored in a file one
-// of those requirement claims is anchored in, the detail beside them. The
-// first chunk carries the preamble, which describes the whole, so it lists
-// every claim instead.
-struct Scope {
-    stems: BTreeSet<String>,
-    files: BTreeSet<String>,
-}
-
-impl Scope {
-    fn of(extracts: &[Extract], bases: &[&Basis]) -> Self {
-        let stems: BTreeSet<String> = bases
-            .iter()
-            .flat_map(|basis| {
-                std::iter::once(basis.stem())
-                    .chain(basis.classes.iter().flatten().map(Contributor::stem))
-            })
-            .map(str::to_owned)
-            .collect();
-        let files = extracts
-            .iter()
-            .flat_map(|extract| &extract.evidence.claims)
-            .filter(|claim| claim.kind == ClaimKind::Requirement)
-            .filter(|claim| {
-                claim.id.as_deref().is_some_and(|id| stems.contains(revision::stem(id)))
-            })
-            .filter_map(|claim| claim.path.as_deref())
-            .map(|path| shape::file(path).to_owned())
-            .collect();
-        Self { stems, files }
-    }
-
-    fn keeps(&self, claim: &Claim) -> bool {
-        claim.id.as_deref().map_or_else(
-            || claim.path.as_deref().is_none_or(|path| self.files.contains(shape::file(path))),
-            |id| self.stems.contains(revision::stem(id)),
-        )
-    }
 }
 
 /// Model-authored content for a specification.

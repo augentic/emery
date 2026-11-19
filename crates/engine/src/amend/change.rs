@@ -20,8 +20,8 @@ use emery_adapter::source::{ClaimKind, SourceKind};
 use omnia_sdk::{Error, Model, server_error};
 
 use crate::amend::baseline::Baseline;
-use crate::revision::{self, Change, ChangeClass, Cited, ReqId, Spec, Status};
-use crate::specify::{BASELINE, Basis, Contributor, Extract, GroupingBrief, Scope};
+use crate::revision::{self, Change, ChangeClass, Cited, ReqId, Requirement, Spec};
+use crate::specify::{Basis, Contributor, Extract, GroupingBrief, Scope};
 
 pub struct ChangeSet {
     // One per requirement of the amended specification and per requirement
@@ -116,10 +116,11 @@ impl ChangeSet {
     fn from_bases(
         baseline: &Baseline, bases: Vec<Basis>,
     ) -> Result<(Self, BTreeSet<ReqId>), Error> {
-        let unmatched: Vec<&Contributor> = bases
+        let unmatched: Vec<Contributor> = bases
             .iter()
             .filter(|basis| baseline.matched(basis).is_none())
             .flat_map(Basis::withdrawals)
+            .cloned()
             .collect();
         if !unmatched.is_empty() {
             return Err(retire_unmatched(&unmatched));
@@ -130,70 +131,18 @@ impl ChangeSet {
         let mut drafted = Vec::new();
         let mut evidenced = BTreeSet::new();
         for mut basis in bases {
-            let sources: Vec<Cited> = basis
-                .contributors()
-                .filter(|member| member.source != BASELINE)
-                .map(Cited::from)
-                .collect();
+            let sources: Vec<Cited> = basis.change_contributors().map(Cited::from).collect();
             let matched = baseline.matched(&basis);
-
-            let (id, subject, class, before, after) = if let Some(requirement) = matched {
+            let change = if let Some(requirement) = matched {
                 if basis.evidenced {
                     evidenced.insert(requirement.id);
                 }
-                // the base's statement, or the competing statements of a
-                // conflict, which one claim matched to it resolves
-                let before = requirement.stated();
-                // a requirement no claim touched stands as it is, its own
-                // conflict included; a change silent on the trigger leaves
-                // the base's standing; a standing requirement in the winning
-                // agreement class under the same stem and trigger keeps its
-                // base subject and statement
-                let (class, after) = if sources.is_empty() {
-                    (ChangeClass::Unchanged, before.clone())
-                } else {
-                    let after = basis.statement();
-                    let same_trigger = baseline.same_trigger(requirement, &basis);
-                    let agrees = requirement.status != Status::Conflict
-                        && basis.agrees_with_baseline()
-                        && basis.stem() == requirement.stem();
-                    let exact = after == before && basis.subject == requirement.subject;
-                    let class = if basis.withdraws() {
-                        ChangeClass::Retired
-                    } else if after.is_none() {
-                        ChangeClass::Conflict
-                    } else if same_trigger && (agrees || exact) {
-                        ChangeClass::Unchanged
-                    } else {
-                        ChangeClass::Changed
-                    };
-                    let after =
-                        if class == ChangeClass::Unchanged { before.clone() } else { after };
-                    (class, after)
-                };
-                let subject = if matches!(class, ChangeClass::Unchanged | ChangeClass::Retired) {
-                    requirement.subject.clone()
-                } else {
-                    basis.subject.clone()
-                };
-                (requirement.id, subject, class, before, after)
+                matched_change(baseline, requirement, &basis, sources)
             } else {
                 let id = free
                     .next()
                     .ok_or_else(|| server_error!("the requirement ids are exhausted"))?;
-                let after = basis.statement();
-                let class =
-                    if after.is_some() { ChangeClass::Added } else { ChangeClass::Conflict };
-                (id, basis.subject.clone(), class, None, after)
-            };
-            let change = Change {
-                id,
-                subject,
-                class,
-                before,
-                after,
-                sources,
-                scope: None,
+                added_change(id, &basis, sources)
             };
 
             if change.class.is_drafted() {
@@ -217,6 +166,65 @@ impl ChangeSet {
     }
 }
 
+fn matched_change(
+    baseline: &Baseline, requirement: &Requirement, basis: &Basis, sources: Vec<Cited>,
+) -> Change {
+    // the base's statement, or the competing statements of a conflict, which
+    // one claim matched to it resolves
+    let before = requirement.stated();
+    // a requirement no claim touched stands as it is, its own conflict
+    // included; a change silent on the trigger leaves the base's standing; a
+    // standing requirement in the winning agreement class under the same stem
+    // and trigger keeps its base subject and statement
+    let (class, after) = if sources.is_empty() {
+        (ChangeClass::Unchanged, before.clone())
+    } else {
+        let after = basis.statement();
+        let same_trigger = baseline.same_trigger(requirement, basis);
+        let agrees = baseline.agrees(requirement, basis);
+        let exact = after == before && basis.subject == requirement.subject;
+        let class = if basis.withdraws() {
+            ChangeClass::Retired
+        } else if after.is_none() {
+            ChangeClass::Conflict
+        } else if same_trigger && (agrees || exact) {
+            ChangeClass::Unchanged
+        } else {
+            ChangeClass::Changed
+        };
+        let after = if class == ChangeClass::Unchanged { before.clone() } else { after };
+        (class, after)
+    };
+    let subject = if matches!(class, ChangeClass::Unchanged | ChangeClass::Retired) {
+        requirement.subject.clone()
+    } else {
+        basis.subject.clone()
+    };
+    Change {
+        id: requirement.id,
+        subject,
+        class,
+        before,
+        after,
+        sources,
+        scope: None,
+    }
+}
+
+fn added_change(id: ReqId, basis: &Basis, sources: Vec<Cited>) -> Change {
+    let after = basis.statement();
+    let class = if after.is_some() { ChangeClass::Added } else { ChangeClass::Conflict };
+    Change {
+        id,
+        subject: basis.subject.clone(),
+        class,
+        before: None,
+        after,
+        sources,
+        scope: None,
+    }
+}
+
 // Whether any claim of `extracts` states or withdraws a requirement, so the
 // change is matched against the standing requirements. A change of other
 // claims alone, a `decision` or a `type`, informs the design and nothing of
@@ -231,7 +239,7 @@ fn states_requirements(extracts: &[Extract]) -> bool {
 // The `retire-unmatched` refusal: `retires` withdraw behaviours no
 // requirement of the current revision states, so there is nothing for the
 // amendment to retire and a silent pass would lose the withdrawal.
-fn retire_unmatched(retires: &[&Contributor]) -> Error {
+fn retire_unmatched(retires: &[Contributor]) -> Error {
     let named = retires
         .iter()
         .map(|retire| format!("`{}` from `{}`", retire.id, retire.source))

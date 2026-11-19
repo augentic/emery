@@ -34,25 +34,26 @@ use crate::specify::{Extract, shape};
 // specification is drafted from, and the section outline derived from
 // evidence. It runs from the bases rather than the drafted specification, so
 // the design and the specification are drafted together.
-pub struct DesignBrief<'a> {
-    extracts: &'a [Extract],
-    bases: &'a [Basis],
-    outline: Outline<'a>,
+pub struct DesignBrief {
+    extracts: Vec<Extract>,
+    bases: Vec<Basis>,
+    outline: Outline,
 }
 
-impl<'a> DesignBrief<'a> {
+impl DesignBrief {
     // Returns a design brief for `extracts` and `bases`.
     #[must_use]
-    pub fn new(extracts: &'a [Extract], bases: &'a [Basis]) -> Self {
+    pub fn new(extracts: &[Extract], bases: &[Basis]) -> Self {
+        let outline = Outline::new(extracts);
         Self {
-            extracts,
-            bases,
-            outline: Outline::new(extracts),
+            extracts: extracts.to_vec(),
+            bases: bases.to_vec(),
+            outline,
         }
     }
 }
 
-impl Brief for DesignBrief<'_> {
+impl Brief for DesignBrief {
     type Answer = DesignAnswer;
     type Output = Design;
 
@@ -88,7 +89,7 @@ impl Brief for DesignBrief<'_> {
         review.paragraphs(&answer.preamble, "preamble");
 
         let mut seen = BTreeSet::new();
-        let mut references: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut references: BTreeMap<String, usize> = BTreeMap::new();
         for section in &answer.sections {
             let kind = section.kind;
             let label = format!("`## {kind}`");
@@ -129,9 +130,9 @@ impl Brief for DesignBrief<'_> {
     }
 }
 
-impl Display for DesignBrief<'_> {
+impl Display for DesignBrief {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Draft `design.md`.\n\n{claims}", claims = ClaimsSection(self.extracts))?;
+        write!(f, "Draft `design.md`.\n\n{claims}", claims = ClaimsSection(&self.extracts))?;
 
         f.write_str("\n## Sections\n\n")?;
         for &kind in SectionKind::VARIANTS {
@@ -169,7 +170,7 @@ impl Display for DesignBrief<'_> {
         write!(
             f,
             "\n## Requirements (the specification's, drafted beside this design)\n\n{bases}",
-            bases = BasesSection(self.bases)
+            bases = BasesSection(&self.bases)
         )
     }
 }
@@ -232,47 +233,51 @@ pub struct TypeRef {
 // maps each `type` claim's key, the name the model references it by, to the
 // signature the engine renders under it. A `type` claim without a string
 // `signature` has nothing to render and is not offered.
-struct Outline<'a> {
+struct Outline {
     kinds: BTreeSet<ClaimKind>,
-    sources: BTreeSet<&'a str>,
-    types: BTreeMap<String, &'a str>,
-    packages: BTreeMap<&'a str, Vec<&'a Claim>>,
+    sources: BTreeSet<String>,
+    types: BTreeMap<String, String>,
+    packages: BTreeMap<String, Vec<Claim>>,
 }
 
-impl<'a> Outline<'a> {
-    fn new(extracts: &'a [Extract]) -> Self {
+impl Outline {
+    fn new(extracts: &[Extract]) -> Self {
         let claims = || extracts.iter().flat_map(|extract| &extract.evidence.claims);
-        let mut types: BTreeMap<String, &'a str> = BTreeMap::new();
+        let mut types: BTreeMap<String, String> = BTreeMap::new();
 
         for claim in claims().filter(|claim| claim.kind == ClaimKind::Type) {
             let Some(signature) = claim.signature() else { continue };
             let Some(name) = declared(claim) else { continue };
-
             let key = type_key(&types, name, claim.path.as_deref());
-            types.insert(key, signature.trim_end());
+            types.insert(key, signature.trim_end().to_owned());
         }
 
         Self {
             kinds: claims().map(|claim| claim.kind).collect(),
-            sources: extracts.iter().map(|extract| extract.source.as_str()).collect(),
+            sources: extracts.iter().map(|extract| extract.source.clone()).collect(),
             types,
             packages: sections::packages(extracts),
         }
     }
 
-    // The outline of an amendment's design turn over the change `extracts`
-    // and the current design `base`: the change's claim kinds, so a section
-    // is informed as a specify's is; the change's sources and every source
-    // the base's text cites, so a kept citation is no finding; and the
-    // base's type blocks beneath the change's `type` claims, a key the
-    // change redeclares taking the change's signature.
-    fn amend(extracts: &'a [Extract], base: &'a Design) -> Self {
-        let mut outline = Self::new(extracts);
+    // The outline of an amendment's design turn over the scoped change
+    // `extracts`, their resolved `types`, and the current design `base`: the
+    // change's claim kinds, so a section is informed as a specify's is; the
+    // change's sources and every source the base's text cites, so a kept
+    // citation is no finding; and the base's type blocks beneath the change's
+    // `type` claims, a key the change redeclares taking the change's signature.
+    fn amend(extracts: &[Extract], types: BTreeMap<String, String>, base: &Design) -> Self {
+        let mut outline = Self {
+            types,
+            ..Self::new(extracts)
+        };
         for block in base.sections.iter().flat_map(|section| &section.blocks) {
             match block {
-                revision::Block::Text(text) => outline.sources.extend(citations(text)),
+                revision::Block::Text(text) => {
+                    outline.sources.extend(citations(text).map(str::to_owned));
+                }
                 revision::Block::Type { key, signature, .. } => {
-                    outline.types.entry(key.clone()).or_insert(signature.as_str());
+                    outline.types.entry(key.clone()).or_insert_with(|| signature.clone());
                 }
             }
         }
@@ -311,9 +316,9 @@ impl<'a> Outline<'a> {
     // paragraph's markup and citations, each type block's place under
     // `## Domain model`, counting the type keys referenced into
     // `references`.
-    fn blocks<'b>(
-        &self, review: &mut Review, kind: SectionKind, label: &str, blocks: &'b [Block],
-        references: &mut BTreeMap<&'b str, usize>,
+    fn blocks(
+        &self, review: &mut Review, kind: SectionKind, label: &str, blocks: &[Block],
+        references: &mut BTreeMap<String, usize>,
     ) {
         if blocks.is_empty() {
             review.note(format_args!("{label} has no block"));
@@ -322,7 +327,7 @@ impl<'a> Outline<'a> {
             match block {
                 Block::Text(text) => {
                     review.paragraph(text, label);
-                    for key in citations(text).filter(|key| !self.sources.contains(key)) {
+                    for key in citations(text).filter(|key| !self.sources.contains(*key)) {
                         review
                             .note(format_args!("{label} cites source `{key}`, which is not bound"));
                     }
@@ -334,7 +339,7 @@ impl<'a> Outline<'a> {
                              Domain model`"
                         ));
                     }
-                    *references.entry(key.as_str()).or_default() += 1;
+                    *references.entry(key.clone()).or_default() += 1;
                 }
             }
         }
@@ -342,7 +347,7 @@ impl<'a> Outline<'a> {
 
     // Checks that `references` names every offered type key exactly once and
     // no other.
-    fn references(&self, review: &mut Review, references: &BTreeMap<&str, usize>) {
+    fn references(&self, review: &mut Review, references: &BTreeMap<String, usize>) {
         for key in self.keys() {
             match references.get(key).copied().unwrap_or_default() {
                 1 => {}
@@ -350,7 +355,7 @@ impl<'a> Outline<'a> {
                 n => review.note(format_args!("type `{key}` is referenced {n} times")),
             }
         }
-        for key in references.keys().filter(|key| !self.types.contains_key(**key)) {
+        for key in references.keys().filter(|key| !self.types.contains_key(key.as_str())) {
             review.note(format_args!("type `{key}` is not a type claim"));
         }
     }
@@ -363,7 +368,7 @@ impl<'a> Outline<'a> {
     // `express`), is not checked: the design names the product behind it
     // and never the word. One finding per package, wherever in the design
     // the name would land.
-    fn packages<'b>(&self, review: &mut Review, texts: impl Iterator<Item = &'b str>) {
+    fn packages<'a>(&self, review: &mut Review, texts: impl Iterator<Item = &'a str>) {
         if self.packages.is_empty() {
             return;
         }
@@ -397,14 +402,10 @@ impl<'a> Outline<'a> {
             .map(|block| match block {
                 Block::Text(text) => Ok(revision::Block::Text(text)),
                 Block::Type(TypeRef { key, role }) => {
-                    let signature = self.types.get(key.as_str()).copied().ok_or_else(|| {
+                    let signature = self.types.get(key.as_str()).cloned().ok_or_else(|| {
                         server_error!("type `{key}` was accepted without a type claim")
                     })?;
-                    Ok(revision::Block::Type {
-                        key,
-                        signature: signature.to_string(),
-                        role,
-                    })
+                    Ok(revision::Block::Type { key, signature, role })
                 }
             })
             .collect()
@@ -416,7 +417,7 @@ impl<'a> Outline<'a> {
 // - where an earlier claim took that, the name with its anchored path in
 //   parentheses;
 // - where that is taken too, a counter from 2 beside the path.
-fn type_key(taken: &BTreeMap<String, &str>, name: &str, path: Option<&str>) -> String {
+fn type_key(taken: &BTreeMap<String, String>, name: &str, path: Option<&str>) -> String {
     if !taken.contains_key(name) {
         return name.to_owned();
     }
@@ -438,7 +439,7 @@ fn type_key(taken: &BTreeMap<String, &str>, name: &str, path: Option<&str>) -> S
 // distinct callee once, anchored where its first claim is, three at most and
 // the rest counted, so a finding over a package reached from many sites
 // stays one line.
-fn calls(claims: &[&Claim]) -> String {
+fn calls(claims: &[Claim]) -> String {
     const SHOWN: usize = 3;
     let mut callees: Vec<(&str, Option<&str>)> = Vec::new();
     for claim in claims {
