@@ -547,18 +547,42 @@ impl<'a> Run<'a> {
         // what built is merged in id order, whatever order the builds
         // finished in, before a failed build ends the run, so it stays for
         // the next run to resume from
+        let has_failed = outcomes.iter().any(|(_, outcome)| outcome.is_err());
+        let last_committing = (!has_failed)
+            .then(|| {
+                outcomes.iter().rev().find_map(|(slice, outcome)| {
+                    outcome.as_ref().ok().filter(|built| !built.reported_empty).map(|_| slice.id)
+                })
+            })
+            .flatten();
+        if !has_failed {
+            for (slice, outcome) in &outcomes {
+                if outcome.as_ref().is_ok_and(|built| built.reported_empty) {
+                    progress.unrecorded.insert(slice.id);
+                }
+            }
+        }
+        let mut wave_slices = WaveSlices {
+            wave,
+            merged,
+            last_committing,
+            recorded: BTreeSet::new(),
+        };
         let mut failed = None;
         for (slice, outcome) in outcomes {
             match outcome {
-                Ok(built) => match self.integrate(provider, progress, built, wave).await {
-                    Ok(()) => merged.push(slice.id),
-                    Err(error) => return Err(at_slice(error, slice, wave, &progress.built)),
-                },
+                Ok(built) => {
+                    match self.integrate(provider, progress, built, &mut wave_slices).await {
+                        Ok(()) => wave_slices.merged.push(slice.id),
+                        Err(error) => return Err(at_slice(error, slice, wave, &progress.built)),
+                    }
+                }
                 Err(error) => {
                     failed.get_or_insert((slice, error));
                 }
             }
         }
+        let mut merged = wave_slices.merged;
         if let Some((slice, error)) = failed {
             return Err(at_slice(error, slice, wave, &progress.built));
         }
@@ -670,6 +694,7 @@ impl<'a> Run<'a> {
         // the gate held every covered id to the slice, so each is one of these
         let (covered, uncovered): (Vec<ReqId>, Vec<ReqId>) =
             slice.requirements.iter().partition(|id| report.covers(&id.to_string()));
+        let reported_empty = report.written.is_empty();
         tracing::info!(
             covered = covered.len(),
             uncovered = uncovered.len(),
@@ -682,6 +707,7 @@ impl<'a> Run<'a> {
             worktree,
             covered,
             uncovered,
+            reported_empty,
         })
     }
 
@@ -690,11 +716,13 @@ impl<'a> Run<'a> {
     // with the model and merged in their place. The slice's working copy is
     // removed once merged, and left for inspection when the slice fails.
     async fn integrate<P: Model + Vcs + Files>(
-        &self, provider: &P, progress: &mut Progress, built: Built<'_>, wave: usize,
+        &self, provider: &P, progress: &mut Progress, built: Built<'_>,
+        wave_slices: &mut WaveSlices,
     ) -> Result<(), Error> {
         let scheduled = built.slice;
         let part = built.part;
         let slice = scheduled.id;
+        let wave = wave_slices.wave;
 
         // the copy still sits where it was cut
         let head = built.worktree.head(provider).await?;
@@ -713,6 +741,15 @@ impl<'a> Run<'a> {
         let mut written: Vec<String> = pending.iter().map(|change| change.path.clone()).collect();
         written.sort_unstable();
 
+        let slices: Vec<SliceId> =
+            if Some(slice) == wave_slices.last_committing && !progress.unrecorded.is_empty() {
+                let mut all = progress.unrecorded.clone();
+                all.extend(wave_slices.merged.iter().copied());
+                all.insert(slice);
+                all.into_iter().collect()
+            } else {
+                Vec::new()
+            };
         let message = Message {
             slice,
             part: part.id,
@@ -722,6 +759,7 @@ impl<'a> Run<'a> {
             requirements: scheduled.requirements.clone(),
             covered: built.covered.clone(),
             departed: scheduled.departed.clone(),
+            slices: slices.clone(),
             change: self.change.map(|change| change.built().to_owned()),
             adapter: self.reference.to_string(),
             base: progress.head.clone(),
@@ -752,6 +790,14 @@ impl<'a> Run<'a> {
             }
         };
         built.worktree.remove(provider).await?;
+        if commit.is_some() {
+            if !slices.is_empty() {
+                wave_slices.recorded.extend(slices);
+                progress.unrecorded.clear();
+            }
+        } else if !wave_slices.recorded.contains(&slice) {
+            progress.unrecorded.insert(slice);
+        }
 
         tracing::info!(
             slice = %slice,
@@ -828,11 +874,13 @@ impl<'a> Run<'a> {
         let pending = self.integration.pending(provider).await?;
         if !pending.is_empty() {
             gated(provider, self.integration.path(), "the verification", &pending).await?;
+            let mut slices: BTreeSet<SliceId> = progress.unrecorded.iter().copied().collect();
+            slices.extend(merged.iter().copied());
             let message = WaveMessage {
                 wave,
                 revision: self.revision.to_owned(),
                 adapter: self.reference.to_string(),
-                slices: merged.to_vec(),
+                slices: slices.into_iter().collect(),
             }
             .to_string();
             let Some(commit) = self.integration.commit(provider, &message).await? else {
@@ -841,6 +889,7 @@ impl<'a> Run<'a> {
                     pending.len()
                 ));
             };
+            progress.unrecorded.clear();
             let mut paths: Vec<String> = pending.into_iter().map(|change| change.path).collect();
             paths.sort_unstable();
 
@@ -954,6 +1003,9 @@ pub(crate) struct Progress {
     // merged over the head by an earlier run and never verified: each is
     // this run's in the wave it is ready in, with no build
     staged: Vec<StagedSlice>,
+    // slices merged without a commit of their own and not yet recorded on a
+    // slice or wave commit
+    unrecorded: BTreeSet<SliceId>,
     resumed: Vec<SliceId>,
     built: Vec<BuiltSlice>,
     verified: Vec<Verified>,
@@ -975,6 +1027,7 @@ impl Progress {
             labelled,
             merged,
             staged: Vec::new(),
+            unrecorded: BTreeSet::new(),
             built: Vec::new(),
             verified: Vec::new(),
             sealed: Vec::new(),
@@ -1046,6 +1099,13 @@ impl Progress {
     }
 }
 
+struct WaveSlices {
+    wave: usize,
+    merged: Vec<SliceId>,
+    last_committing: Option<SliceId>,
+    recorded: BTreeSet<SliceId>,
+}
+
 // One slice built in its working copy, not yet merged.
 pub(crate) struct Built<'a> {
     slice: &'a ScheduledSlice,
@@ -1053,6 +1113,7 @@ pub(crate) struct Built<'a> {
     worktree: WorkingCopy,
     covered: Vec<ReqId>,
     uncovered: Vec<ReqId>,
+    reported_empty: bool,
 }
 
 // A slice's failure keeps its class and code; the description gains the

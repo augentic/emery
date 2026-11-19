@@ -2010,6 +2010,7 @@ fn slice_message(
         covered: ids.clone(),
         requirements: ids,
         departed: Vec::new(),
+        slices: Vec::new(),
         change: None,
         adapter: TARGET.to_owned(),
         base: base.to_owned(),
@@ -2549,6 +2550,74 @@ async fn change_build_scope_copy_removed() {
     let listed = roots.git.run(project, &["worktree", "list", "--porcelain"]);
     assert_eq!(listed.matches("worktree ").count(), 1, "{listed}");
     assert_eq!(roots.git.run(project, &["status", "--porcelain", "--untracked-files=all"]), "");
+}
+
+// A parent revision whose Wave 1 has a commitless slice (`SLICE-001` writing
+// nothing) alongside a normal slice and a clean verify (no `Wave 1 verified`
+// commit), followed by fast-forwarding `main` (`HEAD`) to `emery/<parent>` so
+// `base == head(emery/<parent>)`, still settles a child build as a change build.
+#[tokio::test]
+async fn change_build_clean_noop_wave_and_merged_base() {
+    let (roots, backends, _, parent) = specified_serial().await;
+    let project = roots.project.path();
+
+    // `SLICE-001` (`greeting` 1/2) writes no files; `SLICE-003` (`farewell`)
+    // writes `build/farewell.md`; both waves verify cleanly with nothing sealed
+    let noop_greeting = r#"{"covered": [], "written": []}"#;
+    let parent_build = ScriptedModel::answering([
+        noop_greeting,
+        REPORT_FAREWELL_FOUR,
+        VERDICT_ANSWER,
+        REPORT_GREETING_EVENING,
+        VERDICT_ANSWER,
+    ])
+    .calling(1, [("write_files", WRITE_FAREWELL)])
+    .calling(3, [("write_files", WRITE_GREETING_EVENING)]);
+    assert_ok(&emery(roots.deployment(&["build", "--jobs", "1"]), &backends, &parent_build).await);
+    parent_build.assert_exhausted();
+
+    let parent_label = format!("emery/{parent}");
+    let parent_head = roots.git.run(project, &["rev-parse", &parent_label]);
+    let subjects = roots.git.run(project, &["log", "--first-parent", "--format=%s", &parent_label]);
+    assert!(
+        !subjects.contains("Wave 1 verified"),
+        "clean verify creates no wave commit: {subjects}"
+    );
+
+    // advance `main` (`HEAD` = `base`) onto `emery/<parent>` before amending
+    roots.git.run(project, &["merge", "--ff-only", &parent_label]);
+    assert_eq!(roots.git.head(project), parent_head);
+
+    let amend_model =
+        ScriptedModel::answering([EXTRACT_SERIAL_AMEND, GROUPING_SERIAL_AMEND, SPEC_SERIAL_AMEND]);
+    let amended = roots
+        .run(
+            &["amend", "--description", DESCRIPTION_SERIAL_AMEND, "--config", "--apply"],
+            &backends,
+            &amend_model,
+        )
+        .await;
+    assert_ok(&amended);
+    amend_model.assert_exhausted();
+
+    let child_build = ScriptedModel::answering([
+        REPORT_GREETING_MORNING,
+        VERDICT_ANSWER,
+        REPORT_GREETING_EVENING,
+        VERDICT_ANSWER,
+    ])
+    .calling(0, [("write_files", WRITE_GREETING_TOP_MORNING)])
+    .calling(2, [("write_files", WRITE_GREETING_TOP_EVENING)]);
+    let built = emery(roots.deployment(&["build", "--jobs", "1"]), &backends, &child_build).await;
+    assert_ok(&built);
+    child_build.assert_exhausted();
+    assert!(
+        built.stdout.contains(&format!(
+            "\n  change from {parent}: rebuilds PART-001 greeting (requirements); carries PART-002\n"
+        )),
+        "{}",
+        built.stdout
+    );
 }
 
 // A run whose wave the adapter does not verify leaves the slice merged in

@@ -155,6 +155,9 @@ pub struct Message {
     /// The requirements of a removed part that this retiring slice retires;
     /// empty for a slice building requirements of the current plan.
     pub departed: Vec<ReqId>,
+    /// The slices merged with this wave when at least one merged slice wrote
+    /// no commit of its own; empty when every merged slice wrote a commit.
+    pub slices: Vec<SliceId>,
     /// The built ancestor revision a change build built against; `None` for
     /// a whole build.
     pub change: Option<String>,
@@ -169,10 +172,10 @@ pub struct Message {
 impl Message {
     /// Reads a message back from a commit's text; `None` when a build did not write it.
     ///
-    /// Every required trailer must be present and well formed (`Change:` and
-    /// `Departed:` are optional, for whole builds and older history), so what
-    /// a run's own commits say is read and anything else in the history is
-    /// passed over.
+    /// Every required trailer must be present and well formed (`Change:`,
+    /// `Departed:`, and `Slices:` are optional, for whole builds, commits with
+    /// no commitless sibling, and older history), so what a run's own commits
+    /// say is read and anything else in the history is passed over.
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         let mut lines = text.lines();
@@ -196,6 +199,13 @@ impl Message {
             Some(_) => ids("Departed")?,
             None => Vec::new(),
         };
+        let slices = match trailers.get("Slices").copied() {
+            Some("") => return None,
+            Some(listed) => {
+                listed.split(", ").map(|id| id.parse().ok()).collect::<Option<Vec<_>>>()?
+            }
+            None => Vec::new(),
+        };
         let change =
             trailers.get("Change").copied().filter(|change| !change.is_empty()).map(str::to_owned);
         Some(Self {
@@ -207,6 +217,7 @@ impl Message {
             requirements: ids("Requirements")?,
             covered: ids("Covered")?,
             departed,
+            slices,
             change,
             adapter: (*trailers.get("Adapter")?).to_owned(),
             base: (*trailers.get("Base")?).to_owned(),
@@ -233,6 +244,10 @@ impl fmt::Display for Message {
         )?;
         if !self.departed.is_empty() {
             write!(f, "\nDeparted: {}", list(&self.departed))?;
+        }
+        if !self.slices.is_empty() {
+            let slices: Vec<String> = self.slices.iter().map(ToString::to_string).collect();
+            write!(f, "\nSlices: {}", slices.join(", "))?;
         }
         if let Some(change) = &self.change {
             write!(f, "\nChange: {change}")?;
@@ -823,11 +838,12 @@ impl BuildRepo {
     /// branch of that spelling, and only where it descends from `base`. The
     /// requirements, departed ids, and verified slices are read from the
     /// [`Message`]s and [`WaveMessage`]s a build sealed along the label's
-    /// first-parent chain; a commit a build did not write, or one of another
-    /// revision, is passed over, so a label that descends from `base` is
-    /// resumed from wherever it stands, with nothing beneath it when the
-    /// chain names none. `None` means the repository has no such label, or
-    /// the label does not descend from `base`, so a build starts from `base`.
+    /// first-parent chain (back to the revision's seal when `label` stands at
+    /// `base`); a commit a build did not write, or one of another revision, is
+    /// passed over, so a label that descends from `base` is resumed from
+    /// wherever it stands, with nothing beneath it when the chain names none.
+    /// `None` means the repository has no such label, or the label does not
+    /// descend from `base`, so a build starts from `base`.
     ///
     /// # Errors
     ///
@@ -850,31 +866,12 @@ impl BuildRepo {
             );
             return Ok(None);
         }
-        let entries =
-            vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?;
-        let mut merged = MergedIds::default();
-        for entry in entries.iter().rev() {
-            if let Some(message) =
-                Message::parse(&entry.message).filter(|message| message.revision == revision)
-            {
-                merged.requirements.extend(message.requirements.iter().copied());
-                merged.departed.extend(message.departed.iter().copied());
-                merged.history.push(HistoryEntry::Slice {
-                    slice: message.slice,
-                    wave: message.wave,
-                    budget: NonZeroUsize::new(message.budget),
-                    requirements: message.requirements,
-                });
-            } else if let Some(wave) =
-                WaveMessage::parse(&entry.message).filter(|wave| wave.revision == revision)
-            {
-                merged.slices.extend(wave.slices.iter().copied());
-                merged.history.push(HistoryEntry::Wave {
-                    wave: wave.wave,
-                    slices: wave.slices,
-                });
-            }
-        }
+        let entries = if head == base {
+            self.revision_log(vcs, &head).await?
+        } else {
+            vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?
+        };
+        let merged = parse_merged(&entries, revision);
         if merged.is_empty() {
             tracing::info!(
                 label,
@@ -883,6 +880,97 @@ impl BuildRepo {
             );
         }
         Ok(Some(Labelled { head, merged }))
+    }
+
+    // What an ancestor revision's `label` holds when `head` and `base` share
+    // lineage, reading back to `Revision <revision>` when `base` already
+    // stands at or ahead of `head`.
+    pub(crate) async fn ancestor_merged<V: Vcs>(
+        &self, vcs: &V, label: &str, base: &str, revision: &str,
+    ) -> Result<Option<Labelled>, Error> {
+        let repo = self.path();
+        let Some(head) = self.labelled(vcs, label).await? else {
+            return Ok(None);
+        };
+        let entries = if head == base {
+            self.descends(vcs, base, &head).await?;
+            self.revision_log(vcs, &head).await?
+        } else if self.descends(vcs, base, &head).await? {
+            vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?
+        } else if self.descends(vcs, &head, base).await? {
+            self.revision_log(vcs, &head).await?
+        } else {
+            tracing::warn!(
+                label,
+                base,
+                head,
+                "the ancestor label and the base do not share lineage; ignoring the label"
+            );
+            return Ok(None);
+        };
+        let merged = parse_merged(&entries, revision);
+        if merged.is_empty() {
+            tracing::info!(
+                label,
+                head,
+                "the label holds no slice of this revision; every slice builds from it"
+            );
+        }
+        Ok(Some(Labelled { head, merged }))
+    }
+
+    // Walks `head`'s first-parent chain back to a `Revision` commit or the
+    // repository root when `base` already incorporates `head`.
+    async fn revision_log<V: Vcs>(&self, vcs: &V, head: &str) -> Result<Vec<vcs::Entry>, Error> {
+        const WINDOW: usize = 32;
+
+        let repo = self.path();
+        let mut entries = Vec::new();
+        let mut cursor = head.to_owned();
+        loop {
+            let older = match vcs.resolve(&repo, &format!("{cursor}~{WINDOW}")).await {
+                Ok(older) => older,
+                Err(vcs::Error::NotFound(_)) => {
+                    let root = self.first_parent_root(vcs, &cursor).await?;
+                    if root != cursor {
+                        let tail = vcs
+                            .log(&repo, &cursor, &root)
+                            .await
+                            .map_err(|error| self.subject().refusal(error))?;
+                        take_revision_entries(&mut entries, tail);
+                    }
+                    break;
+                }
+                Err(error) => return Err(self.subject().refusal(error)),
+            };
+            let chunk = vcs
+                .log(&repo, &cursor, &older)
+                .await
+                .map_err(|error| self.subject().refusal(error))?;
+            let count = chunk.len();
+            if take_revision_entries(&mut entries, chunk) || count < WINDOW {
+                break;
+            }
+            cursor = older;
+        }
+        Ok(entries)
+    }
+
+    // Finds the first-parent root within 31 hops below `from` once `from~32`
+    // ran past the start of the repository.
+    async fn first_parent_root<V: Vcs>(&self, vcs: &V, from: &str) -> Result<String, Error> {
+        let repo = self.path();
+        let mut probe = from.to_owned();
+        let mut step = 16usize;
+        while step > 0 {
+            match vcs.resolve(&repo, &format!("{probe}~{step}")).await {
+                Ok(older) => probe = older,
+                Err(vcs::Error::NotFound(_)) => {}
+                Err(error) => return Err(self.subject().refusal(error)),
+            }
+            step /= 2;
+        }
+        Ok(probe)
     }
 
     /// Cuts the integration working copy for a build of `revision` over `head`, resuming what an earlier run staged in it.
@@ -1078,6 +1166,53 @@ async fn project_clean<V: Vcs>(vcs: &V) -> Result<(), Error> {
     Ok(())
 }
 
+// Appends newest-first `chunk` entries onto `entries` until a `Revision`
+// commit is reached, returning `true` when one stopped the walk.
+fn take_revision_entries(entries: &mut Vec<vcs::Entry>, chunk: Vec<vcs::Entry>) -> bool {
+    for entry in chunk {
+        if RevisionMessage::parse(&entry.message).is_some() {
+            return true;
+        }
+        entries.push(entry);
+    }
+    false
+}
+
+fn parse_merged(entries: &[vcs::Entry], revision: &str) -> MergedIds {
+    let mut merged = MergedIds::default();
+    for entry in entries.iter().rev() {
+        if let Some(message) =
+            Message::parse(&entry.message).filter(|message| message.revision == revision)
+        {
+            let wave_slices = message.slices;
+            merged.requirements.extend(message.requirements.iter().copied());
+            merged.departed.extend(message.departed.iter().copied());
+            merged.history.push(HistoryEntry::Slice {
+                slice: message.slice,
+                wave: message.wave,
+                budget: NonZeroUsize::new(message.budget),
+                requirements: message.requirements,
+            });
+            if !wave_slices.is_empty() {
+                merged.slices.extend(wave_slices.iter().copied());
+                merged.history.push(HistoryEntry::Wave {
+                    wave: message.wave,
+                    slices: wave_slices,
+                });
+            }
+        } else if let Some(wave) =
+            WaveMessage::parse(&entry.message).filter(|wave| wave.revision == revision)
+        {
+            merged.slices.extend(wave.slices.iter().copied());
+            merged.history.push(HistoryEntry::Wave {
+                wave: wave.wave,
+                slices: wave.slices,
+            });
+        }
+    }
+    merged
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum HistoryEntry {
     Slice { slice: SliceId, wave: usize, budget: Option<NonZeroUsize>, requirements: Vec<ReqId> },
@@ -1098,8 +1233,8 @@ pub struct MergedIds {
     /// The departed requirement identifiers from `Departed:` trailers (plus
     /// verified retiring slices' departed ids once the schedule is cut).
     pub departed: BTreeSet<ReqId>,
-    /// The slice identifiers from `Slices:` trailers on [`WaveMessage`]
-    /// commits.
+    /// The slice identifiers from `Slices:` trailers on [`Message`] and
+    /// [`WaveMessage`] commits.
     pub slices: BTreeSet<SliceId>,
     // Slice ids verified at the current schedule's budget, populated when
     // `Schedule::new` settles `history`.

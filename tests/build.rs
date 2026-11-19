@@ -4991,3 +4991,157 @@ async fn build_resumed_noop_slice() {
     assert_eq!(envelope["slices"][0]["id"], "SLICE-002", "{envelope}");
     provider.vcs.assert_exhausted();
 }
+
+// When a wave passes `verify` with nothing pending (`sealed` empty) and
+// includes a commitless slice (`commit: null`), the committing sibling's
+// `Message` carries `Slices:` so both same-revision resume and a child change
+// build see every slice of the wave as verified.
+#[tokio::test]
+async fn build_change_after_clean_noop_wave() {
+    let (mut parent_provider, parent) = wide();
+    parent_provider.target.reports.insert("SLICE-001".to_owned(), Ok(report(&[], &[])));
+    parent_provider.vcs.commits.script(&worktree("SLICE-001"), Ok(None));
+    wrote(&parent_provider, WIDE_ORDERS);
+    wrote(&parent_provider, WIDE_SESSIONS);
+
+    let parent_resp = cli_ok(
+        &parent_provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let parent_env: Value = serde_json::from_slice(&parent_resp.stdout).expect("parent envelope");
+    assert_eq!(parent_env["slices"][0]["commit"], Value::Null, "{parent_env}");
+    assert!(parent_env.get("sealed").is_none(), "clean verify seals no wave commit: {parent_env}");
+    assert!(parent_env.get("repaired").is_none(), "{parent_env}");
+    let merged_msgs: Vec<String> =
+        parent_provider.vcs.merged().into_iter().map(|(msg, _)| msg).collect();
+    assert_eq!(merged_msgs.len(), 2, "only SLICE-003 and SLICE-002 merged commits");
+    assert!(
+        merged_msgs[0].contains("\nSlices: SLICE-001, SLICE-003\n"),
+        "commitless SLICE-001 is recorded on Wave 1's slice commit:\n{}",
+        merged_msgs[0]
+    );
+    assert!(
+        !merged_msgs[1].contains("\nSlices:"),
+        "Wave 2 had no commitless slice:\n{}",
+        merged_msgs[1]
+    );
+    parent_provider.vcs.assert_exhausted();
+
+    // resuming after Wave 1's clean verify skips both SLICE-001 and SLICE-003
+    let (resume_provider, _) = wide();
+    resume_provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    resume_provider.vcs.logs.script(".", Ok(vec![entry("m:SLICE-003", &merged_msgs[0])]));
+    wrote(&resume_provider, WIDE_SESSIONS);
+    let resume_resp = cli_ok(
+        &resume_provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let resume_env: Value = serde_json::from_slice(&resume_resp.stdout).expect("resume envelope");
+    assert_eq!(resume_env["resumed"], json!(["SLICE-001", "SLICE-003"]), "{resume_env}");
+    assert_eq!(
+        dispatched(&resume_provider),
+        [("SLICE-002".to_owned(), LABELLED.to_owned(), worktree("SLICE-002"))]
+    );
+    resume_provider.vcs.assert_exhausted();
+
+    // child revision settles as a change build at default and smaller `--budget`
+    let parent_log =
+        vec![entry("m:SLICE-002", &merged_msgs[1]), entry("m:SLICE-003", &merged_msgs[0])];
+    let (spec, design, plan) = amended_documents(
+        &parent,
+        WIDE_PLAN,
+        Some("A signed-in user places an order with a discount."),
+    );
+    for (budget_args, expected_slices) in [(&[][..], 1usize), (&["--budget", "1"][..], 2usize)] {
+        let provider = Provider::idle();
+        seed_at(&provider.files, LABELLED, SPEC, DESIGN, WIDE_PLAN);
+        let child = seed(&provider.files, &spec, &design, &plan);
+        provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+        provider.vcs.logs.script(".", Ok(parent_log.clone()));
+        wrote(&provider, WIDE_ORDERS);
+        if expected_slices == 2 {
+            wrote(&provider, ("SLICE-004", "orders"));
+        }
+
+        let mut argv = vec!["emery", "--format", "json", "build", "--config", PROJECT_CONFIG];
+        argv.extend_from_slice(budget_args);
+        let resp = cli_ok(&provider, &argv).await;
+        let envelope: Value = serde_json::from_slice(&resp.stdout).expect("child envelope");
+        assert_eq!(envelope["revision"], child, "{envelope}");
+        assert!(envelope.get("whole").is_none(), "{envelope}");
+        assert_eq!(envelope["change"]["from"], parent, "{envelope}");
+        assert_eq!(envelope["change"]["carried"], json!(["PART-001", "PART-002"]), "{envelope}");
+        assert_eq!(envelope["slices"].as_array().map(Vec::len), Some(expected_slices));
+        provider.vcs.assert_exhausted();
+    }
+}
+
+// When `base` (`HEAD`) already stands at or ahead of `emery/<parent>`'s built
+// commit, `Basis::settle` walks `emery/<parent>` back to `Revision <parent>`
+// rather than reading an empty `base..head` range, settling a change build.
+#[tokio::test]
+async fn build_change_at_ancestor_head() {
+    let provider = Provider::idle();
+    let parent = seed_at(&provider.files, LABELLED, SPEC, DESIGN, WIDE_PLAN);
+    let (spec, design, plan) = amended_documents(
+        &parent,
+        WIDE_PLAN,
+        Some("A signed-in user places an order with a discount."),
+    );
+    let child = seed(&provider.files, &spec, &design, &plan);
+    let parent_log = vec![
+        entry("m:SLICE-002", &message(&parent, WIDE_SESSIONS, "REQ-002", "REQ-002", HEAD, 2)),
+        entry(
+            "m:SLICE-003",
+            &message(&parent, WIDE_ORDERS, "REQ-003, REQ-004", "REQ-003, REQ-004", HEAD, 1),
+        ),
+        entry("m:SLICE-001", &message(&parent, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+        entry("rev-parent", &format!("Revision {parent}\n\nRevision: {parent}")),
+    ];
+
+    // `base == head` (`HEAD` fast-forwarded or reset to `emery/<parent>`, child sealed on `emery/<child>`)
+    provider.storage.insert_state(REVISION_KEY, child.as_bytes());
+    provider.vcs.heads.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.labelleds.script(".", Ok(HEAD.to_owned()));
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(".", Ok(parent_log.clone()));
+    provider.vcs.labelleds.script(".", Ok(HEAD.to_owned()));
+    wrote(&provider, WIDE_ORDERS);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["revision"], child, "{envelope}");
+    assert_eq!(envelope["base"], LABELLED, "{envelope}");
+    assert!(envelope.get("whole").is_none(), "{envelope}");
+    assert_eq!(envelope["change"]["from"], parent, "{envelope}");
+    assert_eq!(envelope["change"]["commit"], LABELLED, "{envelope}");
+    assert_eq!(envelope["change"]["carried"], json!(["PART-001", "PART-002"]), "{envelope}");
+    assert_eq!(
+        dispatched(&provider),
+        [("SLICE-003".to_owned(), HEAD.to_owned(), worktree("SLICE-003"))]
+    );
+    provider.vcs.assert_exhausted();
+
+    // `base` ahead of `emery/<parent>` (`descends(base, head) == false`, `descends(head, base) == true`)
+    let provider = Provider::idle();
+    seed_at(&provider.files, LABELLED, SPEC, DESIGN, WIDE_PLAN);
+    seed(&provider.files, &spec, &design, &plan);
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.descends.script(".", Ok(false));
+    provider.vcs.descends.script(".", Ok(true));
+    provider.vcs.logs.script(".", Ok(parent_log));
+    wrote(&provider, WIDE_ORDERS);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert!(envelope.get("whole").is_none(), "{envelope}");
+    assert_eq!(envelope["change"]["from"], parent, "{envelope}");
+    assert_eq!(envelope["change"]["carried"], json!(["PART-001", "PART-002"]), "{envelope}");
+    provider.vcs.assert_exhausted();
+}

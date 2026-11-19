@@ -166,7 +166,7 @@ impl<P: Target + Vcs + Files> Settler<'_, P> {
             }
             let label = store::label(&id);
             let Some(Labelled { head: commit, merged }) =
-                self.repo.merged_under(self.provider, &label, self.base, &id).await?
+                self.repo.ancestor_merged(self.provider, &label, self.base, &id).await?
             else {
                 return Ok(None);
             };
