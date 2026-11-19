@@ -17,34 +17,33 @@ use serde_json::{Value, json};
 
 use super::{Built, Progress, Run, gated, kind_at};
 use crate::brief::{Brief, Review};
-use crate::revision::Part;
+use crate::revision::{Part, SliceId};
 use crate::vcs::WorkingCopy;
 use crate::{EntryKind, Files, is_retryable};
 
 // A slice's merge under the adapter's rules, left at the paths no rule
 // resolved: what this slice and one merged before it in the wave both
 // rewrote.
-pub struct UnresolvedMerge<'a> {
-    pub built: &'a Built<'a>,
+pub struct UnresolvedMerge {
     // what the slice's build changed, as its working copy holds it
-    pub pending: &'a [Change],
+    pub pending: Vec<Change>,
     // the slice's sealed commit, and the message it and its merge carry
     pub commit: String,
-    pub message: &'a str,
+    pub message: String,
     pub paths: Vec<String>,
 }
 
-impl UnresolvedMerge<'_> {
+impl UnresolvedMerge {
     // Resolves every path with the model, seals the resolutions in the
     // slice's working copy over its commit, and merges the slice again with
     // each resolution taken whole: the merge commit, and the paths resolved.
     pub async fn resolve<P: Model + Vcs + Files>(
-        self, run: &Run<'_>, provider: &P, progress: &Progress,
+        self, run: &Run, provider: &P, progress: &Progress, built: &Built,
     ) -> Result<(String, Vec<String>), Error> {
-        let scheduled = self.built.slice;
-        let part = self.built.part;
+        let scheduled = &built.slice;
+        let part = &built.part;
         let id = scheduled.id;
-        let worktree = &self.built.worktree;
+        let worktree = &built.worktree;
         tracing::info!(
             slice = %id,
             conflicts = self.paths.join(", "),
@@ -54,7 +53,7 @@ impl UnresolvedMerge<'_> {
         // each path a text file on both sides, read before any turn is spent
         let mut conflicts = Vec::with_capacity(self.paths.len());
         for path in &self.paths {
-            let integrated = self.side(provider, run.integration, path, Side::Integrated).await?;
+            let integrated = self.side(provider, &run.integration, path, Side::Integrated).await?;
             let slice = self.side(provider, worktree, path, Side::Slice).await?;
             conflicts.push(Conflict {
                 path: path.clone(),
@@ -70,7 +69,7 @@ impl UnresolvedMerge<'_> {
         // wave counter, which restarts on a resume
         let waves = run.schedule.plan().waves();
         let wave_parts = waves.iter().find(|wave| wave.contains(&part.id)).unwrap_or(&[]);
-        let merged: Vec<&Part> = wave_parts
+        let merged: Vec<Part> = wave_parts
             .iter()
             .filter(|&&other| other != part.id)
             .filter_map(|other| {
@@ -86,12 +85,12 @@ impl UnresolvedMerge<'_> {
                     progress.built.iter().find(|built| built.part == *other).is_none_or(|built| {
                         built.written.iter().any(|path| self.paths.contains(path))
                     });
-                touches.then_some(plan_part)
+                touches.then(|| plan_part.clone())
             })
             .collect();
         let brief = MergeBrief {
             slice: id,
-            part,
+            part: part.clone(),
             merged,
             conflicts,
         };
@@ -130,7 +129,7 @@ impl UnresolvedMerge<'_> {
             })
             .chain(run.policy.iter().cloned())
             .collect();
-        let merged = run.integration.merge(provider, &commit, self.message, &policy).await?;
+        let merged = run.integration.merge(provider, &commit, &self.message, &policy).await?;
         match merged.commit {
             Some(commit) => Ok((commit, resolved)),
             None => Err(server_error!(
@@ -218,18 +217,18 @@ impl Display for Side {
 const MARKERS: [&str; 2] = ["<<<<<<< ", ">>>>>>> "];
 
 // The brief that resolves the paths a slice's merge left conflicted.
-pub struct MergeBrief<'a> {
+pub struct MergeBrief {
     // The slice being merged.
-    pub slice: crate::revision::SliceId,
+    pub slice: SliceId,
     // The plan entry of the slice being merged.
-    pub part: &'a Part,
+    pub part: Part,
     // The plan entries of the slices merged before it in the wave that wrote a conflicted path.
-    pub merged: Vec<&'a Part>,
+    pub merged: Vec<Part>,
     // Each conflicted path with both of its sides.
     pub conflicts: Vec<Conflict>,
 }
 
-impl Brief for MergeBrief<'_> {
+impl Brief for MergeBrief {
     type Answer = MergeAnswer;
     type Output = Vec<Resolution>;
 
@@ -281,7 +280,7 @@ impl Brief for MergeBrief<'_> {
     }
 }
 
-impl Display for MergeBrief<'_> {
+impl Display for MergeBrief {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         writeln!(f, "# Slice being merged\n\n{}\n", self.part)?;
 

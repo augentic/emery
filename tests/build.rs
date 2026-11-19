@@ -5004,42 +5004,59 @@ async fn build_change_after_clean_noop_wave() {
     wrote(&parent_provider, WIDE_ORDERS);
     wrote(&parent_provider, WIDE_SESSIONS);
 
-    let parent_resp = cli_ok(
+    let resp = cli_ok(
         &parent_provider,
         &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG],
     )
     .await;
-    let parent_env: Value = serde_json::from_slice(&parent_resp.stdout).expect("parent envelope");
-    assert_eq!(parent_env["slices"][0]["commit"], Value::Null, "{parent_env}");
-    assert!(parent_env.get("sealed").is_none(), "clean verify seals no wave commit: {parent_env}");
-    assert!(parent_env.get("repaired").is_none(), "{parent_env}");
-    let merged_msgs: Vec<String> =
-        parent_provider.vcs.merged().into_iter().map(|(msg, _)| msg).collect();
-    assert_eq!(merged_msgs.len(), 2, "only SLICE-003 and SLICE-002 merged commits");
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("parent envelope");
+    assert_eq!(envelope["slices"][0]["commit"], Value::Null, "{envelope}");
+    assert!(envelope.get("sealed").is_none(), "clean verify seals no wave commit: {envelope}");
+    assert!(envelope.get("repaired").is_none(), "{envelope}");
+    let merged_messages: Vec<String> =
+        parent_provider.vcs.merged().into_iter().map(|(message, _)| message).collect();
+    assert_eq!(merged_messages.len(), 2, "only SLICE-003 and SLICE-002 merged commits");
     assert!(
-        merged_msgs[0].contains("\nSlices: SLICE-001, SLICE-003\n"),
+        merged_messages[0].contains("\nSlices: SLICE-001, SLICE-003\n"),
         "commitless SLICE-001 is recorded on Wave 1's slice commit:\n{}",
-        merged_msgs[0]
+        merged_messages[0]
     );
     assert!(
-        !merged_msgs[1].contains("\nSlices:"),
+        !merged_messages[1].contains("\nSlices:"),
         "Wave 2 had no commitless slice:\n{}",
-        merged_msgs[1]
+        merged_messages[1]
     );
     parent_provider.vcs.assert_exhausted();
+
+    // the symmetric ordering (earlier slice commits, later slice in the wave is commitless)
+    let (mut trailing_provider, _) = wide();
+    wrote(&trailing_provider, AUTHENTICATION);
+    trailing_provider.target.reports.insert("SLICE-003".to_owned(), Ok(report(&[], &[])));
+    trailing_provider.vcs.commits.script(&worktree("SLICE-003"), Ok(None));
+    wrote(&trailing_provider, WIDE_SESSIONS);
+    cli_ok(&trailing_provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+        .await;
+    let trailing_messages: Vec<String> =
+        trailing_provider.vcs.merged().into_iter().map(|(message, _)| message).collect();
+    assert!(
+        trailing_messages[0].contains("\nSlices: SLICE-001, SLICE-003\n"),
+        "commitless SLICE-003 is recorded on earlier SLICE-001's commit:\n{}",
+        trailing_messages[0]
+    );
+    trailing_provider.vcs.assert_exhausted();
 
     // resuming after Wave 1's clean verify skips both SLICE-001 and SLICE-003
     let (resume_provider, _) = wide();
     resume_provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
-    resume_provider.vcs.logs.script(".", Ok(vec![entry("m:SLICE-003", &merged_msgs[0])]));
+    resume_provider.vcs.logs.script(".", Ok(vec![entry("m:SLICE-003", &merged_messages[0])]));
     wrote(&resume_provider, WIDE_SESSIONS);
-    let resume_resp = cli_ok(
+    let resp = cli_ok(
         &resume_provider,
         &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG],
     )
     .await;
-    let resume_env: Value = serde_json::from_slice(&resume_resp.stdout).expect("resume envelope");
-    assert_eq!(resume_env["resumed"], json!(["SLICE-001", "SLICE-003"]), "{resume_env}");
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("resume envelope");
+    assert_eq!(envelope["resumed"], json!(["SLICE-001", "SLICE-003"]), "{envelope}");
     assert_eq!(
         dispatched(&resume_provider),
         [("SLICE-002".to_owned(), LABELLED.to_owned(), worktree("SLICE-002"))]
@@ -5048,13 +5065,13 @@ async fn build_change_after_clean_noop_wave() {
 
     // child revision settles as a change build at default and smaller `--budget`
     let parent_log =
-        vec![entry("m:SLICE-002", &merged_msgs[1]), entry("m:SLICE-003", &merged_msgs[0])];
+        vec![entry("m:SLICE-002", &merged_messages[1]), entry("m:SLICE-003", &merged_messages[0])];
     let (spec, design, plan) = amended_documents(
         &parent,
         WIDE_PLAN,
         Some("A signed-in user places an order with a discount."),
     );
-    for (budget_args, expected_slices) in [(&[][..], 1usize), (&["--budget", "1"][..], 2usize)] {
+    for (budget, expected_slices) in [(None, 1), (Some(1), 2)] {
         let provider = Provider::idle();
         seed_at(&provider.files, LABELLED, SPEC, DESIGN, WIDE_PLAN);
         let child = seed(&provider.files, &spec, &design, &plan);
@@ -5065,8 +5082,11 @@ async fn build_change_after_clean_noop_wave() {
             wrote(&provider, ("SLICE-004", "orders"));
         }
 
+        let flag = budget.map(|value: usize| value.to_string());
         let mut argv = vec!["emery", "--format", "json", "build", "--config", PROJECT_CONFIG];
-        argv.extend_from_slice(budget_args);
+        if let Some(budget) = flag.as_deref() {
+            argv.extend(["--budget", budget]);
+        }
         let resp = cli_ok(&provider, &argv).await;
         let envelope: Value = serde_json::from_slice(&resp.stdout).expect("child envelope");
         assert_eq!(envelope["revision"], child, "{envelope}");

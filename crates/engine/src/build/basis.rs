@@ -40,17 +40,16 @@ impl Basis {
         }
 
         let settler = Settler {
-            provider,
-            repo,
-            adapter,
-            base,
+            repo: repo.clone(),
+            adapter: adapter.map(str::to_owned),
+            base: base.to_owned(),
             budget,
         };
-        let Some(ancestor) = settler.find_ancestor(current).await? else {
+        let Some(ancestor) = settler.find_ancestor(provider, current).await? else {
             return Ok(Self::Whole(WholeReason::ParentUnbuilt));
         };
         let change = ChangeSet::between(ancestor.id, ancestor.commit, &ancestor.revision, current);
-        let scope = settler.scope(&change).await?;
+        let scope = settler.scope(provider, &change).await?;
         Ok(Self::Change {
             change: Box::new(change),
             scope,
@@ -58,9 +57,9 @@ impl Basis {
     }
 
     #[must_use]
-    pub const fn change_set(&self) -> Option<&ChangeSet> {
+    pub fn into_change_set(self) -> Option<ChangeSet> {
         match self {
-            Self::Change { change, .. } => Some(change),
+            Self::Change { change, .. } => Some(*change),
             Self::Whole(_) => None,
         }
     }
@@ -90,11 +89,10 @@ impl Basis {
     }
 }
 
-struct Settler<'a, P> {
-    provider: &'a P,
-    repo: &'a BuildRepo,
-    adapter: Option<&'a str>,
-    base: &'a str,
+struct Settler {
+    repo: BuildRepo,
+    adapter: Option<String>,
+    base: String,
     budget: NonZeroUsize,
 }
 
@@ -113,24 +111,27 @@ impl Ancestor {
     }
 }
 
-impl<P: Target + Vcs + Files> Settler<'_, P> {
+impl Settler {
     // Finds the nearest ancestor of `start` that holds slice commits on its
     // label and verifies that its build is complete.
-    async fn find_ancestor(&self, start: &Revision) -> Result<Option<Ancestor>, Error> {
+    async fn find_ancestor<P: Target + Vcs + Files>(
+        &self, provider: &P, start: &Revision,
+    ) -> Result<Option<Ancestor>, Error> {
         let empty = BTreeSet::new();
         let mut visited = BTreeSet::new();
         let mut chain: Vec<Ancestor> = Vec::new();
-        let mut parent = start.spec.parent.as_deref();
+        let mut parent = start.spec.parent.clone();
         loop {
-            let Some(ancestor) = self.next_built(parent, &mut visited).await? else {
+            let Some(ancestor) = self.next_built(provider, parent.take(), &mut visited).await?
+            else {
                 return Ok(None);
             };
             let complete = ancestor.is_complete(self.budget, &empty, &[]);
+            parent.clone_from(&ancestor.revision.spec.parent);
             chain.push(ancestor);
             if complete {
                 break;
             }
-            parent = chain.last().and_then(|last| last.revision.spec.parent.as_deref());
         }
 
         // a change-built ancestor's label holds only the slices it rebuilt;
@@ -144,7 +145,7 @@ impl<P: Target + Vcs + Files> Settler<'_, P> {
                 &earlier.revision,
                 &current.revision,
             );
-            let scope = self.scope(&change).await?;
+            let scope = self.scope(provider, &change).await?;
             let carried = change.carried(&scope);
             if !current.is_complete(self.budget, &carried, change.removed_parts()) {
                 return Ok(None);
@@ -154,24 +155,22 @@ impl<P: Target + Vcs + Files> Settler<'_, P> {
         Ok(chain.into_iter().next())
     }
 
-    // Steps along `parent` past any revision that was sealed and never built
+    // Steps along `next` past any revision that was sealed and never built
     // (`merged` empty) to the nearest ancestor whose label holds slice commits.
-    async fn next_built(
-        &self, parent: Option<&str>, visited: &mut BTreeSet<String>,
+    async fn next_built<P: Vcs + Files>(
+        &self, provider: &P, mut next: Option<String>, visited: &mut BTreeSet<String>,
     ) -> Result<Option<Ancestor>, Error> {
-        let mut next = parent.map(str::to_owned);
         while let Some(id) = next.take() {
             if !visited.insert(id.clone()) {
                 return Ok(None);
             }
             let label = store::label(&id);
             let Some(Labelled { head: commit, merged }) =
-                self.repo.ancestor_merged(self.provider, &label, self.base, &id).await?
+                self.repo.merged_on_lineage(provider, &label, &self.base, &id).await?
             else {
                 return Ok(None);
             };
-            let Some(current) =
-                Current::read_at(self.provider, self.repo, &commit, Some(&id)).await?
+            let Some(current) = Current::read_at(provider, &self.repo, &commit, Some(&id)).await?
             else {
                 return Ok(None);
             };
@@ -192,22 +191,23 @@ impl<P: Target + Vcs + Files> Settler<'_, P> {
 
     // Puts `Task::Scope` in a read-only working copy cut at the built commit
     // and unions the adapter's answer with the engine's minimum scope.
-    async fn scope(&self, change: &ChangeSet) -> Result<BTreeSet<PartId>, Error> {
+    async fn scope<P: Target + Vcs>(
+        &self, provider: &P, change: &ChangeSet,
+    ) -> Result<BTreeSet<PartId>, Error> {
         let mut scoped = change.minimum();
-        let Some(adapter) = self.adapter else {
+        let Some(adapter) = self.adapter.as_deref() else {
             return Ok(scoped);
         };
 
-        let copy =
-            WorkingCopy::cut(self.provider, &self.repo.path(), SCOPE, change.commit()).await?;
+        let copy = WorkingCopy::cut(provider, &self.repo.path(), SCOPE, change.commit()).await?;
         let task = Task::Scope(change.as_wit());
         let ran = async {
-            let outcome = Target::run(self.provider, adapter, copy.path(), &task).await?;
-            let pending = copy.pending(self.provider).await?;
+            let outcome = Target::run(provider, adapter, copy.path(), &task).await?;
+            let pending = copy.pending(provider).await?;
             Ok::<_, Error>((outcome, pending))
         }
         .await;
-        copy.remove(self.provider).await?;
+        copy.remove(provider).await?;
         let (outcome, pending) = ran?;
 
         let (input, parts) = match (&task, outcome) {

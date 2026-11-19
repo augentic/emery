@@ -2563,9 +2563,8 @@ async fn change_build_clean_noop_wave_and_merged_base() {
 
     // `SLICE-001` (`greeting` 1/2) writes no files; `SLICE-003` (`farewell`)
     // writes `build/farewell.md`; both waves verify cleanly with nothing sealed
-    let noop_greeting = r#"{"covered": [], "written": []}"#;
     let parent_build = ScriptedModel::answering([
-        noop_greeting,
+        REPORT_BARE,
         REPORT_FAREWELL_FOUR,
         VERDICT_ANSWER,
         REPORT_GREETING_EVENING,
@@ -2582,6 +2581,13 @@ async fn change_build_clean_noop_wave_and_merged_base() {
     assert!(
         !subjects.contains("Wave 1 verified"),
         "clean verify creates no wave commit: {subjects}"
+    );
+    let wave1_message =
+        Message::parse(&roots.git.message(project, &format!("{parent_label}~1"))).expect("message");
+    assert_eq!(
+        wave1_message.slices,
+        ["SLICE-001".parse().unwrap(), "SLICE-003".parse().unwrap()],
+        "commitless SLICE-001 recorded on Wave 1's slice commit"
     );
 
     // advance `main` (`HEAD` = `base`) onto `emery/<parent>` before amending

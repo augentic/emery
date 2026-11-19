@@ -10,6 +10,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::str::{FromStr, Lines};
 
 pub use emery_adapter::SPECIFICATION;
 use emery_adapter::target::{MergeRule, MergeStrategy};
@@ -155,8 +156,9 @@ pub struct Message {
     /// The requirements of a removed part that this retiring slice retires;
     /// empty for a slice building requirements of the current plan.
     pub departed: Vec<ReqId>,
-    /// The slices merged with this wave when at least one merged slice wrote
-    /// no commit of its own; empty when every merged slice wrote a commit.
+    /// All slices merged in the wave when one wrote no commit of its own.
+    ///
+    /// Empty when every merged slice wrote its own commit.
     pub slices: Vec<SliceId>,
     /// The built ancestor revision a change build built against; `None` for
     /// a whole build.
@@ -181,29 +183,17 @@ impl Message {
         let mut lines = text.lines();
         let (id, name) = lines.next()?.split_once(' ')?;
         let slice: SliceId = id.parse().ok()?;
-        let trailers: BTreeMap<&str, &str> = lines
-            .filter_map(|line| line.split_once(':'))
-            .map(|(key, value)| (key, value.trim()))
-            .collect();
-        let ids = |key: &str| -> Option<Vec<ReqId>> {
-            let listed = trailers.get(key)?;
-            if listed.is_empty() {
-                return Some(Vec::new());
-            }
-            listed.split(", ").map(|id| id.parse().ok()).collect()
-        };
+        let trailers = parse_trailers(lines);
         if trailers.get("Slice")?.parse::<SliceId>().ok()? != slice {
             return None;
         }
         let departed = match trailers.get("Departed") {
-            Some(_) => ids("Departed")?,
+            Some(listed) => parse_ids(listed)?,
             None => Vec::new(),
         };
         let slices = match trailers.get("Slices").copied() {
             Some("") => return None,
-            Some(listed) => {
-                listed.split(", ").map(|id| id.parse().ok()).collect::<Option<Vec<_>>>()?
-            }
+            Some(listed) => parse_ids(listed)?,
             None => Vec::new(),
         };
         let change =
@@ -214,8 +204,8 @@ impl Message {
             name: name.trim().to_owned(),
             revision: (*trailers.get("Revision")?).to_owned(),
             budget: trailers.get("Budget")?.parse().ok()?,
-            requirements: ids("Requirements")?,
-            covered: ids("Covered")?,
+            requirements: parse_ids(trailers.get("Requirements")?)?,
+            covered: parse_ids(trailers.get("Covered")?)?,
             departed,
             slices,
             change,
@@ -228,8 +218,6 @@ impl Message {
 
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let list =
-            |ids: &[ReqId]| ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
         write!(
             f,
             "{slice} {name}\n\nSlice: {slice}\nPart: {part}\nRevision: {revision}\nBudget: \
@@ -239,15 +227,14 @@ impl fmt::Display for Message {
             name = self.name,
             revision = self.revision,
             budget = self.budget,
-            requirements = list(&self.requirements),
-            covered = list(&self.covered),
+            requirements = comma_separated(&self.requirements),
+            covered = comma_separated(&self.covered),
         )?;
         if !self.departed.is_empty() {
-            write!(f, "\nDeparted: {}", list(&self.departed))?;
+            write!(f, "\nDeparted: {}", comma_separated(&self.departed))?;
         }
         if !self.slices.is_empty() {
-            let slices: Vec<String> = self.slices.iter().map(ToString::to_string).collect();
-            write!(f, "\nSlices: {}", slices.join(", "))?;
+            write!(f, "\nSlices: {}", comma_separated(&self.slices))?;
         }
         if let Some(change) = &self.change {
             write!(f, "\nChange: {change}")?;
@@ -294,36 +281,28 @@ impl WaveMessage {
         if wave == 0 {
             return None;
         }
-        let trailers: BTreeMap<&str, &str> = lines
-            .filter_map(|line| line.split_once(':'))
-            .map(|(key, value)| (key, value.trim()))
-            .collect();
+        let trailers = parse_trailers(lines);
         let revision = trailers.get("Revision").copied().filter(|rev| !rev.is_empty())?;
         let adapter = trailers.get("Adapter").copied().filter(|adp| !adp.is_empty())?;
-        let listed = trailers.get("Slices").copied()?;
-        if listed.is_empty() {
-            return None;
-        }
-        let slices = listed.split(", ").map(|id| id.parse().ok()).collect::<Option<Vec<_>>>()?;
+        let listed = trailers.get("Slices").copied().filter(|listed| !listed.is_empty())?;
         Some(Self {
             wave,
             revision: revision.to_owned(),
             adapter: adapter.to_owned(),
-            slices,
+            slices: parse_ids(listed)?,
         })
     }
 }
 
 impl fmt::Display for WaveMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let slices: Vec<String> = self.slices.iter().map(ToString::to_string).collect();
         write!(
             f,
             "Wave {} verified\n\nRevision: {}\nAdapter: {}\nSlices: {}",
             self.wave,
             self.revision,
             self.adapter,
-            slices.join(", "),
+            comma_separated(&self.slices),
         )
     }
 }
@@ -364,10 +343,7 @@ impl RevisionMessage {
         if revision.is_empty() {
             return None;
         }
-        let trailers: BTreeMap<&str, &str> = lines
-            .filter_map(|line| line.split_once(':'))
-            .map(|(key, value)| (key, value.trim()))
-            .collect();
+        let trailers = parse_trailers(lines);
         if *trailers.get("Revision")? != revision {
             return None;
         }
@@ -471,11 +447,25 @@ impl fmt::Display for Summary {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Added: {}\nChanged: {}\nRetired: {}", self.added, self.changed, self.retired)?;
         if !self.parts.is_empty() {
-            let listed: Vec<String> = self.parts.iter().map(ToString::to_string).collect();
-            write!(f, "\nParts: {}", listed.join(", "))?;
+            write!(f, "\nParts: {}", comma_separated(&self.parts))?;
         }
         Ok(())
     }
+}
+
+fn parse_trailers(lines: Lines<'_>) -> BTreeMap<&str, &str> {
+    lines.filter_map(|line| line.split_once(':')).map(|(key, value)| (key, value.trim())).collect()
+}
+
+fn parse_ids<T: FromStr>(listed: &str) -> Option<Vec<T>> {
+    if listed.is_empty() {
+        return Some(Vec::new());
+    }
+    listed.split(", ").map(|id| id.parse().ok()).collect()
+}
+
+fn comma_separated<T: fmt::Display>(items: &[T]) -> String {
+    items.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
 }
 
 /// One part of a [`Summary`], as the `Parts:` trailer names it.
@@ -553,7 +543,7 @@ impl SourceClone {
     ///   reached, or wants credentials.
     /// - Returns [`Error::ServerError`] when the capability fails otherwise.
     pub async fn ensure<V: Vcs>(&self, vcs: &V) -> Result<(), Error> {
-        ensure(vcs, &self.url, &self.path()).await.map_err(|error| self.subject().refusal(error))
+        ensure(vcs, &self.url, &self.path()).await.map_err(|error| self.refusal(error))
     }
 
     /// The commit `revision` names in the clone.
@@ -564,11 +554,11 @@ impl SourceClone {
     /// repository holds no such revision, and the classes
     /// [`ensure`](Self::ensure) names otherwise.
     pub async fn resolve<V: Vcs>(&self, vcs: &V, revision: &str) -> Result<String, Error> {
-        vcs.resolve(&self.path(), revision).await.map_err(|error| self.subject().refusal(error))
+        vcs.resolve(&self.path(), revision).await.map_err(|error| self.refusal(error))
     }
 
-    fn subject(&self) -> Subject<'_> {
-        Subject::Repository(&self.url)
+    fn refusal(&self, error: vcs::Error) -> Error {
+        Subject::Repository(self.url.clone()).refusal(error)
     }
 }
 
@@ -623,15 +613,14 @@ async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> 
 
 // What a run addressed when the capability refused, which decides the
 // class and code the refusal reaches the operator as.
-#[derive(Clone, Copy)]
-enum Subject<'a> {
+enum Subject {
     Project,
-    Repository(&'a str),
-    Target(&'a str),
-    WorkingCopy(&'a str),
+    Repository(String),
+    Target(String),
+    WorkingCopy(String),
 }
 
-impl Subject<'_> {
+impl Subject {
     fn refusal(self, error: vcs::Error) -> Error {
         match error {
             vcs::Error::NotFound(what) => Error::NotFound {
@@ -659,7 +648,7 @@ impl Subject<'_> {
     }
 }
 
-impl fmt::Display for Subject<'_> {
+impl fmt::Display for Subject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Project => f.write_str("the project repository"),
@@ -708,6 +697,10 @@ pub enum BuildRepo {
         url: Option<String>,
     },
 }
+
+// Commits read per step when walking a first-parent chain with no exclusive
+// lower bound; a power of two so `first_parent_root` halves cleanly.
+const LOG_WINDOW: usize = 32;
 
 impl BuildRepo {
     /// The repository a target named `name` keeps at `repository`: the project for [`PROJECT`], a clone for a URL, a created one for none.
@@ -772,21 +765,20 @@ impl BuildRepo {
             Self::Project => match vcs.head(PROJECT).await {
                 Ok(head) => Ok(Some(head)),
                 Err(vcs::Error::NotFound(_)) => Ok(None),
-                Err(error) => Err(Subject::Project.refusal(error)),
+                Err(error) => Err(self.refusal(error)),
             },
             Self::Target { name, url: Some(url) } => {
                 let at = target_path(name);
-                let subject = Subject::Repository(url);
-                ensure(vcs, url, &at).await.map_err(|error| subject.refusal(error))?;
+                ensure(vcs, url, &at).await.map_err(|error| self.refusal(error))?;
                 vcs.resolve(&at, DEFAULT_BRANCH)
                     .await
                     .map(Some)
-                    .map_err(|error| subject.refusal(error))
+                    .map_err(|error| self.refusal(error))
             }
             Self::Target { name, url: None } => match vcs.head(&target_path(name)).await {
                 Ok(head) => Ok(Some(head)),
                 Err(vcs::Error::NotFound(_) | vcs::Error::NotARepository) => Ok(None),
-                Err(error) => Err(self.subject().refusal(error)),
+                Err(error) => Err(self.refusal(error)),
             },
         }
     }
@@ -828,7 +820,7 @@ impl BuildRepo {
                 Ok(())
             }
             Err(vcs::Error::Exists(_)) => Ok(()),
-            Err(error) => Err(self.subject().refusal(error)),
+            Err(error) => Err(self.refusal(error)),
         }
     }
 
@@ -853,7 +845,6 @@ impl BuildRepo {
     pub async fn merged_under<V: Vcs>(
         &self, vcs: &V, label: &str, base: &str, revision: &str,
     ) -> Result<Option<Labelled>, Error> {
-        let repo = self.path();
         let Some(head) = self.labelled(vcs, label).await? else {
             return Ok(None);
         };
@@ -869,9 +860,9 @@ impl BuildRepo {
         let entries = if head == base {
             self.revision_log(vcs, &head).await?
         } else {
-            vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?
+            self.log(vcs, &head, base).await?
         };
-        let merged = parse_merged(&entries, revision);
+        let merged = MergedIds::from_log(&entries, revision);
         if merged.is_empty() {
             tracing::info!(
                 label,
@@ -885,10 +876,9 @@ impl BuildRepo {
     // What an ancestor revision's `label` holds when `head` and `base` share
     // lineage, reading back to `Revision <revision>` when `base` already
     // stands at or ahead of `head`.
-    pub(crate) async fn ancestor_merged<V: Vcs>(
+    pub(crate) async fn merged_on_lineage<V: Vcs>(
         &self, vcs: &V, label: &str, base: &str, revision: &str,
     ) -> Result<Option<Labelled>, Error> {
-        let repo = self.path();
         let Some(head) = self.labelled(vcs, label).await? else {
             return Ok(None);
         };
@@ -896,7 +886,7 @@ impl BuildRepo {
             self.descends(vcs, base, &head).await?;
             self.revision_log(vcs, &head).await?
         } else if self.descends(vcs, base, &head).await? {
-            vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?
+            self.log(vcs, &head, base).await?
         } else if self.descends(vcs, &head, base).await? {
             self.revision_log(vcs, &head).await?
         } else {
@@ -908,47 +898,32 @@ impl BuildRepo {
             );
             return Ok(None);
         };
-        let merged = parse_merged(&entries, revision);
-        if merged.is_empty() {
-            tracing::info!(
-                label,
-                head,
-                "the label holds no slice of this revision; every slice builds from it"
-            );
-        }
+        let merged = MergedIds::from_log(&entries, revision);
         Ok(Some(Labelled { head, merged }))
     }
 
     // Walks `head`'s first-parent chain back to a `Revision` commit or the
     // repository root when `base` already incorporates `head`.
     async fn revision_log<V: Vcs>(&self, vcs: &V, head: &str) -> Result<Vec<vcs::Entry>, Error> {
-        const WINDOW: usize = 32;
-
         let repo = self.path();
         let mut entries = Vec::new();
         let mut cursor = head.to_owned();
         loop {
-            let older = match vcs.resolve(&repo, &format!("{cursor}~{WINDOW}")).await {
+            let older = match vcs.resolve(&repo, &format!("{cursor}~{LOG_WINDOW}")).await {
                 Ok(older) => older,
                 Err(vcs::Error::NotFound(_)) => {
                     let root = self.first_parent_root(vcs, &cursor).await?;
                     if root != cursor {
-                        let tail = vcs
-                            .log(&repo, &cursor, &root)
-                            .await
-                            .map_err(|error| self.subject().refusal(error))?;
-                        take_revision_entries(&mut entries, tail);
+                        let tail = self.log(vcs, &cursor, &root).await?;
+                        extend_until_revision(&mut entries, tail);
                     }
                     break;
                 }
-                Err(error) => return Err(self.subject().refusal(error)),
+                Err(error) => return Err(self.refusal(error)),
             };
-            let chunk = vcs
-                .log(&repo, &cursor, &older)
-                .await
-                .map_err(|error| self.subject().refusal(error))?;
+            let chunk = self.log(vcs, &cursor, &older).await?;
             let count = chunk.len();
-            if take_revision_entries(&mut entries, chunk) || count < WINDOW {
+            if extend_until_revision(&mut entries, chunk) || count < LOG_WINDOW {
                 break;
             }
             cursor = older;
@@ -956,17 +931,17 @@ impl BuildRepo {
         Ok(entries)
     }
 
-    // Finds the first-parent root within 31 hops below `from` once `from~32`
-    // ran past the start of the repository.
+    // Finds the first-parent root within `LOG_WINDOW - 1` hops below `from`
+    // once `from~LOG_WINDOW` ran past the start of the repository.
     async fn first_parent_root<V: Vcs>(&self, vcs: &V, from: &str) -> Result<String, Error> {
         let repo = self.path();
         let mut probe = from.to_owned();
-        let mut step = 16usize;
+        let mut step = LOG_WINDOW / 2;
         while step > 0 {
             match vcs.resolve(&repo, &format!("{probe}~{step}")).await {
                 Ok(older) => probe = older,
                 Err(vcs::Error::NotFound(_)) => {}
-                Err(error) => return Err(self.subject().refusal(error)),
+                Err(error) => return Err(self.refusal(error)),
             }
             step /= 2;
         }
@@ -1005,7 +980,7 @@ impl BuildRepo {
                 });
             }
             Err(vcs::Error::Exists(_)) => {}
-            Err(error) => return Err(copy.subject().refusal(error)),
+            Err(error) => return Err(copy.refusal(error)),
         }
 
         // what the copy an earlier run left holds over the head, read
@@ -1021,8 +996,8 @@ impl BuildRepo {
             tracing::info!(at = INTEGRATION, "removing the working copy an earlier run left");
             (head.to_owned(), Vec::new())
         };
-        vcs.remove(INTEGRATION).await.map_err(|error| copy.subject().refusal(error))?;
-        vcs.add(&repo, INTEGRATION, &at).await.map_err(|error| copy.subject().refusal(error))?;
+        vcs.remove(INTEGRATION).await.map_err(|error| copy.refusal(error))?;
+        vcs.add(&repo, INTEGRATION, &at).await.map_err(|error| copy.refusal(error))?;
         Ok(Integration {
             copy,
             head: at,
@@ -1038,11 +1013,10 @@ impl BuildRepo {
         &self, vcs: &V, head: &str, revision: &str,
     ) -> Result<Option<(String, Vec<StagedSlice>)>, Error> {
         let repo = self.path();
-        let subject = Subject::WorkingCopy(INTEGRATION);
         let staged = match vcs.head(INTEGRATION).await {
             Ok(staged) => staged,
             Err(vcs::Error::NotFound(_)) => return Ok(None),
-            Err(error) => return Err(subject.refusal(error)),
+            Err(error) => return Err(Subject::WorkingCopy(INTEGRATION.to_owned()).refusal(error)),
         };
         if staged == head {
             return Ok(None);
@@ -1050,7 +1024,7 @@ impl BuildRepo {
         let descends = match vcs.descends(&repo, head, &staged).await {
             Ok(descends) => descends,
             Err(vcs::Error::NotFound(_)) => false,
-            Err(error) => return Err(self.subject().refusal(error)),
+            Err(error) => return Err(self.refusal(error)),
         };
         if !descends {
             tracing::warn!(
@@ -1063,8 +1037,7 @@ impl BuildRepo {
         }
 
         // every slice sealed over the head is this revision's, or none is
-        let entries =
-            vcs.log(&repo, &staged, head).await.map_err(|error| self.subject().refusal(error))?;
+        let entries = self.log(vcs, &staged, head).await?;
         let mut slices = BTreeMap::new();
         for message in entries.iter().filter_map(|entry| Message::parse(&entry.message)) {
             if message.revision != revision {
@@ -1102,7 +1075,7 @@ impl BuildRepo {
         match vcs.labelled(&self.path(), label).await {
             Ok(commit) => Ok(Some(commit)),
             Err(vcs::Error::NotFound(_)) => Ok(None),
-            Err(error) => Err(self.subject().refusal(error)),
+            Err(error) => Err(self.refusal(error)),
         }
     }
 
@@ -1116,9 +1089,7 @@ impl BuildRepo {
     pub async fn descends<V: Vcs>(
         &self, vcs: &V, ancestor: &str, descendant: &str,
     ) -> Result<bool, Error> {
-        vcs.descends(&self.path(), ancestor, descendant)
-            .await
-            .map_err(|error| self.subject().refusal(error))
+        vcs.descends(&self.path(), ancestor, descendant).await.map_err(|error| self.refusal(error))
     }
 
     /// Points `label` at `commit`, creating or moving it.
@@ -1129,19 +1100,24 @@ impl BuildRepo {
     /// repository holds no such commit, and [`Error::ServerError`] when the
     /// capability fails otherwise.
     pub async fn label<V: Vcs>(&self, vcs: &V, label: &str, commit: &str) -> Result<(), Error> {
-        vcs.label(&self.path(), label, commit)
-            .await
-            .map_err(|error| self.subject().refusal(error))?;
+        vcs.label(&self.path(), label, commit).await.map_err(|error| self.refusal(error))?;
         tracing::info!(label, commit, "labelled");
         Ok(())
     }
 
-    fn subject(&self) -> Subject<'_> {
-        match self {
+    async fn log<V: Vcs>(
+        &self, vcs: &V, revision: &str, base: &str,
+    ) -> Result<Vec<vcs::Entry>, Error> {
+        vcs.log(&self.path(), revision, base).await.map_err(|error| self.refusal(error))
+    }
+
+    fn refusal(&self, error: vcs::Error) -> Error {
+        let subject = match self {
             Self::Project => Subject::Project,
-            Self::Target { url: Some(url), .. } => Subject::Repository(url),
-            Self::Target { name, url: None } => Subject::Target(name),
-        }
+            Self::Target { url: Some(url), .. } => Subject::Repository(url.clone()),
+            Self::Target { name, url: None } => Subject::Target(name.clone()),
+        };
+        subject.refusal(error)
     }
 }
 
@@ -1168,7 +1144,7 @@ async fn project_clean<V: Vcs>(vcs: &V) -> Result<(), Error> {
 
 // Appends newest-first `chunk` entries onto `entries` until a `Revision`
 // commit is reached, returning `true` when one stopped the walk.
-fn take_revision_entries(entries: &mut Vec<vcs::Entry>, chunk: Vec<vcs::Entry>) -> bool {
+fn extend_until_revision(entries: &mut Vec<vcs::Entry>, chunk: Vec<vcs::Entry>) -> bool {
     for entry in chunk {
         if RevisionMessage::parse(&entry.message).is_some() {
             return true;
@@ -1176,41 +1152,6 @@ fn take_revision_entries(entries: &mut Vec<vcs::Entry>, chunk: Vec<vcs::Entry>) 
         entries.push(entry);
     }
     false
-}
-
-fn parse_merged(entries: &[vcs::Entry], revision: &str) -> MergedIds {
-    let mut merged = MergedIds::default();
-    for entry in entries.iter().rev() {
-        if let Some(message) =
-            Message::parse(&entry.message).filter(|message| message.revision == revision)
-        {
-            let wave_slices = message.slices;
-            merged.requirements.extend(message.requirements.iter().copied());
-            merged.departed.extend(message.departed.iter().copied());
-            merged.history.push(HistoryEntry::Slice {
-                slice: message.slice,
-                wave: message.wave,
-                budget: NonZeroUsize::new(message.budget),
-                requirements: message.requirements,
-            });
-            if !wave_slices.is_empty() {
-                merged.slices.extend(wave_slices.iter().copied());
-                merged.history.push(HistoryEntry::Wave {
-                    wave: message.wave,
-                    slices: wave_slices,
-                });
-            }
-        } else if let Some(wave) =
-            WaveMessage::parse(&entry.message).filter(|wave| wave.revision == revision)
-        {
-            merged.slices.extend(wave.slices.iter().copied());
-            merged.history.push(HistoryEntry::Wave {
-                wave: wave.wave,
-                slices: wave.slices,
-            });
-        }
-    }
-    merged
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1245,6 +1186,24 @@ pub struct MergedIds {
 }
 
 impl MergedIds {
+    // Reconstructs what stands merged for `revision` from newest-first log
+    // `entries`.
+    pub(crate) fn from_log(entries: &[vcs::Entry], revision: &str) -> Self {
+        let mut merged = Self::default();
+        for entry in entries.iter().rev() {
+            if let Some(message) =
+                Message::parse(&entry.message).filter(|message| message.revision == revision)
+            {
+                merged.record_message(message);
+            } else if let Some(wave) =
+                WaveMessage::parse(&entry.message).filter(|wave| wave.revision == revision)
+            {
+                merged.record_wave(wave.wave, wave.slices);
+            }
+        }
+        merged
+    }
+
     /// Whether no requirement, departed id, or verified slice stands merged.
     #[must_use]
     pub fn is_empty(&self) -> bool {
@@ -1255,6 +1214,26 @@ impl MergedIds {
     pub fn extend_slice(&mut self, slice: &StagedSlice) {
         self.requirements.extend(slice.requirements.iter().copied());
         self.departed.extend(slice.departed.iter().copied());
+    }
+
+    fn record_message(&mut self, message: Message) {
+        let wave_slices = message.slices;
+        self.requirements.extend(message.requirements.iter().copied());
+        self.departed.extend(message.departed.iter().copied());
+        self.history.push(HistoryEntry::Slice {
+            slice: message.slice,
+            wave: message.wave,
+            budget: NonZeroUsize::new(message.budget),
+            requirements: message.requirements,
+        });
+        if !wave_slices.is_empty() {
+            self.record_wave(message.wave, wave_slices);
+        }
+    }
+
+    fn record_wave(&mut self, wave: usize, slices: Vec<SliceId>) {
+        self.slices.extend(slices.iter().copied());
+        self.history.push(HistoryEntry::Wave { wave, slices });
     }
 }
 
@@ -1322,11 +1301,11 @@ impl WorkingCopy {
             Ok(()) => Ok(copy),
             Err(vcs::Error::Exists(_)) => {
                 tracing::info!(at, "removing the working copy an earlier run left");
-                vcs.remove(at).await.map_err(|error| copy.subject().refusal(error))?;
-                vcs.add(repo, at, revision).await.map_err(|error| copy.subject().refusal(error))?;
+                vcs.remove(at).await.map_err(|error| copy.refusal(error))?;
+                vcs.add(repo, at, revision).await.map_err(|error| copy.refusal(error))?;
                 Ok(copy)
             }
-            Err(error) => Err(copy.subject().refusal(error)),
+            Err(error) => Err(copy.refusal(error)),
         }
     }
 
@@ -1357,7 +1336,7 @@ impl WorkingCopy {
     ///
     /// Returns [`Error::ServerError`] when the capability fails.
     pub async fn commit<V: Vcs>(&self, vcs: &V, message: &str) -> Result<Option<String>, Error> {
-        vcs.commit(&self.at, message).await.map_err(|error| self.subject().refusal(error))
+        vcs.commit(&self.at, message).await.map_err(|error| self.refusal(error))
     }
 
     /// Merges `revision` into the working copy under `policy` and advances its head.
@@ -1373,9 +1352,7 @@ impl WorkingCopy {
     pub async fn merge<V: Vcs>(
         &self, vcs: &V, revision: &str, message: &str, policy: &[Rule],
     ) -> Result<Merged, Error> {
-        vcs.merge(&self.at, revision, message, policy)
-            .await
-            .map_err(|error| self.subject().refusal(error))
+        vcs.merge(&self.at, revision, message, policy).await.map_err(|error| self.refusal(error))
     }
 
     /// The commit the working copy sits on.
@@ -1384,7 +1361,7 @@ impl WorkingCopy {
     ///
     /// Returns [`Error::ServerError`] when the capability fails.
     pub async fn head<V: Vcs>(&self, vcs: &V) -> Result<String, Error> {
-        vcs.head(&self.at).await.map_err(|error| self.subject().refusal(error))
+        vcs.head(&self.at).await.map_err(|error| self.refusal(error))
     }
 
     /// Removes the working copy and everything it holds.
@@ -1393,11 +1370,11 @@ impl WorkingCopy {
     ///
     /// Returns [`Error::ServerError`] when the capability fails.
     pub async fn remove<V: Vcs>(self, vcs: &V) -> Result<(), Error> {
-        vcs.remove(&self.at).await.map_err(|error| self.subject().refusal(error))
+        vcs.remove(&self.at).await.map_err(|error| self.refusal(error))
     }
 
-    fn subject(&self) -> Subject<'_> {
-        Subject::WorkingCopy(&self.at)
+    fn refusal(&self, error: vcs::Error) -> Error {
+        Subject::WorkingCopy(self.at.clone()).refusal(error)
     }
 }
 
@@ -1407,5 +1384,5 @@ impl WorkingCopy {
 ///
 /// Returns [`Error::ServerError`] when the capability fails.
 pub async fn pending<V: Vcs>(vcs: &V, at: &str) -> Result<Vec<Change>, Error> {
-    vcs.pending(at).await.map_err(|error| Subject::WorkingCopy(at).refusal(error))
+    vcs.pending(at).await.map_err(|error| Subject::WorkingCopy(at.to_owned()).refusal(error))
 }
