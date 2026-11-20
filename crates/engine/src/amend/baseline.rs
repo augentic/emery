@@ -9,11 +9,12 @@
 
 use std::collections::BTreeSet;
 
+use emery_adapter::Trigger;
 use emery_adapter::source::{ClaimKind, SourceKind};
 
 use crate::Rank;
 use crate::revision::{self, Cited, ReqId, Requirement, Scenario, Spec, Status};
-use crate::specify::{BASELINE, Basis, Contributor, Detail, Extract, trigger_note};
+use crate::specify::{BASELINE, Basis, Contributor, Extract, WholeScope};
 
 const START_STEM: &str = "start";
 
@@ -21,7 +22,7 @@ const START_STEM: &str = "start";
 pub struct Baseline {
     spec: Spec,
     rank: Rank,
-    whole_sources: BTreeSet<String>,
+    whole: WholeScope,
 }
 
 impl Baseline {
@@ -32,16 +33,15 @@ impl Baseline {
             .map(|extract| extract.rank)
             .max()
             .unwrap_or_else(|| Rank::from(SourceKind::Behaviour));
-        let whole_sources = extracts
-            .iter()
-            .filter(|extract| extract.is_whole_behaviour())
-            .map(|extract| extract.source.clone())
-            .collect();
         Self {
             spec: spec.clone(),
             rank: lowest.below(),
-            whole_sources,
+            whole: WholeScope::from_spec(extracts, spec),
         }
+    }
+
+    pub const fn whole_scope(&self) -> &WholeScope {
+        &self.whole
     }
 
     // One contributor per requirement, its statement what the requirement
@@ -54,7 +54,6 @@ impl Baseline {
     // which the brief re-indexes; the citations are where the requirement
     // was read, for the brief's anchor hints.
     pub fn contributors(&self) -> Vec<Contributor> {
-        let include_whole_context = !self.whole_sources.is_empty();
         self.spec
             .requirements
             .iter()
@@ -68,7 +67,7 @@ impl Baseline {
                 path: None,
                 statement,
                 synopsis: None,
-                notes: standing_notes(requirement, include_whole_context),
+                notes: self.standing_notes(requirement),
                 withdraws: false,
                 trigger: requirement.trigger.clone(),
                 citations: requirement.sources.clone(),
@@ -115,40 +114,30 @@ impl Baseline {
         self.spec.requirement(id).is_some_and(|requirement| requirement.cites_only(source))
     }
 
+    // Whether `requirement` cites only whole-scope behaviour sources and
+    // carries a trigger that vanished from their extracted contracts.
+    pub fn has_vanished_trigger(&self, requirement: &Requirement) -> bool {
+        self.whole.vanished_trigger(&requirement.sources, requirement.trigger.as_ref()).is_some()
+    }
+
+    // The standing trigger preserved when a drafted change carries no contract
+    // of its own: `None` when `requirement`'s whole-scope contract vanished.
+    pub fn preserved_trigger(&self, requirement: &Requirement) -> Option<Trigger> {
+        (!self.has_vanished_trigger(requirement)).then(|| requirement.trigger.clone()).flatten()
+    }
+
     // Whether `id` may be kept unchanged by `evidenced` alone: a standing
     // requirement cited only to whole-scope behaviour sources must keep any
     // route or message contract it carries and hold a detail claim in at least
-    // one file its citations name.
-    pub fn admits_evidenced(&self, id: ReqId, extracts: &[Extract]) -> bool {
-        let Some(requirement) = self.spec.requirement(id) else {
-            return false;
-        };
-        let cites_only_whole = !requirement.sources.is_empty()
-            && requirement.sources.iter().all(|cited| self.whole_sources.contains(&cited.source));
-        if !cites_only_whole {
-            return true;
-        }
-        if let Some(trigger) = &requirement.trigger {
-            let has_contract = extracts.iter().any(|extract| {
-                self.whole_sources.contains(&extract.source)
-                    && requirement.cites(&extract.source)
-                    && extract.evidence.claims.iter().any(|claim| {
-                        claim.kind == ClaimKind::Contract
-                            && claim.trigger().is_some_and(|parsed| parsed.as_ref() == Ok(trigger))
-                    })
-            });
-            if !has_contract {
-                return false;
-            }
-        }
-        extracts.iter().any(|extract| {
-            requirement.cites(&extract.source)
-                && extract
-                    .evidence
-                    .claims
-                    .iter()
-                    .filter_map(|claim| Detail::from_claim(&extract.source, claim))
-                    .any(|detail| requirement.cites_same_file(&detail.cited))
+    // one file its citations name (or under its stem when that contract still
+    // stands).
+    pub fn admits_evidenced(&self, id: ReqId) -> bool {
+        self.spec.requirement(id).is_some_and(|requirement| {
+            self.whole.admits_evidenced(
+                requirement.stem(),
+                requirement.trigger.as_ref(),
+                &requirement.sources,
+            )
         })
     }
 
@@ -167,7 +156,7 @@ impl Baseline {
             return false;
         };
         if member.path.is_none()
-            || !self.whole_sources.contains(&member.source)
+            || !self.whole.contains_source(&member.source)
             || !self.spec.requirements.iter().any(|requirement| requirement.cites(&member.source))
         {
             return false;
@@ -209,7 +198,7 @@ impl Baseline {
     // preserve the standing stem whenever the winning class holds a claim
     // under it, or when every non-`BASELINE` winner comes from an
     // already-cited whole-scope source in a file where `requirement` was
-    // already read.
+    // already read (or sharing its live whole-scope trigger).
     pub fn agrees(&self, requirement: &Requirement, basis: &Basis) -> bool {
         if requirement.status == Status::Conflict || !basis.agrees_with_baseline() {
             return false;
@@ -217,20 +206,26 @@ impl Baseline {
         if basis.winning_class_has_stem(requirement.stem()) {
             return true;
         }
+        let shares_live_trigger = requirement.trigger.as_ref().is_some_and(|trigger| {
+            basis.trigger.as_ref() == Some(trigger)
+                && self.whole.has_live_contract(&requirement.sources, trigger)
+        });
         basis.winning_changes().all(|member| {
-            self.whole_sources.contains(&member.source)
-                && requirement.cites_same_file(&Cited::from(member))
+            self.whole.contains_source(&member.source)
+                && (requirement.cites_same_file(&Cited::from(member))
+                    || (shares_live_trigger && requirement.cites(&member.source)))
         })
     }
 
     // Whether `basis` leaves `requirement`'s trigger unchanged. A change
-    // silent on the trigger keeps the base's, as does an untriggered
-    // standing requirement whose already-cited sources agree with the base
-    // and only pick up an existing trigger or a secondary co-grouped stem's
+    // silent on the trigger keeps the base's unless `requirement`'s
+    // whole-scope contract vanished, and an untriggered standing requirement
+    // whose already-cited sources agree with the base keeps `None` when it
+    // only picks up an existing trigger or a secondary co-grouped stem's
     // contract on whole-scope re-extraction.
     pub fn same_trigger(&self, requirement: &Requirement, basis: &Basis) -> bool {
         let Some(trigger) = &basis.trigger else {
-            return true;
+            return !self.has_vanished_trigger(requirement);
         };
         if requirement.trigger.as_ref() == Some(trigger) {
             return true;
@@ -245,7 +240,7 @@ impl Baseline {
             return true;
         }
         let all_whole =
-            basis.change_contributors().all(|member| self.whole_sources.contains(&member.source));
+            basis.change_contributors().all(|member| self.whole.contains_source(&member.source));
         all_whole
             && (!basis.has_contract_under(requirement.stem()) || self.spec.has_trigger(trigger))
     }
@@ -256,22 +251,22 @@ impl Baseline {
     pub fn free_ids(&self) -> impl Iterator<Item = ReqId> {
         ReqId::free_after(self.spec.requirements.iter().map(|requirement| requirement.id))
     }
-}
 
-fn standing_notes(requirement: &Requirement, include_whole_context: bool) -> Vec<String> {
-    if requirement.status == Status::Conflict {
-        return Vec::new();
-    }
-    let mut notes: Vec<String> = requirement.scenarios.iter().map(scenario_note).collect();
-    if include_whole_context {
-        if let Some(trigger) = &requirement.trigger {
-            notes.push(trigger_note(trigger));
+    fn standing_notes(&self, requirement: &Requirement) -> Vec<String> {
+        if requirement.status == Status::Conflict {
+            return Vec::new();
         }
-        for path in requirement.sources.iter().filter_map(|cited| cited.path.as_deref()) {
-            notes.push(format!("read at `{path}`"));
+        let mut notes: Vec<String> = requirement.scenarios.iter().map(scenario_note).collect();
+        if !self.whole.is_empty() {
+            if let Some(trigger) = &requirement.trigger {
+                notes.push(self.whole.standing_trigger_note(&requirement.sources, trigger));
+            }
+            for path in requirement.sources.iter().filter_map(|cited| cited.path.as_deref()) {
+                notes.push(format!("read at `{path}`"));
+            }
         }
+        notes
     }
-    notes
 }
 
 fn scenario_note(scenario: &Scenario) -> String {

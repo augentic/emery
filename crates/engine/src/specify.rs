@@ -24,7 +24,7 @@ use omnia_sdk::plugins::Digest;
 use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
-pub(crate) use self::basis::{BASELINE, Basis, Contributor, Detail, GroupingBrief, trigger_note};
+pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief, WholeScope};
 pub(crate) use self::design::{DesignAmend, DesignBrief};
 pub(crate) use self::plan::{Draft, Floors, Open, PartAmend, PartBrief, Types};
 pub use self::spec::SPEC_CHUNK;

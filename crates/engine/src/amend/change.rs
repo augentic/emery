@@ -47,6 +47,7 @@ impl ChangeSet {
                 extracts,
                 baseline.contributors(),
                 baseline.criteria(),
+                baseline.whole_scope().clone(),
             )
             .derive(model)
             .await?;
@@ -96,8 +97,8 @@ impl ChangeSet {
             for change in &mut self.changes {
                 let in_scope = covered_stems.contains(change.stem())
                     || baseline.cites_only(change.id, &extract.source);
-                let is_evidenced = evidenced.contains(&change.id)
-                    && baseline.admits_evidenced(change.id, extracts);
+                let is_evidenced =
+                    evidenced.contains(&change.id) && baseline.admits_evidenced(change.id);
                 if !change.is_untouched() || is_evidenced || !in_scope {
                     continue;
                 }
@@ -151,7 +152,7 @@ impl ChangeSet {
                 evidenced.insert(requirement.id);
             }
             let change = matched_change(baseline, requirement, &basis, sources);
-            set.record(change, basis, requirement.trigger.clone())?;
+            set.record(change, basis, baseline.preserved_trigger(requirement))?;
         }
         set.changes.sort_by_key(|change| change.id);
 
@@ -186,10 +187,10 @@ impl ChangeSet {
     }
 
     fn record(
-        &mut self, change: Change, mut basis: Basis, fallback_trigger: Option<Trigger>,
+        &mut self, change: Change, mut basis: Basis, preserved_trigger: Option<Trigger>,
     ) -> Result<(), Error> {
         if change.class.is_drafted() {
-            let trigger = basis.trigger.take().or(fallback_trigger);
+            let trigger = basis.trigger.take().or(preserved_trigger);
             let amended = basis.amended(change.id, trigger).ok_or_else(|| {
                 server_error!(
                     "requirement {} is drafted anew with no claim to draft from",

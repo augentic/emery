@@ -16,8 +16,8 @@ use serde_json::{Value, json};
 
 use crate::Rank;
 use crate::brief::{Brief, Review};
-use crate::revision::{self, Cited, Loser, ReqId, Requirement, Scenario, Status};
-use crate::specify::Extract;
+use crate::revision::{self, Cited, Loser, ReqId, Requirement, Scenario, Spec, Status};
+use crate::specify::{Extract, shape};
 
 // The reserved source name the current revision's requirements contribute under.
 //
@@ -35,20 +35,16 @@ pub const BASELINE: &str = "baseline";
 pub struct GroupingBrief {
     contributors: Vec<Contributor>,
     criteria: Vec<String>,
-    contracts: Vec<Contract>,
+    contracts: Contracts,
     sources: usize,
     baseline: Grouping,
     // How many contributors the run's sources contributed; the rest are
     // the standing requirements.
     changes: usize,
-    // The claims anchored where a standing requirement was read.
+    // Anchor and live-surface hints matching claims to standing requirements.
     hints: Vec<Hint>,
-    // Non-requirement detail (`excerpt` and `call` claims) from whole-scope
-    // behaviour sources during an amend run.
-    details: Vec<Detail>,
-    // Names of whole-scope behaviour sources reconciled against standing
-    // requirements.
-    whole_sources: BTreeSet<String>,
+    // Whole-scope behaviour evidence reconciled against standing requirements.
+    whole: WholeScope,
 }
 
 impl GroupingBrief {
@@ -56,7 +52,7 @@ impl GroupingBrief {
     // is nothing for it to withdraw.
     #[must_use]
     pub fn new(extracts: &[Extract]) -> Self {
-        Self::assemble(extracts, Vec::new(), Vec::new(), false)
+        Self::assemble(extracts, Vec::new(), Vec::new(), WholeScope::default(), false)
     }
 
     // `standing` is the current revision's requirements as contributors
@@ -69,93 +65,28 @@ impl GroupingBrief {
     // nothing.
     #[must_use]
     pub fn with_standing(
-        extracts: &[Extract], standing: Vec<Contributor>, criteria: Vec<String>,
+        extracts: &[Extract], standing: Vec<Contributor>, criteria: Vec<String>, whole: WholeScope,
     ) -> Self {
-        Self::assemble(extracts, standing, criteria, true)
+        let whole = if standing.is_empty() { WholeScope::default() } else { whole };
+        Self::assemble(extracts, standing, criteria, whole, true)
     }
 
     fn assemble(
         extracts: &[Extract], standing: Vec<Contributor>, mut criteria: Vec<String>,
-        withdrawals: bool,
+        whole: WholeScope, withdrawals: bool,
     ) -> Self {
         let mut contributors: Vec<Contributor> = Vec::new();
-        let mut contracts = Vec::new();
-        let mut details = Vec::new();
-        let mut whole_sources = BTreeSet::new();
+        let mut contracts = Contracts::default();
         let has_standing = !standing.is_empty();
 
         for extract in extracts {
-            let extract_notes = ExtractNotes::new(extract, has_standing);
-            if extract_notes.whole_behaviour {
-                whole_sources.insert(extract.source.clone());
-            }
-            // a source cannot conflict with itself: a withdrawal beside its own
-            // restatement is passed over so the restatement stands
-            let stated_ids: BTreeSet<String> = if withdrawals {
-                extract
-                    .evidence
-                    .claims
-                    .iter()
-                    .filter(|claim| claim.kind == ClaimKind::Requirement)
-                    .filter_map(|claim| claim.id.clone())
-                    .collect()
-            } else {
-                BTreeSet::new()
-            };
-
-            for claim in &extract.evidence.claims {
-                // a contract binds by its id or its anchor, so it needs no id
-                if claim.kind == ClaimKind::Contract {
-                    continue;
-                }
-                if extract_notes.whole_behaviour
-                    && let Some(detail) = Detail::from_claim(&extract.source, claim)
-                {
-                    details.push(detail);
-                    continue;
-                }
-                let Some(id) = claim.id.as_deref() else { continue };
-
-                let withdraws = match claim.kind {
-                    ClaimKind::Requirement => false,
-                    ClaimKind::Retire if withdrawals => {
-                        if stated_ids.contains(id) {
-                            tracing::debug!(
-                                source = %extract.source,
-                                id,
-                                "withdrawal beside its own restatement; the restatement stands"
-                            );
-                            continue;
-                        }
-                        true
-                    }
-                    ClaimKind::Criterion => {
-                        criteria.push(id.to_owned());
-                        continue;
-                    }
-                    _ => continue,
-                };
-                let notes = if withdraws {
-                    Vec::new()
-                } else {
-                    extract_notes.for_claim(id, claim.path.as_deref())
-                };
-                contributors.push(Contributor {
-                    source: extract.source.clone(),
-                    kind: extract.kind,
-                    rank: extract.rank,
-                    id: id.to_owned(),
-                    path: claim.path.clone(),
-                    statement: claim.statement(),
-                    synopsis: claim.synopsis.clone(),
-                    notes,
-                    withdraws,
-                    trigger: None,
-                    citations: Vec::new(),
-                    index: contributors.len(),
-                });
-            }
-            contracts.extend(extract_notes.contracts);
+            ExtractNotes::new(extract, has_standing).collect(
+                extract,
+                withdrawals,
+                &mut contributors,
+                &mut criteria,
+                &mut contracts,
+            );
         }
 
         // the standing requirements after the claims, indexed in place
@@ -169,7 +100,8 @@ impl GroupingBrief {
         let sources =
             contributors.iter().map(|claim| claim.source.as_str()).collect::<BTreeSet<_>>().len();
         let baseline = Grouping::baseline(&contributors);
-        let hints = Hint::all(&contributors[..changes], &contributors[changes..]);
+        let hints =
+            Hint::all(&contributors[..changes], &contributors[changes..], &contracts, &whole);
 
         Self {
             contributors,
@@ -179,8 +111,7 @@ impl GroupingBrief {
             baseline,
             changes,
             hints,
-            details,
-            whole_sources,
+            whole,
         }
     }
 
@@ -292,7 +223,7 @@ impl GroupingBrief {
     fn verify_evidenced(
         &self, answer: &Grouping, placed: &BTreeMap<usize, Vec<usize>>, review: &mut Review,
     ) {
-        if self.details.is_empty() {
+        if !self.whole.has_details() {
             if !answer.evidenced.is_empty() {
                 review.note(
                     "`evidenced` is only used when `## Whole-source detail` is listed; leave it \
@@ -322,17 +253,22 @@ impl GroupingBrief {
                      `evidenced` only standing requirements that stand alone"
                 ));
             } else {
-                match self.evidenced_gap(&self.contributors[index]) {
+                let member = &self.contributors[index];
+                match self.whole.evidenced_gap(
+                    member.stem(),
+                    member.trigger.as_ref(),
+                    &member.citations,
+                ) {
                     Some(EvidencedGap::MissingContract(trigger)) => review.note(format_args!(
                         "standing requirement {index} (`{}`) carries {}, which no contract of its \
                          cited whole-scope source declares; omit it from `evidenced`",
-                        self.contributors[index].id,
+                        member.id,
                         trigger_note(&trigger),
                     )),
                     Some(EvidencedGap::MissingDetail) => review.note(format_args!(
                         "standing requirement {index} (`{}`) has no `## Whole-source detail` in \
                          any file its citations name; omit it from `evidenced`",
-                        self.contributors[index].id,
+                        member.id,
                     )),
                     None => {}
                 }
@@ -340,26 +276,77 @@ impl GroupingBrief {
         }
     }
 
-    fn evidenced_gap(&self, member: &Contributor) -> Option<EvidencedGap> {
-        let cites_only_whole = !member.citations.is_empty()
-            && member.citations.iter().all(|cited| self.whole_sources.contains(&cited.source));
-        if !cites_only_whole {
-            return None;
+    fn is_other_standing_trigger(&self, standing_index: usize, trigger: &Trigger) -> bool {
+        self.standing()
+            .iter()
+            .any(|other| other.index != standing_index && other.trigger.as_ref() == Some(trigger))
+    }
+
+    fn verify_vanished_trigger(
+        &self, position: usize, standing_index: usize, members: &BTreeSet<usize>,
+        review: &mut Review,
+    ) {
+        let Some(standing_member) = self.contributors.get(standing_index) else {
+            return;
+        };
+        let Some(vanished) = self
+            .whole
+            .vanished_trigger(&standing_member.citations, standing_member.trigger.as_ref())
+        else {
+            return;
+        };
+
+        let mut claims_by_source: BTreeMap<String, Vec<Contributor>> = BTreeMap::new();
+        for claim in members
+            .iter()
+            .copied()
+            .filter(|&index| index < self.changes)
+            .filter_map(|index| self.contributors.get(index))
+            .filter(|claim| !claim.withdraws && self.whole.contains_source(&claim.source))
+        {
+            claims_by_source.entry(claim.source.clone()).or_default().push(claim.clone());
         }
-        if let Some(trigger) = &member.trigger {
-            let has_contract = self.contracts.iter().any(|contract| {
-                contract.trigger == *trigger
-                    && member.citations.iter().any(|cited| cited.source == contract.cited.source)
-            });
-            if !has_contract {
-                return Some(EvidencedGap::MissingContract(trigger.clone()));
+
+        for (source, claims) in &claims_by_source {
+            let has_replacement = self
+                .contracts
+                .trigger_in_source_of(source, claims)
+                .is_some_and(|trigger| !self.is_other_standing_trigger(standing_index, &trigger));
+
+            for claim in claims.iter().filter(|claim| claim.id != standing_member.id) {
+                let existing_trigger = self
+                    .contracts
+                    .trigger_in_source(&Cited::from(claim))
+                    .filter(|trigger| self.is_other_standing_trigger(standing_index, trigger));
+                if let Some(existing) = existing_trigger {
+                    review.note(format_args!(
+                        "group {position}: standing requirement {standing_index} (`{}`) carries \
+                         {}, which is absent from the extracted contracts of `{source}`, while \
+                         claim {} (`{}`) belongs to existing {}; leave standing requirement \
+                         {standing_index} alone in its own group so whole-source scope retires it",
+                        standing_member.id,
+                        trigger_note(&vanished),
+                        claim.index,
+                        claim.id,
+                        trigger_note(&existing),
+                    ));
+                } else if !has_replacement {
+                    review.note(format_args!(
+                        "group {position}: standing requirement {standing_index} (`{}`) carries \
+                         {}, which is absent from the extracted contracts of `{source}`, so \
+                         claim {} (`{}`) cannot keep it standing without a replacement contract; \
+                         leave standing requirement {standing_index} alone in its own group so \
+                         whole-source scope retires it, and place claim {} with the live \
+                         requirement it covers (or in its own group if new)",
+                        standing_member.id,
+                        trigger_note(&vanished),
+                        claim.index,
+                        claim.id,
+                        claim.index,
+                    ));
+                }
             }
         }
-        let has_detail = self
-            .details
-            .iter()
-            .any(|detail| member.citations.iter().any(|cited| cited.same_file(&detail.cited)));
-        (!has_detail).then_some(EvidencedGap::MissingDetail)
     }
 
     fn write_instructions(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -397,10 +384,10 @@ impl GroupingBrief {
                  claims alone, since a withdrawal of a behaviour the specification does not hold \
                  is refused after your answer.\n",
             )?;
-            if !self.whole_sources.is_empty() {
+            if !self.whole.is_empty() {
                 let sources = self
-                    .whole_sources
-                    .iter()
+                    .whole
+                    .source_names()
                     .map(|name| format!("`{name}`"))
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -419,23 +406,35 @@ impl GroupingBrief {
                      framework header or middleware setup (`x-powered-by`), and listen mechanics \
                      (`listen` or `serve` after startup checks) joins the \
                      covered standing requirement's group in the standing requirement's class \
-                     rather than adding a standalone requirement. Leave a whole-scope claim in a \
-                     singleton group only when it states behaviour absent from every standing \
-                     requirement and scenario, such as a newly added route or message surface, a \
-                     new stem, or a newly added domain rule."
+                     rather than adding a standalone requirement. On a live route or message \
+                     surface, when a service-layer claim (such as loading from the store, \
+                     caching, and returning the resource) covers both a cache or store standing \
+                     requirement and a route-level return standing requirement on that same \
+                     surface, place that claim in both standing requirements' groups (in each \
+                     standing requirement's class when unchanged) rather than leaving the live \
+                     surface's return requirement ungrouped. Never match an untriggered helper \
+                     claim (or a claim on another standing route or message) to a standing \
+                     requirement whose whole-scope route or message trigger vanished (`absent \
+                     from extracted contracts`); leave a standing requirement whose surface \
+                     vanished alone in its own group so whole-source scope retires it, unless \
+                     the group binds a replacement contract for that surface. Leave a \
+                     whole-scope claim in a singleton group only when it states behaviour absent \
+                     from every standing requirement and scenario, such as a newly added route \
+                     or message surface, a new stem, or a newly added domain rule."
                 )?;
             }
-            if !self.details.is_empty() {
+            if self.whole.has_details() {
                 f.write_str(
                     "\nWhen a standing requirement stands alone in its group only because this \
                      extraction recorded its behaviour in `## Whole-source detail` as an \
                      `excerpt` or `call` rather than a `requirement` claim, and that detail in \
-                     its cited file shows the behaviour (and any route or message trigger it \
-                     carries) is still implemented unchanged, list that standing requirement's \
-                     index in `evidenced` so whole-source scope does not retire it. Never list \
-                     in `evidenced` a standing requirement matched to a claim, one whose route \
-                     or message trigger vanished from the extracted contracts, or one whose \
-                     cited file holds no matching `## Whole-source detail`.\n",
+                     its cited file (or under its stem when its whole-scope route or message \
+                     contract still stands) shows the behaviour is still implemented unchanged, \
+                     list that standing requirement's index in `evidenced` so whole-source scope \
+                     does not retire it. Never list in `evidenced` a standing requirement matched \
+                     to a claim, one whose route or message trigger vanished from the extracted \
+                     contracts, or one whose cited file holds no matching `## Whole-source \
+                     detail`.\n",
                 )?;
             }
         }
@@ -458,12 +457,12 @@ impl Brief for GroupingBrief {
             Self::at(schema, pointer)?.insert("maximum".to_owned(), json!(last));
         }
         Self::at(schema, "/properties/groups")?.insert("minItems".to_owned(), json!(1));
-        if self.details.is_empty() {
-            Self::at(schema, "/properties")?.remove("evidenced");
-        } else {
+        if self.whole.has_details() {
             let items = Self::at(schema, "/properties/evidenced/items")?;
             items.insert("minimum".to_owned(), json!(self.changes));
             items.insert("maximum".to_owned(), json!(last));
+        } else {
+            Self::at(schema, "/properties")?.remove("evidenced");
         }
         Ok(())
     }
@@ -549,6 +548,7 @@ impl Brief for GroupingBrief {
                      specification holds as distinct requirements"
                 ));
             } else if let [standing_index] = standing_indices.as_slice() {
+                self.verify_vanished_trigger(position, *standing_index, &members, review);
                 let standing_class =
                     group.classes.iter().find(|class| class.contains(standing_index));
                 for &index in members.iter().filter(|&&index| index < self.changes) {
@@ -616,12 +616,12 @@ impl Display for GroupingBrief {
             }
         }
 
-        if !self.details.is_empty() {
+        if self.whole.has_details() {
             f.write_str(
                 "\n## Whole-source detail (source, path, detail)\n\nNon-requirement detail \
                  (`excerpt` and `call` claims) extracted from whole-scope sources:\n\n",
             )?;
-            for detail in &self.details {
+            for detail in self.whole.details() {
                 writeln!(f, "{detail}")?;
             }
         }
@@ -635,8 +635,7 @@ impl Display for GroupingBrief {
 
         for group in merged {
             let id = &self.contributors[group.claims[0]].id;
-            let indices =
-                group.claims.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+            let indices = join_indices(&group.claims);
             writeln!(
                 f,
                 "- claims {indices} share the id `{id}` and are pre-merged; an answer that splits \
@@ -668,9 +667,9 @@ impl CriterionNote {
 
 struct ExtractNotes {
     source: String,
-    whole_behaviour: bool,
+    is_whole_behaviour: bool,
     criteria: Vec<CriterionNote>,
-    contracts: Vec<Contract>,
+    contracts: Contracts,
 }
 
 impl ExtractNotes {
@@ -680,35 +679,28 @@ impl ExtractNotes {
         } else {
             Vec::new()
         };
-        let contracts = extract
-            .evidence
-            .claims
-            .iter()
-            .filter(|claim| claim.kind == ClaimKind::Contract)
-            .filter_map(|claim| Contract::from_claim(&extract.source, claim))
-            .collect();
         Self {
             source: extract.source.clone(),
-            whole_behaviour: has_standing && extract.is_whole_behaviour(),
+            is_whole_behaviour: has_standing && extract.is_whole_behaviour(),
             criteria,
-            contracts,
+            contracts: Contracts::from_extract(extract),
         }
     }
 
-    fn for_claim(&self, id: &str, path: Option<&str>) -> Vec<String> {
+    fn claim_notes(&self, id: &str, path: Option<&str>) -> Vec<String> {
         let mut notes: Vec<String> = self
             .criteria
             .iter()
             .filter(|criterion| revision::leads(id, &criterion.id))
             .map(|criterion| format!("criterion `{}`: {}", criterion.id, criterion.condition))
             .collect();
-        if self.whole_behaviour {
+        if self.is_whole_behaviour {
             let cited = Cited {
                 source: self.source.clone(),
                 claim: id.to_owned(),
                 path: path.map(str::to_owned),
             };
-            if let Some(trigger) = Contract::trigger_for(&self.contracts, &cited) {
+            if let Some(trigger) = self.contracts.trigger_for(&cited) {
                 notes.push(trigger_note(&trigger));
             }
             if let Some(path) = path {
@@ -717,13 +709,81 @@ impl ExtractNotes {
         }
         notes
     }
+
+    fn collect(
+        self, extract: &Extract, withdrawals: bool, contributors: &mut Vec<Contributor>,
+        criteria: &mut Vec<String>, contracts: &mut Contracts,
+    ) {
+        // a source cannot conflict with itself: a withdrawal beside its own
+        // restatement is passed over so the restatement stands
+        let stated_ids: BTreeSet<String> = if withdrawals {
+            extract
+                .evidence
+                .claims
+                .iter()
+                .filter(|claim| claim.kind == ClaimKind::Requirement)
+                .filter_map(|claim| claim.id.clone())
+                .collect()
+        } else {
+            BTreeSet::new()
+        };
+
+        for claim in &extract.evidence.claims {
+            // a contract binds by its id or its anchor, so it needs no id
+            if claim.kind == ClaimKind::Contract {
+                continue;
+            }
+            let Some(id) = claim.id.as_deref() else { continue };
+
+            let withdraws = match claim.kind {
+                ClaimKind::Requirement => false,
+                ClaimKind::Retire if withdrawals => {
+                    if stated_ids.contains(id) {
+                        tracing::debug!(
+                            source = %extract.source,
+                            id,
+                            "withdrawal beside its own restatement; the restatement stands"
+                        );
+                        continue;
+                    }
+                    true
+                }
+                ClaimKind::Criterion => {
+                    criteria.push(id.to_owned());
+                    continue;
+                }
+                _ => continue,
+            };
+            let notes =
+                if withdraws { Vec::new() } else { self.claim_notes(id, claim.path.as_deref()) };
+            contributors.push(Contributor {
+                source: extract.source.clone(),
+                kind: extract.kind,
+                rank: extract.rank,
+                id: id.to_owned(),
+                path: claim.path.clone(),
+                statement: claim.statement(),
+                synopsis: claim.synopsis.clone(),
+                notes,
+                withdraws,
+                trigger: None,
+                citations: Vec::new(),
+                index: contributors.len(),
+            });
+        }
+        contracts.extend(self.contracts);
+    }
 }
 
-pub fn trigger_note(trigger: &Trigger) -> String {
+fn trigger_note(trigger: &Trigger) -> String {
     match trigger {
         Trigger::Http(route) => format!("route `{route}`"),
         Trigger::Message(topic) => format!("message `{topic}`"),
     }
+}
+
+fn join_indices(indices: &[usize]) -> String {
+    indices.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
 }
 
 enum EvidencedGap {
@@ -731,19 +791,175 @@ enum EvidencedGap {
     MissingDetail,
 }
 
+// Whole-scope behaviour evidence reconciled against standing requirements:
+// each source's extracted triggers and stem files, plus non-requirement
+// detail (`excerpt` and `call` claims).
+#[derive(Debug, Default, Clone)]
+pub struct WholeScope {
+    sources: BTreeMap<String, WholeSource>,
+    details: Vec<Detail>,
+}
+
+#[derive(Debug, Default, Clone)]
+struct WholeSource {
+    triggers: BTreeSet<Trigger>,
+    stem_files: BTreeMap<String, BTreeSet<String>>,
+}
+
+impl WholeSource {
+    fn record_stem_file(&mut self, stem: &str, path: &str) {
+        self.stem_files.entry(stem.to_owned()).or_default().insert(shape::file(path).to_owned());
+    }
+
+    fn has_stem_file(&self, stem: &str, file: &str) -> bool {
+        self.stem_files.get(stem).is_some_and(|files| files.contains(file))
+    }
+}
+
+impl WholeScope {
+    #[must_use]
+    pub fn from_spec(extracts: &[Extract], spec: &Spec) -> Self {
+        let mut sources = BTreeMap::new();
+        let mut details = Vec::new();
+
+        for extract in extracts.iter().filter(|extract| extract.is_whole_behaviour()) {
+            let entry = sources.entry(extract.source.clone()).or_insert_with(WholeSource::default);
+            for claim in &extract.evidence.claims {
+                if claim.kind == ClaimKind::Contract
+                    && let Some(Ok(trigger)) = claim.trigger()
+                {
+                    entry.triggers.insert(trigger);
+                }
+                if let Some(detail) = Detail::from_claim(&extract.source, claim) {
+                    details.push(detail);
+                }
+                if let (Some(id), Some(path)) = (claim.id.as_deref(), claim.path.as_deref()) {
+                    entry.record_stem_file(revision::stem(id), path);
+                }
+            }
+        }
+
+        for requirement in &spec.requirements {
+            let stem = requirement.stem();
+            for cited in &requirement.sources {
+                if let Some(path) = cited.path.as_deref()
+                    && let Some(whole) = sources.get_mut(&cited.source)
+                {
+                    whole.record_stem_file(stem, path);
+                }
+            }
+        }
+
+        Self { sources, details }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.sources.is_empty()
+    }
+
+    #[must_use]
+    pub fn contains_source(&self, source: &str) -> bool {
+        self.sources.contains_key(source)
+    }
+
+    #[must_use]
+    pub fn cites_only_whole(&self, citations: &[Cited]) -> bool {
+        !citations.is_empty() && citations.iter().all(|cited| self.contains_source(&cited.source))
+    }
+
+    #[must_use]
+    pub fn has_contract(&self, source: &str, trigger: &Trigger) -> bool {
+        self.sources.get(source).is_some_and(|whole| whole.triggers.contains(trigger))
+    }
+
+    #[must_use]
+    pub fn has_live_contract(&self, citations: &[Cited], trigger: &Trigger) -> bool {
+        citations.iter().any(|cited| self.has_contract(&cited.source, trigger))
+    }
+
+    #[must_use]
+    pub fn vanished_trigger(
+        &self, citations: &[Cited], trigger: Option<&Trigger>,
+    ) -> Option<Trigger> {
+        if !self.cites_only_whole(citations) {
+            return None;
+        }
+        let trigger = trigger?;
+        (!self.has_live_contract(citations, trigger)).then(|| trigger.clone())
+    }
+
+    #[must_use]
+    pub fn standing_trigger_note(&self, citations: &[Cited], trigger: &Trigger) -> String {
+        let note = trigger_note(trigger);
+        if self.vanished_trigger(citations, Some(trigger)).is_some() {
+            format!("{note} — absent from extracted contracts")
+        } else {
+            note
+        }
+    }
+
+    #[must_use]
+    pub fn admits_evidenced(
+        &self, stem: &str, trigger: Option<&Trigger>, citations: &[Cited],
+    ) -> bool {
+        self.evidenced_gap(stem, trigger, citations).is_none()
+    }
+
+    const fn has_details(&self) -> bool {
+        !self.details.is_empty()
+    }
+
+    fn details(&self) -> &[Detail] {
+        &self.details
+    }
+
+    fn source_names(&self) -> impl Iterator<Item = &str> {
+        self.sources.keys().map(String::as_str)
+    }
+
+    fn evidenced_gap(
+        &self, stem: &str, trigger: Option<&Trigger>, citations: &[Cited],
+    ) -> Option<EvidencedGap> {
+        if !self.cites_only_whole(citations) {
+            return None;
+        }
+        if let Some(vanished) = self.vanished_trigger(citations, trigger) {
+            return Some(EvidencedGap::MissingContract(vanished));
+        }
+        let has_detail = self.details.iter().any(|detail| {
+            citations.iter().any(|cited| cited.same_file(&detail.cited))
+                || trigger.is_some_and(|live| {
+                    self.has_contract(&detail.cited.source, live)
+                        && citations.iter().any(|cited| cited.source == detail.cited.source)
+                        && self.matches_stem(&detail.cited, stem)
+                })
+        });
+        (!has_detail).then_some(EvidencedGap::MissingDetail)
+    }
+
+    fn matches_stem(&self, cited: &Cited, stem: &str) -> bool {
+        let Some(path) = cited.path.as_deref() else {
+            return false;
+        };
+        let file = shape::file(path);
+        file.split('/').any(|part| part.split('.').next() == Some(stem))
+            || self.sources.get(&cited.source).is_some_and(|whole| whole.has_stem_file(stem, file))
+    }
+}
+
 // Non-requirement detail (`excerpt` or `call`) extracted from a whole-scope
 // behaviour source, shown so a standing requirement still implemented there is
 // not retired by scope when an extraction pass emitted no `requirement` claim
 // for it.
-#[derive(Debug)]
-pub struct Detail {
-    pub cited: Cited,
+#[derive(Debug, Clone)]
+struct Detail {
+    cited: Cited,
     text: String,
 }
 
 impl Detail {
-    #[must_use]
-    pub fn from_claim(source: &str, claim: &Claim) -> Option<Self> {
+    fn from_claim(source: &str, claim: &Claim) -> Option<Self> {
         let collapse = |raw: &str| raw.split_whitespace().collect::<Vec<_>>().join(" ");
         let text = match claim.kind {
             ClaimKind::Excerpt => collapse(claim.extra("excerpt")?),
@@ -775,6 +991,101 @@ impl Display for Detail {
     }
 }
 
+#[derive(Debug, Default)]
+struct Contracts(Vec<Contract>);
+
+impl Contracts {
+    fn from_extract(extract: &Extract) -> Self {
+        let items = extract
+            .evidence
+            .claims
+            .iter()
+            .filter(|claim| claim.kind == ClaimKind::Contract)
+            .filter_map(|claim| Contract::from_claim(&extract.source, claim))
+            .collect();
+        Self(items)
+    }
+
+    const fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn extend(&mut self, other: Self) {
+        self.0.extend(other.0);
+    }
+
+    fn by_id(&self, id: &str) -> Option<Trigger> {
+        self.0
+            .iter()
+            .filter(|contract| contract.leads(id))
+            .max_by_key(|contract| contract.id.as_deref().map_or(0, str::len))
+            .map(|contract| contract.trigger.clone())
+    }
+
+    fn by_source_id(&self, source: &str, id: &str) -> Option<Trigger> {
+        self.0
+            .iter()
+            .filter(|contract| contract.cited.source == source && contract.leads(id))
+            .max_by_key(|contract| contract.id.as_deref().map_or(0, str::len))
+            .map(|contract| contract.trigger.clone())
+    }
+
+    fn by_anchor(&self, cited: &Cited) -> Option<Trigger> {
+        self.0
+            .iter()
+            .find(|contract| cited.overlaps(&contract.cited))
+            .map(|contract| contract.trigger.clone())
+    }
+
+    fn trigger_for(&self, cited: &Cited) -> Option<Trigger> {
+        self.by_id(&cited.claim).or_else(|| self.by_anchor(cited))
+    }
+
+    fn trigger_in_source(&self, cited: &Cited) -> Option<Trigger> {
+        self.by_source_id(&cited.source, &cited.claim).or_else(|| self.by_anchor(cited))
+    }
+
+    // The trigger a contract binds to `members`: by id first (the longest
+    // matching contract id for the member highest in authority), else by
+    // overlapping anchor in the same authority order.
+    fn trigger_of<'a>(
+        &self, members: impl IntoIterator<Item = &'a Contributor>,
+    ) -> Option<Trigger> {
+        let mut ordered: Vec<&Contributor> = members.into_iter().collect();
+        ordered.sort_by_key(|member| (member.rank, member.index));
+        ordered
+            .iter()
+            .find_map(|member| self.by_id(&member.id))
+            .or_else(|| ordered.iter().find_map(|member| self.by_anchor(&Cited::from(*member))))
+    }
+
+    fn trigger_in_source_of<'a>(
+        &self, source: &str, members: impl IntoIterator<Item = &'a Contributor>,
+    ) -> Option<Trigger> {
+        let mut ordered: Vec<&Contributor> =
+            members.into_iter().filter(|member| member.source == source).collect();
+        ordered.sort_by_key(|member| (member.rank, member.index));
+        ordered
+            .iter()
+            .find_map(|member| self.by_source_id(source, &member.id))
+            .or_else(|| ordered.iter().find_map(|member| self.by_anchor(&Cited::from(*member))))
+    }
+
+    fn stems_for<'a>(
+        &self, members: impl IntoIterator<Item = &'a Contributor>,
+    ) -> BTreeSet<String> {
+        let mut stems = BTreeSet::new();
+        for member in members {
+            let cited = Cited::from(member);
+            for contract in self.0.iter().filter(|contract| contract.matches(&cited)) {
+                let stem = contract.id.as_deref().map_or_else(|| member.stem(), revision::stem);
+                stems.insert(stem.to_owned());
+            }
+        }
+        stems
+    }
+}
+
 // A `contract` claim carrying a trigger: what binds it to a requirement is
 // its id, which the requirement's subject leads with, or its anchor, which a
 // contributor's citation meets.
@@ -803,47 +1114,39 @@ impl Contract {
     fn matches(&self, cited: &Cited) -> bool {
         self.leads(&cited.claim) || cited.overlaps(&self.cited)
     }
-
-    fn trigger_by_id(contracts: &[Self], id: &str) -> Option<Trigger> {
-        contracts
-            .iter()
-            .filter(|contract| contract.leads(id))
-            .max_by_key(|contract| contract.id.as_deref().map_or(0, str::len))
-            .map(|contract| contract.trigger.clone())
-    }
-
-    fn trigger_by_anchor(contracts: &[Self], cited: &Cited) -> Option<Trigger> {
-        contracts
-            .iter()
-            .find(|contract| cited.overlaps(&contract.cited))
-            .map(|contract| contract.trigger.clone())
-    }
-
-    fn trigger_for(contracts: &[Self], cited: &Cited) -> Option<Trigger> {
-        Self::trigger_by_id(contracts, &cited.claim)
-            .or_else(|| Self::trigger_by_anchor(contracts, cited))
-    }
 }
 
-// A change claim anchored where a standing requirement was read: the same
-// source and file, lines that meet. A hint to the grouping, never a
-// pre-merge, since line numbers drift as code changes.
+// A hint to the grouping, never a pre-merge: either a change claim anchored
+// where a standing requirement was read, or claims bound to a live whole-scope
+// surface whose standing requirement was read in another file (such as a thin
+// route wrapper over a service module).
 #[derive(Debug)]
-struct Hint {
-    claim: usize,
-    standing: usize,
-    path: String,
+enum Hint {
+    Anchor { claim: usize, standing: usize, path: String },
+    Surface { trigger: Trigger, claims: Vec<usize>, standing: Vec<usize> },
 }
 
 impl Hint {
-    // One hint per claim and standing requirement it anchors within. A claim
-    // at a standing requirement's id is pre-merged already, so none is
-    // hinted for it.
-    fn all(claims: &[Contributor], standing: &[Contributor]) -> Vec<Self> {
+    // One anchor hint per claim and standing requirement it anchors within (a
+    // claim at a standing requirement's id is pre-merged already, so none is
+    // hinted for it), followed by one live-surface hint per whole-scope
+    // surface that still has an unhinted standing requirement.
+    fn all(
+        claims: &[Contributor], standing: &[Contributor], contracts: &Contracts, whole: &WholeScope,
+    ) -> Vec<Self> {
         if standing.is_empty() {
             return Vec::new();
         }
+        let (mut hints, anchor_hinted) = Self::anchor_hints(claims, standing);
+        hints.extend(Self::surface_hints(claims, standing, contracts, whole, &anchor_hinted));
+        hints
+    }
+
+    fn anchor_hints(
+        claims: &[Contributor], standing: &[Contributor],
+    ) -> (Vec<Self>, BTreeSet<usize>) {
         let mut hints = Vec::new();
+        let mut hinted_standing = BTreeSet::new();
         for claim in claims {
             let Some(path) = claim.path.as_deref() else { continue };
             if standing.iter().any(|member| member.id == claim.id) {
@@ -852,7 +1155,8 @@ impl Hint {
             let cited = Cited::from(claim);
             for member in standing {
                 if member.citations.iter().any(|read| cited.overlaps(read)) {
-                    hints.push(Self {
+                    hinted_standing.insert(member.index);
+                    hints.push(Self::Anchor {
                         claim: claim.index,
                         standing: member.index,
                         path: path.to_owned(),
@@ -860,18 +1164,98 @@ impl Hint {
                 }
             }
         }
+        (hints, hinted_standing)
+    }
+
+    fn surface_hints(
+        claims: &[Contributor], standing: &[Contributor], contracts: &Contracts,
+        whole: &WholeScope, anchor_hinted: &BTreeSet<usize>,
+    ) -> Vec<Self> {
+        if whole.is_empty() || contracts.is_empty() {
+            return Vec::new();
+        }
+        let mut hints = Vec::new();
+        let mut seen_triggers = BTreeSet::new();
+        for member in standing {
+            let Some(trigger) = &member.trigger else { continue };
+            let pre_merged = claims.iter().any(|claim| !claim.withdraws && claim.id == member.id);
+            if anchor_hinted.contains(&member.index)
+                || pre_merged
+                || !whole.has_live_contract(&member.citations, trigger)
+                || !seen_triggers.insert(trigger.clone())
+            {
+                continue;
+            }
+            let bound_claims: Vec<usize> = claims
+                .iter()
+                .filter(|claim| !claim.withdraws && whole.contains_source(&claim.source))
+                .filter(|claim| {
+                    contracts.trigger_in_source(&Cited::from(*claim)).as_ref() == Some(trigger)
+                })
+                .map(|claim| claim.index)
+                .collect();
+            if bound_claims.is_empty() {
+                continue;
+            }
+            let standing_on_surface: Vec<usize> = standing
+                .iter()
+                .filter(|other| other.trigger.as_ref() == Some(trigger))
+                .map(|other| other.index)
+                .collect();
+            hints.push(Self::Surface {
+                trigger: trigger.clone(),
+                claims: bound_claims,
+                standing: standing_on_surface,
+            });
+        }
         hints
     }
 }
 
 impl Display for Hint {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "- claim {} anchors at `{}`, where standing requirement {} was read; they are one \
-             requirement unless the code moved.",
-            self.claim, self.path, self.standing
-        )
+        match self {
+            Self::Anchor {
+                claim,
+                standing,
+                path,
+            } => write!(
+                f,
+                "- claim {claim} anchors at `{path}`, where standing requirement {standing} was \
+                 read; they are one requirement unless the code moved."
+            ),
+            Self::Surface {
+                trigger,
+                claims,
+                standing,
+            } => {
+                let lead = match claims.as_slice() {
+                    [sole] => format!("claim {sole} shares"),
+                    many => format!("claims {} share", join_indices(many)),
+                };
+                let surface = trigger_note(trigger);
+                if let [sole] = standing.as_slice() {
+                    write!(
+                        f,
+                        "- {lead} {surface} with standing requirement {sole} across files; match \
+                         what states its behaviour to standing requirement {sole} (in its class \
+                         when unchanged) rather than leaving a standing requirement on a live \
+                         surface ungrouped."
+                    )
+                } else {
+                    let standing_list = join_indices(standing);
+                    write!(
+                        f,
+                        "- {lead} {surface} with standing requirements {standing_list} across \
+                         files; a service-layer claim that also states the resource returned on \
+                         the surface may join both a service/cache standing requirement's group \
+                         and the surface's return standing requirement's group (in each standing \
+                         requirement's class when unchanged) rather than leaving a standing \
+                         requirement on a live surface ungrouped."
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -949,7 +1333,7 @@ impl Grouping {
     // Ordered by each group's earliest claim and numbered from `REQ-001` in
     // that order.
     fn bases(
-        &self, contributors: &[Contributor], criteria: &[String], contracts: &[Contract],
+        &self, contributors: &[Contributor], criteria: &[String], contracts: &Contracts,
     ) -> Result<Vec<Basis>, Error> {
         let evidenced: BTreeSet<usize> = self.evidenced.iter().copied().collect();
         let mut groups: Vec<OrderedGroup> = Vec::with_capacity(self.groups.len());
@@ -1081,7 +1465,7 @@ pub struct Basis {
 
 impl Basis {
     fn of(
-        id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[String], contracts: &[Contract],
+        id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[String], contracts: &Contracts,
         evidenced: bool,
     ) -> Result<Self, Error> {
         // refuse an empty class, so every class below has a lead
@@ -1100,8 +1484,9 @@ impl Basis {
             .any(|member| criteria.iter().any(|id| revision::leads(&member.id, id)));
 
         let status = Self::settle(&classes, covered);
-        let trigger = Self::trigger_of(&classes, contracts);
-        let contract_stems = Self::contract_stems(&classes, contracts);
+        let trigger = contracts.trigger_of(classes.iter().flatten());
+        let contract_stems =
+            contracts.stems_for(classes.iter().flatten().filter(|member| !member.is_baseline()));
 
         Ok(Self {
             id,
@@ -1181,34 +1566,6 @@ impl Basis {
     #[must_use]
     pub fn has_contract_under(&self, stem: &str) -> bool {
         self.contract_stems.contains(stem)
-    }
-
-    // The trigger a contract binds to the requirement: by id first, the
-    // contract whose id the member's leads with, the longest such id for
-    // the member highest in authority; else by anchor, the contract whose
-    // citation the member's meets, in the same order.
-    fn trigger_of(classes: &[Vec<Contributor>], contracts: &[Contract]) -> Option<Trigger> {
-        let mut members: Vec<&Contributor> = classes.iter().flatten().collect();
-        members.sort_by_key(|member| (member.rank, member.index));
-        members.iter().find_map(|member| Contract::trigger_by_id(contracts, &member.id)).or_else(
-            || {
-                members.iter().find_map(|member| {
-                    Contract::trigger_by_anchor(contracts, &Cited::from(*member))
-                })
-            },
-        )
-    }
-
-    fn contract_stems(classes: &[Vec<Contributor>], contracts: &[Contract]) -> BTreeSet<String> {
-        let mut stems = BTreeSet::new();
-        for member in classes.iter().flatten().filter(|member| !member.is_baseline()) {
-            let cited = Cited::from(member);
-            for contract in contracts.iter().filter(|contract| contract.matches(&cited)) {
-                let stem = contract.id.as_deref().map_or_else(|| member.stem(), revision::stem);
-                stems.insert(stem.to_owned());
-            }
-        }
-        stems
     }
 
     // Returns the stem of the subject: the first segment of its dotted id.

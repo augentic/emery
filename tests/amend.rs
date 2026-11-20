@@ -1253,6 +1253,7 @@ async fn amend_scoped_granularity() {
     let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
     for req in base_spec["requirements"].as_array_mut().expect("requirements") {
         req["sources"][0]["source"] = Value::from("code");
+        req["trigger"] = Value::Null;
     }
     base_spec["requirements"][1]["sources"][0]["path"] = Value::from("src/session.ts#L10-L14");
     let base_bytes = serde_json::to_vec(&base_spec).expect("serialise base spec");
@@ -1538,6 +1539,10 @@ fn co_grouped_trigger_fixture() -> TriggerFixture {
         .at("src/routes/health.ts#L33-L37"),
         claim(ClaimKind::Contract, "health.get-ready", ("route", "GET /health/ready"))
             .at("src/routes/health.ts#L26-L38"),
+        claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+            .at("src/routes/orders.ts#L10-L20"),
+        claim(ClaimKind::Contract, "orders.cancel-msg", ("message", "orders.cancel-requested"))
+            .at("src/consumers/orders.ts#L10-L20"),
         requirement("orders.create", "A signed-in user places an order of up to 20 units."),
         requirement("orders.cancel", "A signed-in user cancels an open order."),
     ];
@@ -1699,6 +1704,8 @@ fn retired_lines_fixture(extra: Option<Claim>) -> RetiredLinesFixture {
             .at("src/services/customers.ts#L18-L31"),
         requirement("orders.create", "A signed-in user places an order.")
             .at("src/services/orders.ts#L40-L58"),
+        claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+            .at("src/routes/orders.ts#L10-L20"),
         claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
         claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
         db_call("src/server.ts#L44"),
@@ -1722,7 +1729,7 @@ fn retired_lines_fixture(extra: Option<Claim>) -> RetiredLinesFixture {
 async fn amend_scoped_retire_route_not_evidenced() {
     let scratch = Scratch::new();
     let config = scoped(&scratch, CODE, "whole");
-    let fixture = vanished_route_fixture();
+    let fixture = ScopedFixture::vanished_route();
 
     // 0..=3 are `code`'s requirement claims; 4..=9 the standing requirements
     // (`REQ-001`, `REQ-002`, `REQ-003`, `REQ-047`, `REQ-048`, `REQ-049`)
@@ -1749,8 +1756,7 @@ async fn amend_scoped_retire_route_not_evidenced() {
         {"kind": "apis", "blocks": [{"text": "Inbound HTTP exposes POST /api/customers (REQ-002) and POST /api/orders (REQ-003)."}], "revised": [1]}
     ]}"#;
     let mut provider = Provider::answering([invalid, valid, design]);
-    code_with(&mut provider, fixture.claims);
-    seed(&provider.files, &fixture.spec, fixture.design.as_bytes(), &fixture.plan);
+    fixture.seed_into(&mut provider);
 
     let resp =
         cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
@@ -1798,11 +1804,481 @@ async fn amend_scoped_retire_route_not_evidenced() {
     provider.model.assert_exhausted();
 }
 
+// When `PUT /api/orders/{id}/lines` vanishes from the extracted contracts of a
+// whole-scope behaviour source, standing requirements on that route are marked
+// `absent from extracted contracts` in the grouping brief, `GroupingBrief::verify`
+// refuses placing either an untriggered shared-helper claim
+// (`orders.invalidate-cache-on-transition`) or another standing route's claim
+// (`orders.post.create`) into their groups, and the corrected grouping retires
+// all three `REQ-047..049` by scope.
+#[tokio::test]
+async fn amend_scoped_vanished_route_rejects_untriggered_claim() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let mut fixture = ScopedFixture::vanished_route();
+    fixture.claims.insert(
+        4,
+        requirement(
+            "orders.invalidate-cache-on-transition",
+            "Every successful order state change removes the cached entry for that order.",
+        )
+        .at("src/services/orders.ts#L78"),
+    );
+
+    // 0..=4 are `code`'s requirement claims (`start.json-body-limit`,
+    // `start.omit-powered-by`, `customers.post.create`, `orders.post.create`,
+    // `orders.invalidate-cache-on-transition`); 5..=10 the standing
+    // requirements (`REQ-001`, `REQ-002`, `REQ-003`, `REQ-047`, `REQ-048`, `REQ-049`)
+    let invalid = r#"{"groups": [
+        {"claims": [0, 5], "classes": [[0, 5]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2, 6], "classes": [[2, 6]]},
+        {"claims": [3, 7], "classes": [[3, 7]]},
+        {"claims": [8], "classes": [[8]]},
+        {"claims": [3, 9], "classes": [[3, 9]]},
+        {"claims": [4, 10], "classes": [[4, 10]]}
+    ]}"#;
+    let valid = r#"{"groups": [
+        {"claims": [0, 5], "classes": [[0, 5]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2, 6], "classes": [[2, 6]]},
+        {"claims": [3, 4, 7], "classes": [[3, 4, 7]]},
+        {"claims": [8], "classes": [[8]]},
+        {"claims": [9], "classes": [[9]]},
+        {"claims": [10], "classes": [[10]]}
+    ]}"#;
+    let design = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Customers and orders are exposed over HTTP (REQ-001, REQ-002, REQ-003)."}], "revised": [1]},
+        {"kind": "apis", "blocks": [{"text": "Inbound HTTP exposes POST /api/customers (REQ-002) and POST /api/orders (REQ-003)."}], "revised": [1]}
+    ]}"#;
+    let mut provider = Provider::answering([invalid, valid, design]);
+    fixture.seed_into(&mut provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 3, "conflict": 0, "unchanged": 3, "by-scope": 3
+        }),
+        "{envelope}"
+    );
+    assert_eq!(envelope["stems"], serde_json::json!(["orders"]), "{envelope}");
+
+    let grouping_turn = provider.model.seen()[0].messages.join("\n");
+    let absent_note = "route `PUT /api/orders/{id}/lines` — absent from extracted contracts";
+    assert!(grouping_turn.contains(absent_note), "{grouping_turn}");
+
+    let exchanges = provider.model.exchanges();
+    let finding =
+        exchanges[0].outcome.as_ref().expect_err("untriggered claim on vanished route rejected");
+    let untriggered_finding = "standing requirement 10 (`orders.put-id-lines.reprice-and-persist`) \
+                               carries route `PUT /api/orders/{id}/lines`, which is absent from \
+                               the extracted contracts of `code`, so claim 4 \
+                               (`orders.invalidate-cache-on-transition`) cannot keep it standing \
+                               without a replacement contract";
+    assert!(finding.contains(untriggered_finding), "{finding}");
+    let borrowed_route_finding = "standing requirement 9 (`orders.put-id-lines.pending-only`) \
+                                  carries route `PUT /api/orders/{id}/lines`, which is absent from \
+                                  the extracted contracts of `code`, while claim 3 \
+                                  (`orders.post.create`) belongs to existing route \
+                                  `POST /api/orders`";
+    assert!(finding.contains(borrowed_route_finding), "{finding}");
+
+    let (_, amendment) = staged_amendment(&provider);
+    for (pos, req_id) in [(3, "REQ-047"), (4, "REQ-048"), (5, "REQ-049")] {
+        assert_eq!(amendment["changes"][pos]["id"], req_id, "{amendment}");
+        assert_eq!(amendment["changes"][pos]["class"], "retired", "{amendment}");
+        assert_eq!(amendment["changes"][pos]["scope"], "code", "{amendment}");
+    }
+    provider.model.assert_exhausted();
+}
+
+// When a standing requirement's whole-scope route vanished and a replacement
+// claim revises it with no contract (from a delta source) or with a
+// replacement contract (`PATCH /api/orders/{id}/lines`), `same_trigger` is
+// `false` and the vanished `PUT /api/orders/{id}/lines` trigger is never
+// carried forward onto the amended requirement.
+#[tokio::test]
+async fn amend_whole_vanished_trigger_not_preserved() {
+    let scratch = Scratch::new();
+    let fixture = ScopedFixture::vanished_route();
+    assert_vanished_trigger_stripped(&scratch, &fixture).await;
+    assert_vanished_trigger_replaced(&scratch, fixture).await;
+}
+
+async fn assert_vanished_trigger_stripped(scratch: &Scratch, fixture: &ScopedFixture) {
+    let dual_config = scratch.config(&format!(
+        "[[source]]\nadapter = \"{DOCS}\"\n\n[[source]]\nadapter = \"{CODE}\"\nscope = \
+         \"whole\"\n\n[target]\nadapter = \"acme:builder@2.1.0\"\nrepository = \".\"\n"
+    ));
+    let grouping = r#"{"groups": [
+        {"claims": [0, 10], "classes": [[0, 10]]},
+        {"claims": [1, 5], "classes": [[1, 5]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3, 6], "classes": [[3, 6]]},
+        {"claims": [4, 7], "classes": [[4, 7]]},
+        {"claims": [8], "classes": [[8]]},
+        {"claims": [9], "classes": [[9]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.reprice-lines", "scenarios": [
+            {"name": "Reprice lines", "when": "pending order lines are repriced", "then": "totals are recomputed"}
+        ]}
+    ]}"#;
+    let design = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Customers and orders are exposed over HTTP, with internal line repricing (REQ-001, REQ-002, REQ-003, REQ-049)."}], "revised": [1]},
+        {"kind": "apis", "blocks": [{"text": "Inbound HTTP exposes POST /api/customers (REQ-002) and POST /api/orders (REQ-003); line repricing runs internally (REQ-049)."}], "revised": [1]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft, design]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![requirement(
+            "orders.reprice-lines",
+            "A valid amend-lines request replaces lines and recomputes totals.",
+        )])),
+    );
+    fixture.seed_into(&mut provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &dual_config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 1, "retired": 2, "conflict": 0, "unchanged": 3, "by-scope": 2
+        }),
+        "{envelope}"
+    );
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(amendment["changes"][5]["id"], "REQ-049", "{amendment}");
+    assert_eq!(amendment["changes"][5]["class"], "changed", "{amendment}");
+    let req_049 = amended_requirement(&amendment, "REQ-049");
+    assert_eq!(req_049["trigger"], Value::Null, "vanished route stripped: {req_049}");
+    provider.model.assert_exhausted();
+}
+
+async fn assert_vanished_trigger_replaced(scratch: &Scratch, mut fixture: ScopedFixture) {
+    let whole_config = scoped(scratch, CODE, "whole");
+    fixture.claims.insert(
+        4,
+        requirement(
+            "orders.patch-id-lines.reprice-and-persist",
+            "A valid patch-lines request replaces lines and recomputes totals.",
+        )
+        .at("src/services/orders.ts#L67-L78"),
+    );
+    fixture.claims.push(
+        claim(
+            ClaimKind::Contract,
+            "orders.patch-id-lines",
+            ("route", "PATCH /api/orders/{id}/lines"),
+        )
+        .at("src/routes/orders.ts#L47-L53"),
+    );
+    let grouping = r#"{"groups": [
+        {"claims": [0, 5], "classes": [[0, 5]]},
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2, 6], "classes": [[2, 6]]},
+        {"claims": [3, 7], "classes": [[3, 7]]},
+        {"claims": [8], "classes": [[8]]},
+        {"claims": [9], "classes": [[9]]},
+        {"claims": [4, 10], "classes": [[4, 10]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.patch-id-lines.reprice-and-persist", "scenarios": [
+            {"name": "Patch lines", "when": "a caller patches lines on a pending order", "then": "lines and totals are updated"}
+        ]}
+    ]}"#;
+    let design = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Customers and orders are exposed over HTTP, including line patches (REQ-001, REQ-002, REQ-003, REQ-049)."}], "revised": [1]},
+        {"kind": "apis", "blocks": [{"text": "Inbound HTTP exposes POST /api/customers (REQ-002), POST /api/orders (REQ-003), and PATCH /api/orders/{id}/lines (REQ-049)."}], "revised": [1]},
+        {"kind": "technical-logic", "blocks": [{"text": "Order reads check the cache under order:{id} before repricing lines (REQ-049)."}], "revised": []}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft, design]);
+    fixture.seed_into(&mut provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &whole_config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 1, "retired": 2, "conflict": 0, "unchanged": 3, "by-scope": 2
+        }),
+        "{envelope}"
+    );
+    let (_, amendment) = staged_amendment(&provider);
+    let req_049 = amended_requirement(&amendment, "REQ-049");
+    assert_eq!(
+        req_049["trigger"],
+        serde_json::json!({"http": {"method": "PATCH", "path": "/api/orders/{id}/lines"}}),
+        "{req_049}"
+    );
+    provider.model.assert_exhausted();
+}
+
+fn amended_requirement(amendment: &Value, req_id: &str) -> Value {
+    amendment["spec"]["requirements"]
+        .as_array()
+        .expect("requirements")
+        .iter()
+        .find(|req| req["id"] == req_id)
+        .unwrap_or_else(|| panic!("{req_id} stands revised"))
+        .clone()
+}
+
+// On an untouched live route (`GET /api/orders/{id}`) whose return-order
+// standing requirement was read in a thin route wrapper (`src/routes/orders.ts`)
+// while re-extracted claims anchored in `src/services/orders.ts`, `## Baseline`
+// emits a cross-file route hint and placing `orders.get-id.load-and-cache` in
+// both `REQ-034` and `REQ-036` (or evidencing `REQ-034` through stem detail on
+// the live route) keeps every standing requirement unchanged.
+#[tokio::test]
+async fn amend_scoped_live_route_cross_layer() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let mut fixture = ScopedFixture::live_route_cross_layer();
+
+    // 0..=3 are `code`'s claims; 4..=7 are `REQ-001`, `REQ-034`, `REQ-035`, `REQ-036`
+    let multi_grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [3, 5], "classes": [[3, 5]]},
+        {"claims": [2, 6], "classes": [[2, 6]]},
+        {"claims": [1, 3, 7], "classes": [[1, 3, 7]]}
+    ]}"#;
+    let unchanged_apis_design = format!(
+        r#"{{"sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}], "revised": []}},
+            {{"kind": "apis", "blocks": [{{"text": "Inbound HTTP exposes GET /api/orders/{{id}} (REQ-034, REQ-035, REQ-036)."}}], "revised": []}}
+        ]}}"#
+    );
+    let mut provider = Provider::answering([multi_grouping, unchanged_apis_design.as_str()]);
+    fixture.seed_into(&mut provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["staged"], false, "all standing requirements unchanged: {envelope}");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 0, "conflict": 0, "unchanged": 4, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    let grouping_turn = provider.model.seen()[0].messages.join("\n");
+    let cross_file_hint = "- claims 1, 2, 3 share route `GET /api/orders/{id}` with standing \
+                           requirements 5, 6, 7 across files";
+    assert!(grouping_turn.contains(cross_file_hint), "{grouping_turn}");
+    provider.model.assert_exhausted();
+
+    // When `REQ-034` stands alone on a live route and `src/services/orders.ts`
+    // holds stem `Excerpt` detail while `src/routes/orders.ts` holds none,
+    // `evidenced` is accepted by both `verify_evidenced` and `admits_evidenced`.
+    let evidenced_grouping = r#"{"groups": [
+        {"claims": [0, 4], "classes": [[0, 4]]},
+        {"claims": [5], "classes": [[5]]},
+        {"claims": [2, 6], "classes": [[2, 6]]},
+        {"claims": [1, 3, 7], "classes": [[1, 3, 7]]}
+    ], "evidenced": [5]}"#;
+    let design = format!(
+        r#"{{"sections": [
+            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}], "revised": []}},
+            {{"kind": "apis", "blocks": [{{"text": "Inbound HTTP exposes GET /api/orders/{{id}} (REQ-034, REQ-035, REQ-036)."}}], "revised": []}},
+            {{"kind": "technical-logic", "blocks": [{{"text": "Orders are cached under order:{{id}} on miss (REQ-034, REQ-036)."}}], "revised": []}}
+        ]}}"#
+    );
+    let mut provider = Provider::answering([evidenced_grouping, design.as_str()]);
+    fixture.claims.push(
+        Claim::new(ClaimKind::Excerpt)
+            .at("src/services/orders.ts#L23-L33")
+            .with_extra("excerpt", "Order lookup checks the cache and returns the order."),
+    );
+    fixture.seed_into(&mut provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 0, "conflict": 0, "unchanged": 4, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    provider.model.assert_exhausted();
+}
+
 struct ScopedFixture {
     spec: Vec<u8>,
     design: String,
     plan: Vec<u8>,
     claims: Vec<Claim>,
+}
+
+impl ScopedFixture {
+    fn seed_into(&self, provider: &mut Provider) {
+        code_with(provider, self.claims.clone());
+        seed(&provider.files, &self.spec, self.design.as_bytes(), &self.plan);
+    }
+
+    fn live_route_cross_layer() -> Self {
+        let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+        let tpl = base_spec["requirements"][2].clone();
+        base_spec["requirements"] = serde_json::json!([
+            SpecReq::new(
+                "REQ-001",
+                "start.json-body-limit",
+                "JSON request bodies exceeding 256 kilobytes are rejected.",
+            )
+            .at("src/server.ts#L28")
+            .into_json(&tpl),
+            SpecReq::new(
+                "REQ-034",
+                "orders.get-id.return-order",
+                "A get-by-id request returns the order for the path id when it exists.",
+            )
+            .at("src/routes/orders.ts#L29-L31")
+            .route("GET /api/orders/{id}")
+            .into_json(&tpl),
+            SpecReq::new(
+                "REQ-035",
+                "orders.get-id.not-found",
+                "A get-by-id request is rejected when no order exists for the given id.",
+            )
+            .at("src/services/orders.ts#L29-L31")
+            .route("GET /api/orders/{id}")
+            .into_json(&tpl),
+            SpecReq::new(
+                "REQ-036",
+                "orders.get-id.cache-hit",
+                "A get-by-id request returns the cached order when one is held for that id.",
+            )
+            .at("src/services/orders.ts#L25-L33")
+            .route("GET /api/orders/{id}")
+            .into_json(&tpl),
+        ]);
+        let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+        base_plan["parts"][0]["name"] = Value::from("start");
+        base_plan["parts"][0]["requirements"] = serde_json::json!(["REQ-001"]);
+        base_plan["parts"][1]["requirements"] =
+            serde_json::json!(["REQ-034", "REQ-035", "REQ-036"]);
+        let design = format!(
+            r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
+                {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}]}},
+                {DOMAIN_MODEL},
+                {{"kind": "apis", "blocks": [{{"text": "Inbound HTTP exposes GET /api/orders/{{id}} (REQ-034, REQ-035, REQ-036)."}}]}},
+                {{"kind": "technical-logic", "blocks": [{{"text": "Orders are cached under order:{{id}} on miss (REQ-034, REQ-036)."}}]}}
+            ]}}"#
+        );
+        let claims = vec![
+            requirement(
+                "start.json-body-limit",
+                "JSON request bodies exceeding 256 kilobytes are rejected.",
+            )
+            .at("src/server.ts#L28"),
+            requirement(
+                "orders.get-id.serve-from-cache",
+                "When a cached copy of the order exists, that order is returned without reading the store.",
+            )
+            .at("src/services/orders.ts#L25-L27"),
+            requirement(
+                "orders.get-id.reject-missing",
+                "A request for an order that does not exist in the store is rejected.",
+            )
+            .at("src/services/orders.ts#L29-L31"),
+            requirement(
+                "orders.get-id.load-and-cache",
+                "When no cached copy exists, the order is read from the store, cached, then returned.",
+            )
+            .at("src/services/orders.ts#L28-L33"),
+            claim(ClaimKind::Contract, "orders.get-id", ("route", "GET /api/orders/{id}"))
+                .at("src/routes/orders.ts#L27-L33"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ];
+        Self {
+            spec: serde_json::to_vec(&base_spec).expect("serialise base spec"),
+            design,
+            plan: serde_json::to_vec(&base_plan).expect("serialise base plan"),
+            claims,
+        }
+    }
+
+    fn vanished_route() -> Self {
+        let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+        let tpl = base_spec["requirements"][2].clone();
+        base_spec["requirements"] = serde_json::json!([
+            SpecReq::new(
+                "REQ-001",
+                "start.json-body-limit",
+                "JSON request bodies exceeding 256 kilobytes are rejected.",
+            )
+            .at("src/server.ts#L28")
+            .into_json(&tpl),
+            SpecReq::new(
+                "REQ-002",
+                "customers.post.create",
+                "A valid customer request persists the customer.",
+            )
+            .at("src/routes/customers.ts#L18-L31")
+            .route("POST /api/customers")
+            .into_json(&tpl),
+            SpecReq::new(
+                "REQ-003",
+                "orders.post.create",
+                "A valid order request creates a pending order.",
+            )
+            .at("src/routes/orders.ts#L30-L42")
+            .route("POST /api/orders")
+            .into_json(&tpl),
+            SpecReq::new(
+                "REQ-047",
+                "orders.put-id-lines.body-validation",
+                "An amend-lines request rejects an invalid line list.",
+            )
+            .at("src/routes/orders.ts#L47")
+            .route("PUT /api/orders/{id}/lines")
+            .into_json(&tpl),
+            SpecReq::new(
+                "REQ-048",
+                "orders.put-id-lines.pending-only",
+                "An amend-lines request is rejected when the order is not pending.",
+            )
+            .at("src/services/orders.ts#L64-L66")
+            .route("PUT /api/orders/{id}/lines")
+            .into_json(&tpl),
+            SpecReq::new(
+                "REQ-049",
+                "orders.put-id-lines.reprice-and-persist",
+                "A valid amend-lines request replaces lines and recomputes totals.",
+            )
+            .at("src/services/orders.ts#L67-L78")
+            .route("PUT /api/orders/{id}/lines")
+            .into_json(&tpl),
+        ]);
+        let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+        base_plan["parts"][0]["name"] = Value::from("start");
+        base_plan["parts"][0]["requirements"] = serde_json::json!(["REQ-001", "REQ-002"]);
+        base_plan["parts"][1]["requirements"] =
+            serde_json::json!(["REQ-003", "REQ-047", "REQ-048", "REQ-049"]);
+
+        let design = format!(
+            r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
+                {{"kind": "overview", "blocks": [{{"text": "Customers and orders are exposed over HTTP, including line amendments (REQ-001, REQ-002, REQ-003, REQ-047, REQ-048, REQ-049)."}}]}},
+                {DOMAIN_MODEL},
+                {{"kind": "apis", "blocks": [{{"text": "Inbound HTTP exposes POST /api/customers (REQ-002), POST /api/orders (REQ-003), and PUT /api/orders/{{id}}/lines (REQ-047, REQ-048, REQ-049)."}}]}}
+            ]}}"#
+        );
+        Self {
+            spec: serde_json::to_vec(&base_spec).expect("serialise base spec"),
+            design,
+            plan: serde_json::to_vec(&base_plan).expect("serialise base plan"),
+            claims: vanished_route_claims(),
+        }
+    }
 }
 
 struct SpecReq {
@@ -1853,79 +2329,6 @@ impl SpecReq {
         }]);
         entry["body"] = serde_json::json!([self.body]);
         entry
-    }
-}
-
-fn vanished_route_fixture() -> ScopedFixture {
-    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
-    let tpl = base_spec["requirements"][2].clone();
-    base_spec["requirements"] = serde_json::json!([
-        SpecReq::new(
-            "REQ-001",
-            "start.json-body-limit",
-            "JSON request bodies exceeding 256 kilobytes are rejected.",
-        )
-        .at("src/server.ts#L28")
-        .into_json(&tpl),
-        SpecReq::new(
-            "REQ-002",
-            "customers.post.create",
-            "A valid customer request persists the customer.",
-        )
-        .at("src/routes/customers.ts#L18-L31")
-        .route("POST /api/customers")
-        .into_json(&tpl),
-        SpecReq::new(
-            "REQ-003",
-            "orders.post.create",
-            "A valid order request creates a pending order.",
-        )
-        .at("src/routes/orders.ts#L30-L42")
-        .route("POST /api/orders")
-        .into_json(&tpl),
-        SpecReq::new(
-            "REQ-047",
-            "orders.put-id-lines.body-validation",
-            "An amend-lines request rejects an invalid line list.",
-        )
-        .at("src/routes/orders.ts#L47")
-        .route("PUT /api/orders/{id}/lines")
-        .into_json(&tpl),
-        SpecReq::new(
-            "REQ-048",
-            "orders.put-id-lines.pending-only",
-            "An amend-lines request is rejected when the order is not pending.",
-        )
-        .at("src/services/orders.ts#L64-L66")
-        .route("PUT /api/orders/{id}/lines")
-        .into_json(&tpl),
-        SpecReq::new(
-            "REQ-049",
-            "orders.put-id-lines.reprice-and-persist",
-            "A valid amend-lines request replaces lines and recomputes totals.",
-        )
-        .at("src/services/orders.ts#L67-L78")
-        .route("PUT /api/orders/{id}/lines")
-        .into_json(&tpl),
-    ]);
-    let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
-    base_plan["parts"][0]["name"] = Value::from("start");
-    base_plan["parts"][0]["requirements"] = serde_json::json!(["REQ-001", "REQ-002"]);
-    base_plan["parts"][1]["requirements"] =
-        serde_json::json!(["REQ-003", "REQ-047", "REQ-048", "REQ-049"]);
-
-    let design = format!(
-        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
-            {{"kind": "overview", "blocks": [{{"text": "Customers and orders are exposed over HTTP, including line amendments (REQ-001, REQ-002, REQ-003, REQ-047, REQ-048, REQ-049)."}}]}},
-            {DOMAIN_MODEL},
-            {{"kind": "apis", "blocks": [{{"text": "Inbound HTTP exposes POST /api/customers (REQ-002), POST /api/orders (REQ-003), and PUT /api/orders/{{id}}/lines (REQ-047, REQ-048, REQ-049)."}}]}}
-        ]}}"#
-    );
-    ScopedFixture {
-        spec: serde_json::to_vec(&base_spec).expect("serialise base spec"),
-        design,
-        plan: serde_json::to_vec(&base_plan).expect("serialise base plan"),
-        claims: vanished_route_claims(),
     }
 }
 
