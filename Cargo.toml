@@ -150,25 +150,28 @@ omnia-filesystem = "0.32.0"
 omnia-genai = "0.32.0"
 omnia-git = "0.32.0"
 
+# Held at the last commits before omnia's WIT and SDK migration (omnia #403,
+# omnia-backends #180), which the engine has not been moved to. The two
+# revisions move together.
 [patch.crates-io]
-omnia = { git = "https://github.com/augentic/omnia" }
-omnia-compile = { git = "https://github.com/augentic/omnia" }
-omnia-core = { git = "https://github.com/augentic/omnia" }
-omnia-sdk = { git = "https://github.com/augentic/omnia" }
-omnia-guest-macros = { git = "https://github.com/augentic/omnia" }
-omnia-host-macros = { git = "https://github.com/augentic/omnia" }
-omnia-plugin = { git = "https://github.com/augentic/omnia" }
-omnia-test = { git = "https://github.com/augentic/omnia" }
-omnia-wasi-blobstore = { git = "https://github.com/augentic/omnia" }
-omnia-wasi-keyvalue = { git = "https://github.com/augentic/omnia" }
-omnia-wasi-model = { git = "https://github.com/augentic/omnia" }
-omnia-wasi-otel = { git = "https://github.com/augentic/omnia" }
-omnia-wasi-vcs = { git = "https://github.com/augentic/omnia" }
+omnia = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-compile = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-core = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-sdk = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-guest-macros = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-host-macros = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-plugin = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-test = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-wasi-blobstore = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-wasi-keyvalue = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-wasi-model = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-wasi-otel = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
+omnia-wasi-vcs = { git = "https://github.com/augentic/omnia", rev = "a96c4075dad1382055d46af245d64cea9ab5cb9f" }
 
-omnia-cursor = { git = "https://github.com/augentic/omnia-backends" }
-omnia-filesystem = { git = "https://github.com/augentic/omnia-backends" }
-omnia-genai = { git = "https://github.com/augentic/omnia-backends" }
-omnia-git = { git = "https://github.com/augentic/omnia-backends" }
+omnia-cursor = { git = "https://github.com/augentic/omnia-backends", rev = "85ee7ff240f954f1eedf363a95631777ea0ce7e1" }
+omnia-filesystem = { git = "https://github.com/augentic/omnia-backends", rev = "85ee7ff240f954f1eedf363a95631777ea0ce7e1" }
+omnia-genai = { git = "https://github.com/augentic/omnia-backends", rev = "85ee7ff240f954f1eedf363a95631777ea0ce7e1" }
+omnia-git = { git = "https://github.com/augentic/omnia-backends", rev = "85ee7ff240f954f1eedf363a95631777ea0ce7e1" }
 
 [profile.release]
 lto = true
