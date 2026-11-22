@@ -24,6 +24,7 @@ use serde_json::Value;
 use crate::revision::{
     Amendment, AmendmentBase, Design, Diff, Document as _, Documents, Plan, Revision, Spec,
 };
+use crate::specify::Snapshot;
 use crate::vcs::{BuildRepo, REVISION, RevisionMessage, SPECIFICATION, Summary, WorkingCopy};
 use crate::{EntryKind, Files, secrets};
 
@@ -38,6 +39,9 @@ pub const STAGED_KEY: &str = "staged";
 
 /// The blob container containing the staged candidate's documents under `<id>/`.
 pub const STAGED_CONTAINER: &str = "staged";
+
+/// The blob container containing each sealed revision's source snapshot at `<id>.json`.
+pub const SNAPSHOTS_CONTAINER: &str = "snapshots";
 
 /// What kind of candidate is staged for `emery apply` to seal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
@@ -180,7 +184,7 @@ async fn compare_and_swap<S: StateStore>(
 // A document that will not delete stays as an inert orphan, so the failure
 // is logged rather than raised.
 async fn prune<S: BlobStore>(store: &S, id: &str, kind: StagedKind) {
-    for name in kind.documents() {
+    for name in kind.documents().iter().copied().chain([Snapshot::NAME]) {
         if let Err(error) = store.delete(STAGED_CONTAINER, &key(id, name)).await {
             tracing::warn!(%id, name, %error, "a displaced candidate document could not be pruned");
         }
@@ -242,6 +246,7 @@ pub enum StagedItem {
 // records as its parent, the commit it lands over, and, for an amendment,
 // what it changed against that parent.
 pub struct Sealing {
+    staged_id: String,
     revision: Revision,
     parent: Option<String>,
     over: Option<String>,
@@ -254,10 +259,11 @@ impl Sealing {
     // over. `lineage-exists` where the current revision amends an earlier
     // one, since a candidate drafted from the sources alone would start
     // that history over; `fresh` is the seal that does so deliberately.
-    pub fn candidate(revision: Revision, standing: &Standing) -> Result<Self, Error> {
+    pub fn candidate(staged: Staged, standing: &Standing) -> Result<Self, Error> {
         standing.no_lineage()?;
         Ok(Self {
-            revision,
+            staged_id: staged.id,
+            revision: staged.revision,
             parent: standing.current.as_ref().map(|current| current.id.clone()),
             over: standing.over().map(str::to_owned),
             summary: None,
@@ -267,9 +273,10 @@ impl Sealing {
     // A candidate revision starting the history over: no parent, cut over
     // the repository's head whatever revision it holds, so every earlier
     // label stands and the new one descends from the head alone.
-    pub fn fresh(revision: Revision, standing: &Standing) -> Self {
+    pub fn fresh(staged: Staged, standing: &Standing) -> Self {
         Self {
-            revision,
+            staged_id: staged.id,
+            revision: staged.revision,
             parent: None,
             over: standing.head.clone(),
             summary: None,
@@ -282,12 +289,14 @@ impl Sealing {
     // `amendment-stale` unless `standing` reads that base as the current
     // revision, at that commit, so a revision sealed since is never
     // displaced by a change prepared against the one before it.
-    pub fn amendment(amendment: Amendment, standing: &Standing) -> Result<Self, Error> {
+    pub fn amendment(staged: StagedAmendment, standing: &Standing) -> Result<Self, Error> {
+        let amendment = staged.amendment;
         if !standing.is_at(&amendment.base) {
             return Err(stale(&amendment.base, standing));
         }
         let summary = Summary::of(&amendment);
         Ok(Self {
+            staged_id: staged.id,
             revision: Revision {
                 spec: amendment.spec,
                 design: amendment.design,
@@ -556,14 +565,24 @@ pub struct Sealed {
 // amendment is never displaced: it is `amendment-pending`, read before any
 // document is written.
 pub async fn stage<S: StateStore + BlobStore>(
-    store: &S, revision: &Revision, fresh: bool,
+    store: &S, revision: &Revision, snapshot: &Snapshot, fresh: bool,
 ) -> Result<String, Error> {
     let token = token(store).await;
     Slot::no_amendment(token.as_deref())?;
 
-    let (id, documents) = revision.documents()?;
-    let bodies = documents.each_ref().map(|(name, body)| (*name, body.as_str()));
-    put(store, &id, &bodies).await?;
+    let (id, [spec, design, plan]) = revision.documents()?;
+    let sources = snapshot.to_json()?;
+    put(
+        store,
+        &id,
+        &[
+            (spec.0, spec.1.as_str()),
+            (design.0, design.1.as_str()),
+            (plan.0, plan.1.as_str()),
+            (Snapshot::NAME, sources.as_str()),
+        ],
+    )
+    .await?;
     Slot::revision(id.clone(), fresh).swap(store, token.as_deref()).await?;
     Ok(id)
 }
@@ -575,14 +594,16 @@ pub async fn stage<S: StateStore + BlobStore>(
 // displaced: it is `amendment-pending`, read before any document is
 // written.
 pub async fn stage_amendment<S: StateStore + BlobStore>(
-    store: &S, amendment: &Amendment,
+    store: &S, amendment: &Amendment, snapshot: &Snapshot,
 ) -> Result<String, Error> {
     let token = token(store).await;
     Slot::no_candidate(token.as_deref())?;
 
     let body = amendment.to_json()?;
+    let sources = snapshot.to_json()?;
     let id = Amendment::identify(body.as_bytes());
-    put(store, &id, &[(Amendment::NAME, body.as_str())]).await?;
+    put(store, &id, &[(Amendment::NAME, body.as_str()), (Snapshot::NAME, sources.as_str())])
+        .await?;
     Slot::amendment(id.clone(), amendment.base.clone()).swap(store, token.as_deref()).await?;
     Ok(id)
 }
@@ -808,7 +829,7 @@ pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
     }
     let commit = sealed?;
 
-    // the pointer, then the candidate the seal consumed
+    // the pointer, the revision's source snapshot, then the candidate the seal consumed
     compare_and_swap(
         provider,
         REVISION_KEY,
@@ -817,6 +838,7 @@ pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
         "swapping the revision id",
     )
     .await?;
+    save_snapshot(provider, &sealing.staged_id, &message.revision).await?;
     clear(provider).await?;
     Ok(Sealed {
         label: label(&message.revision),
@@ -825,6 +847,67 @@ pub async fn commit<P: Vcs + Files + StateStore + BlobStore>(
         commit,
         diff,
     })
+}
+
+// Copies the staged `sources.json` blob, when present, into `SNAPSHOTS_CONTAINER`
+// under `<revision>.json` before the staged item is cleared.
+async fn save_snapshot<S: BlobStore>(
+    store: &S, staged_id: &str, revision: &str,
+) -> Result<(), Error> {
+    if !store
+        .container_exists(STAGED_CONTAINER)
+        .await
+        .storage_context("reading staged source snapshot")?
+    {
+        return Ok(());
+    }
+    let Some(bytes) = store
+        .get(STAGED_CONTAINER, &key(staged_id, Snapshot::NAME))
+        .await
+        .storage_context("reading staged source snapshot")?
+    else {
+        return Ok(());
+    };
+    store.create_container(SNAPSHOTS_CONTAINER).await.storage_context("saving source snapshot")?;
+    store
+        .put(SNAPSHOTS_CONTAINER, &snapshot_key(revision), &bytes)
+        .await
+        .storage_context("saving source snapshot")?;
+    Ok(())
+}
+
+// The source snapshot recorded when `revision` was sealed, or `None` when
+// absent or unreadable.
+pub async fn snapshot<S: BlobStore>(store: &S, revision: &str) -> Result<Option<Snapshot>, Error> {
+    let read = async {
+        if !store.container_exists(SNAPSHOTS_CONTAINER).await? {
+            return Ok(None);
+        }
+        store.get(SNAPSHOTS_CONTAINER, &snapshot_key(revision)).await
+    };
+    let raw = match read.await {
+        Ok(Some(raw)) => raw,
+        Ok(None) => {
+            tracing::warn!(revision, "no source snapshot recorded for the revision");
+            return Ok(None);
+        }
+        Err(error @ Error::BadGateway { .. }) => return Err(error),
+        Err(error) => {
+            tracing::warn!(revision, %error, "the source snapshot is unreadable");
+            return Ok(None);
+        }
+    };
+    Snapshot::from_json(&raw).map_or_else(
+        |error| {
+            tracing::warn!(revision, %error, "the source snapshot is unreadable");
+            Ok(None)
+        },
+        |snapshot| Ok(Some(snapshot)),
+    )
+}
+
+fn snapshot_key(revision: &str) -> String {
+    format!("{revision}.json")
 }
 
 // Writes `documents` into `copy`, seals them under `message`, and labels

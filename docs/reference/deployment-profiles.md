@@ -41,11 +41,12 @@ The engine accesses local staging state and the cached revision pointer exclusiv
 | --- | --- | --- | --- | --- |
 | Staged item record | `StateStore` | default bucket | `staged` | JSON record (`id`, `kind`, `base`, `fresh`) for the currently staged candidate or amendment. |
 | Cached revision pointer | `StateStore` | default bucket | `current-revision` | Cached `emery/<id>` label name (always verified against the target Git repository). |
-| Staged candidate blobs | `BlobStore` | `staged` | `<id>/spec.json`, `<id>/design.json`, `<id>/plan.json` | Unsealed candidate revision documents. |
-| Staged amendment blob | `BlobStore` | `staged` | `<id>/amendment.json` | Unsealed `Amendment` document. |
+| Staged candidate blobs | `BlobStore` | `staged` | `<id>/spec.json`, `<id>/design.json`, `<id>/plan.json`, `<id>/sources.json` | Unsealed candidate revision documents and workspace source snapshot. |
+| Staged amendment blobs | `BlobStore` | `staged` | `<id>/amendment.json`, `<id>/sources.json` | Unsealed `Amendment` document and workspace source snapshot. |
+| Source snapshot blobs | `BlobStore` | `snapshots` | `<revision-id>.json` | Per-revision map of workspace source file SHA-256 digests recorded when [`emery apply`](cli/apply.md) seals a candidate or amendment. |
 
 > [!NOTE]
-> Sealed revisions do **not** live in `.emery/storage/`. Once [`emery apply`](cli/apply.md) runs, the authoritative revision lives in the target Git repository as `spec/{spec,design,plan}.json` on branch `emery/<id>`, and the staging container is cleared.
+> Sealed revisions do **not** live in `.emery/storage/`. Once [`emery apply`](cli/apply.md) runs, the authoritative revision lives in the target Git repository as `spec/{spec,design,plan}.json` on branch `emery/<id>`, the staged `sources.json` is copied to `snapshots/<revision-id>.json`, and the staging container is cleared.
 
 ---
 
@@ -68,7 +69,7 @@ All local state created by Emery inside your project directory sits under `.emer
 
 | Path | Lifecycle | Purpose |
 | --- | --- | --- |
-| `.emery/storage/` | Persistent cache | Holds the single staged candidate/amendment and the `current-revision` cache pointer. |
+| `.emery/storage/` | Persistent cache | Holds the single staged candidate/amendment, the `current-revision` cache pointer, and per-revision workspace source snapshots (`snapshots/<revision-id>.json`). |
 | `.emery/vcs/repos/<key>` | Persistent cache | Bare/cached Git clones for remote `[[source]] repository` URLs (keyed by normalized URL hash). |
 | `.emery/vcs/repos/<name>` | Persistent repo | Target Git repository when `[target] repository` is a URL clone or omitted (engine-managed repo). When omitted, this directory holds your sealed specifications and built branches—do not delete it unless you want to discard those builds. |
 | `.emery/vcs/revision` | Ephemeral worktree | Temporary Git worktree used by `emery apply` and `store::current` to read or write `spec/`. Removed immediately after use. |
@@ -141,7 +142,7 @@ Custom deployments can replace `omnia-filesystem` in the `hosts:` block of `omni
 | `omnia-azure-blob` | — | Yes | — | `AZURE_BLOB_ENDPOINT` |
 | `omnia-git` | — | — | Yes | `GIT_BINARY` |
 
-Multi-tenant deployments sharing a single backing store can isolate projects by routing each project to its own bucket and prefixing container names as `<project>-staged` at the `KeyValueClient` and `BlobStoreClient` boundary (verified by the `multi_project` test in `tests/specify.rs`).
+Multi-tenant deployments sharing a single backing store can isolate projects by routing each project to its own bucket and prefixing container names as `<project>-staged` and `<project>-snapshots` at the `KeyValueClient` and `BlobStoreClient` boundary (verified by the `multi_project` test in `tests/specify.rs`).
 
 ---
 

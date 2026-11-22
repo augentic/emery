@@ -29,7 +29,8 @@ pub use crate::revision::{
 };
 use crate::revision::{Design, EMERY};
 use crate::specify::{
-    BASELINE, Bound, DesignAmend, Extracted, RepositorySource, SourceConfig, SpecBrief, Types,
+    BASELINE, Bound, DesignAmend, Extracted, RepositorySource, Snapshot, SnapshotBase,
+    SourceConfig, SpecBrief, Types,
 };
 use crate::vcs::{BuildRepo, TargetRef};
 use crate::{Files, apply, store};
@@ -133,11 +134,18 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     };
     let revision = current.revision.as_ref().map_err(Clone::clone)?;
     store::no_candidate(provider).await?;
+    let base_snapshot = store::snapshot(provider, &current.id).await?;
 
     let Extracted {
         extracts,
         repositories,
-    } = Bound::extract_all(provider, &bound).await?;
+        snapshot,
+    } = Bound::extract_all(
+        provider,
+        &bound,
+        Some(SnapshotBase::new(base_snapshot.as_ref(), &revision.spec)),
+    )
+    .await?;
 
     // the change matched against the base, and what it did to each
     // requirement; a change stating none leaves every requirement as it is
@@ -196,7 +204,8 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     let tally = Tally::of(&amendment);
     let conflicts = amendment.conflicts().map(str::to_owned).collect();
     let stems = amendment.stems().into_iter().map(str::to_owned).collect();
-    let (id, applied) = stage(provider, &repo, standing, &amendment, tally, input.apply).await?;
+    let (id, applied) =
+        stage(provider, &repo, standing, &amendment, &snapshot, tally, input.apply).await?;
 
     Ok(AmendOutput {
         staged: id.is_some() && applied.is_none(),
@@ -216,8 +225,8 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
 // the stage has landed, so a refused seal leaves it staged; a run staging
 // nothing seals nothing. Answers the staged id and what was sealed.
 async fn stage<P: StateStore + BlobStore + Vcs + Files>(
-    provider: &P, repo: &BuildRepo, standing: store::Standing, amendment: &Amendment, tally: Tally,
-    apply: bool,
+    provider: &P, repo: &BuildRepo, standing: store::Standing, amendment: &Amendment,
+    snapshot: &Snapshot, tally: Tally, apply: bool,
 ) -> Result<(Option<String>, Option<ApplyOutput>), Error> {
     if !amendment.is_change() {
         tracing::info!(base = %amendment.base.revision, "no change against the revision");
@@ -226,7 +235,7 @@ async fn stage<P: StateStore + BlobStore + Vcs + Files>(
         }
         return Ok((None, None));
     }
-    let id = store::stage_amendment(provider, amendment).await?;
+    let id = store::stage_amendment(provider, amendment, snapshot).await?;
     tracing::info!(
         amendment = %id,
         base = %amendment.base.revision,

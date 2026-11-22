@@ -10,10 +10,10 @@ mod design;
 mod plan;
 mod sections;
 mod shape;
+mod snapshot;
 mod spec;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
 use emery_adapter::is_kebab;
 pub use emery_adapter::source::SourceContent;
@@ -27,6 +27,8 @@ use serde::{Deserialize, Serialize};
 pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief, WholeScope};
 pub(crate) use self::design::{DesignAmend, DesignBrief};
 pub(crate) use self::plan::{Draft, Floors, Open, PartAmend, PartBrief, Types};
+use self::snapshot::Workspace;
+pub(crate) use self::snapshot::{Snapshot, SnapshotBase};
 pub use self::spec::SPEC_CHUNK;
 pub(crate) use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded};
@@ -88,7 +90,7 @@ use crate::{Files, Rank, apply, preopen_path, store, vcs};
 /// - Returns [`Error::NotFound`] with code `revision-not-found` when a
 ///   repository, or the revision a source reads it at, does not exist.
 /// - Returns [`Error::ServerError`] when evidence has [`Evidence::findings`],
-///   or serialisation, storage, or version control fails.
+///   or serialisation, storage, file reading, or version control fails.
 /// - Returns [`Error::BadGateway`] when an adapter, its acquisition, the
 ///   model, or a repository's remote fails upstream.
 /// - Returns what [`apply`](crate::apply::apply) fails with reading the
@@ -124,7 +126,8 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
     let Extracted {
         extracts,
         repositories,
-    } = Bound::extract_all(provider, &bound).await?;
+        snapshot,
+    } = Bound::extract_all(provider, &bound, None).await?;
 
     let bases = GroupingBrief::new(&extracts).derive(provider).await?;
     let chunks = SpecBrief::chunked(&extracts, &bases);
@@ -146,7 +149,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
     // seal would displace; sealed in the same run when asked
     let candidate = Revision { spec, design, plan };
     let diff = standing.as_ref().and_then(|standing| standing.diff(&candidate));
-    let revision = store::stage(provider, &candidate, input.fresh).await?;
+    let revision = store::stage(provider, &candidate, &snapshot, input.fresh).await?;
     tracing::info!(
         candidate = %revision,
         parts = candidate.plan.parts.len(),
@@ -239,7 +242,7 @@ pub struct SourceConfig {
 
 impl SourceConfig {
     // The one place an operator root meets the guest preopen.
-    fn prepare(&self) -> Result<SourceInput, Error> {
+    fn prepare(&self) -> Result<(SourceInput, Option<Workspace>), Error> {
         let name = &self.name;
         if !is_kebab(name) {
             return Err(bad_request!("source `{name}` is not a kebab-case name"));
@@ -247,11 +250,10 @@ impl SourceConfig {
 
         // spell a lent root beneath the `.` mount: the project root or the
         // source's working copy itself, or `<root>/<path>`
-        let content = match (&self.content, &self.repository) {
+        let (content, workspace) = match (&self.content, &self.repository) {
             (SourceContent::Workspace(relative), None) => {
-                let relative = preopen_path(relative)?.display().to_string();
-                let root = if relative == "." { relative } else { format!("./{relative}") };
-                SourceContent::Workspace(root)
+                let workspace = Workspace::new(vcs::PROJECT, &preopen_path(relative)?);
+                (SourceContent::Workspace(workspace.lent_root()), Some(workspace))
             }
             (SourceContent::Workspace(relative), Some(_)) => {
                 let Ok(within) = preopen_path(relative) else {
@@ -259,15 +261,10 @@ impl SourceConfig {
                         "source `{name}`: path `{relative}` must lie within the repository"
                     ));
                 };
-                let checkout = vcs::source_checkout(name);
-                let root = if within == Path::new(".") {
-                    checkout
-                } else {
-                    format!("{checkout}/{}", within.display())
-                };
-                SourceContent::Workspace(root)
+                let workspace = Workspace::new(vcs::source_checkout(name), &within);
+                (SourceContent::Workspace(workspace.lent_root()), Some(workspace))
             }
-            (value @ SourceContent::Value(_), None) => value.clone(),
+            (value @ SourceContent::Value(_), None) => (value.clone(), None),
             (SourceContent::Value(_), Some(_)) => {
                 return Err(bad_request!(
                     "source `{name}` names a repository beside inline text; a repository is \
@@ -276,10 +273,13 @@ impl SourceConfig {
             }
         };
 
-        Ok(SourceInput {
-            name: name.clone(),
-            content,
-        })
+        Ok((
+            SourceInput {
+                name: name.clone(),
+                content,
+            },
+            workspace,
+        ))
     }
 }
 
@@ -362,6 +362,7 @@ pub(crate) struct Bound {
     rank: Option<Rank>,
     scope: Scope,
     input: SourceInput,
+    workspace: Option<Workspace>,
 }
 
 impl Bound {
@@ -376,7 +377,7 @@ impl Bound {
         let mut names = BTreeSet::new();
         let mut bound = Vec::with_capacity(sources.len());
         for source in sources {
-            let input = source.prepare()?;
+            let (input, workspace) = source.prepare()?;
             if !names.insert(source.name.clone()) {
                 return Err(bad_request!("source `{}` appears twice", source.name));
             }
@@ -387,6 +388,7 @@ impl Bound {
                 rank: source.rank,
                 scope: source.scope,
                 input,
+                workspace,
             });
         }
 
@@ -399,11 +401,11 @@ impl Bound {
     }
 
     // Loads every source's adapter, reads each repository source in a
-    // working copy that lasts the extraction, and extracts every source at
-    // once; the first failure ends the run and the copies go whether or not
-    // extraction succeeded.
-    pub(crate) async fn extract_all<P: Source + Plugins + Vcs>(
-        provider: &P, bound: &[Self],
+    // working copy that lasts the extraction and file hashing, and extracts
+    // every source at once; the first failure ends the run and the copies go
+    // whether or not extraction succeeded.
+    pub(crate) async fn extract_all<P: Source + Plugins + Vcs + Files>(
+        provider: &P, bound: &[Self], base: Option<SnapshotBase>,
     ) -> Result<Extracted, Error> {
         let loaded = &adapter::load(
             provider,
@@ -411,12 +413,20 @@ impl Bound {
         )
         .await?;
         let checkouts = Checkouts::prepare(provider, bound).await?;
-        let extracted =
-            future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await;
+        let outcome = async {
+            let mut extracts =
+                future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded)))
+                    .await?;
+            let snapshot = Snapshot::capture(provider, bound, &mut extracts, base).await?;
+            Ok::<_, Error>((extracts, snapshot))
+        }
+        .await;
         let removed = checkouts.remove(provider).await;
+        let (extracts, snapshot) = outcome?;
         Ok(Extracted {
-            extracts: extracted?,
+            extracts,
             repositories: removed?,
+            snapshot,
         })
     }
 
@@ -456,15 +466,17 @@ impl Bound {
             rank,
             scope: self.scope,
             evidence,
+            files: None,
         })
     }
 }
 
 // What the run extracted from `bound`: every source's evidence in
-// declaration order, and the repository sources read.
+// declaration order, the repository sources read, and the hashed source snapshot.
 pub(crate) struct Extracted {
     pub(crate) extracts: Vec<Extract>,
     pub(crate) repositories: Vec<RepositorySource>,
+    pub(crate) snapshot: Snapshot,
 }
 
 // What one source answered, under the kind, rank, and scope the run read it
@@ -476,6 +488,8 @@ pub(crate) struct Extract {
     pub(crate) rank: Rank,
     pub(crate) scope: Scope,
     pub(crate) evidence: Evidence,
+    // Workspace-relative file paths to lowercase SHA-256 digests; `None` for inline values.
+    pub(crate) files: Option<BTreeMap<String, String>>,
 }
 
 impl Extract {
@@ -485,16 +499,20 @@ impl Extract {
     }
 
     #[must_use]
-    pub(crate) fn filtered(&self, mut keep: impl FnMut(&Claim) -> bool) -> Self {
+    pub(crate) fn with_claims(&self, claims: Vec<Claim>) -> Self {
         Self {
             source: self.source.clone(),
             kind: self.kind,
             rank: self.rank,
             scope: self.scope,
-            evidence: Evidence {
-                claims: self.evidence.claims.iter().filter(|claim| keep(claim)).cloned().collect(),
-            },
+            evidence: Evidence { claims },
+            files: self.files.clone(),
         }
+    }
+
+    #[must_use]
+    pub(crate) fn filtered(&self, mut keep: impl FnMut(&Claim) -> bool) -> Self {
+        self.with_claims(self.evidence.claims.iter().filter(|claim| keep(claim)).cloned().collect())
     }
 }
 

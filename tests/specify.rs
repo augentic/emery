@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use emery_adapter::source::{Claim, ClaimKind, Evidence, SourceContent, SourceKind};
-use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+use emery_engine::{EntryKind, REVISION_KEY, SNAPSHOTS_CONTAINER, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::model::{Error as ModelError, Reply};
 use omnia_sdk::{BlobStore, StateStore, bad_gateway, bad_request};
 use omnia_test::SeenFormat;
@@ -17,7 +17,7 @@ use omnia_test::guest::{Memory, ScriptedModel};
 use serde_json::Value;
 use support::provider::{Provider, Rendezvous, claim, digest, evidence, requirement, retire};
 use support::scratch::Scratch;
-use support::store::{carry, seed, staged, written};
+use support::store::{carry, seed, sha256, snapshot, staged, written};
 use support::{cli_ok, fail};
 
 // The one-source reference most scenarios name; the scripted loader lands
@@ -224,6 +224,74 @@ async fn gen_spec() {
     assert_eq!(staged(&provider.storage), id, "the same revision keeps its id");
     assert_eq!(committed(&provider.storage), id, "the sealed revision stands");
 
+    provider.model.assert_exhausted();
+}
+
+// Uncited regular siblings in a cited directory join the snapshot; symlinks,
+// directories, uncited directories, and inline sources stay out.
+#[tokio::test]
+async fn gen_snapshot() {
+    let grouping = r#"{"groups": [{"claims": [0, 1], "classes": [[0, 1]]}]}"#;
+    let greeting = "export const greeting = 'hello';\n";
+    let sibling = "export const trim = (value: string) => value.trim();\n";
+    let mut provider = Provider::answering([grouping, SPEC_ANSWER, DESIGN_ANSWER]);
+    provider.source.evidence.insert(
+        "source".to_owned(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'.")
+                .at("src/greeting.ts#L1-L2"),
+        ])),
+    );
+    provider.files.lists(
+        ".",
+        ".",
+        &[("src", EntryKind::Directory), ("other", EntryKind::Directory)],
+    );
+    provider.files.lists(
+        ".",
+        "src",
+        &[
+            ("greeting.ts", EntryKind::File),
+            ("helper.ts", EntryKind::File),
+            ("link.ts", EntryKind::Link),
+            ("nested", EntryKind::Directory),
+        ],
+    );
+    provider.files.lists(".", "other", &[("untouched.ts", EntryKind::File)]);
+    provider.files.holds(".", "src/greeting.ts", greeting);
+    provider.files.holds(".", "src/helper.ts", sibling);
+    provider.files.unreadable(".", "src/link.ts");
+    provider.files.holds(".", "other/untouched.ts", "export const unused = 1;\n");
+
+    let note = describing("notes", "GET /greeting returns the static string 'hello'.");
+    cli_ok(
+        &provider,
+        &[
+            "emery",
+            "specify",
+            SOURCE,
+            "--description",
+            &note,
+            "--apply",
+            "--config",
+            PROJECT_CONFIG,
+        ],
+    )
+    .await;
+
+    let id = committed(&provider.storage);
+    assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "staged sources.json is pruned");
+    assert_eq!(
+        snapshot(&provider.storage, &id),
+        serde_json::json!({
+            "source": {
+                "src/greeting.ts": sha256(greeting),
+                "src/helper.ts": sha256(sibling),
+            }
+        }),
+        "snapshots/{id}.json holds cited and sibling regular files alone"
+    );
+    assert_eq!(provider.storage.objects(SNAPSHOTS_CONTAINER), [format!("{id}.json")]);
     provider.model.assert_exhausted();
 }
 
@@ -3784,7 +3852,9 @@ mod store {
 
     use bytes::Bytes;
     use emery_engine::vcs::{REVISION, RevisionMessage, SPECIFICATION};
-    use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+    use emery_engine::{
+        EntryKind, REVISION_KEY, SNAPSHOTS_CONTAINER, STAGED_CONTAINER, STAGED_KEY,
+    };
     use omnia_sdk::blobstore::{ContainerMetadata, ObjectMetadata};
     use omnia_sdk::{BlobStore, Page};
     use omnia_test::guest::Memory;
@@ -4151,9 +4221,19 @@ mod store {
         );
         assert!(shown(&beta, "spec").await.contains("howdy"), "beta shows its own revision");
 
-        // a seal's pointer lands in its project bucket too
+        // a seal's pointer and snapshot land in its project bucket and container too
         cli_ok(&alpha, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
         assert!(shared.state(REVISION_KEY).is_none(), "default bucket holds no current id");
+        assert!(
+            shared.objects(SNAPSHOTS_CONTAINER).is_empty(),
+            "no unprefixed snapshots container exists"
+        );
+        assert!(
+            shared
+                .object(&format!("alpha-{SNAPSHOTS_CONTAINER}"), &format!("{id_alpha}.json"))
+                .is_some(),
+            "alpha's snapshot lands in its prefixed container"
+        );
         assert_eq!(committed(&shared.named("alpha")), id_alpha, "alpha sealed its own candidate");
         assert_eq!(staged(&shared.named("beta")), id_beta, "beta's candidate stands");
 

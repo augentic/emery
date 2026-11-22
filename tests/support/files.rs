@@ -38,6 +38,13 @@ impl FilesScript {
         self.holds_bytes(at, path, content.as_bytes());
     }
 
+    // Scripts `path` beneath `at` as a standing file and lists it under each
+    // directory on the way, without recording a write.
+    pub fn file(&self, at: &str, path: &str, content: &str) {
+        self.holds(at, path, content);
+        self.place(at, path);
+    }
+
     // Scripts what `path` beneath `at` reads as, byte for byte.
     pub fn holds_bytes(&self, at: &str, path: &str, content: &[u8]) {
         self.script(at, path, Some(content.to_vec()));

@@ -83,16 +83,15 @@ pub(crate) async fn seal<P: StateStore + BlobStore + Vcs + Files>(
     let (kind, amendment, sealing) =
         match store::staged_item(provider).await?.ok_or_else(store::nothing_staged)? {
             StagedItem::Revision(staged) if staged.fresh => {
-                (StagedKind::Revision, None, Sealing::fresh(staged.revision, &standing))
+                (StagedKind::Revision, None, Sealing::fresh(staged, &standing))
             }
             StagedItem::Revision(staged) => {
-                (StagedKind::Revision, None, Sealing::candidate(staged.revision, &standing)?)
+                (StagedKind::Revision, None, Sealing::candidate(staged, &standing)?)
             }
-            StagedItem::Amendment(staged) => (
-                StagedKind::Amendment,
-                Some(staged.id),
-                Sealing::amendment(staged.amendment, &standing)?,
-            ),
+            StagedItem::Amendment(staged) => {
+                let id = staged.id.clone();
+                (StagedKind::Amendment, Some(id), Sealing::amendment(staged, &standing)?)
+            }
         };
     let sealed = store::commit(provider, repo, sealing, standing).await?;
     tracing::info!(

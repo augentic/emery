@@ -12,13 +12,13 @@ use emery_adapter::source::{Claim, ClaimKind, SourceKind};
 use emery_adapter::{Route, Trigger};
 use emery_engine::amend::PartClass;
 use emery_engine::vcs::{PartSummary, REVISION, RevisionMessage, Summary};
-use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+use emery_engine::{REVISION_KEY, SNAPSHOTS_CONTAINER, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::vcs::Error;
 use omnia_test::SeenFormat;
 use serde_json::Value;
 use support::provider::{Provider, claim, cli, evidence, requirement, retire};
 use support::scratch::Scratch;
-use support::store::{seed, stage, stage_amendment, written};
+use support::store::{seed, seed_snapshot, sha256, snapshot, stage, stage_amendment, written};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 use verbs::verbs;
@@ -4812,4 +4812,84 @@ async fn amend_shown() {
     assert!(completions.contains("'apply:"), "{completions}");
     assert!(completions.contains("'amend:"), "the verb is completed: {completions}");
     assert!(completions.contains("amendment"), "the artifact the verb stages is: {completions}");
+}
+
+// Base-snapshot and standing-citation files stay hashed while present and drop
+// once gone, and newly cited directories join under the sealed revision's id.
+#[tokio::test]
+async fn amend_snapshot() {
+    let kept = "# Kept guide\n";
+    let cited = "# Standing order notes\n";
+    let added = "# Session timeout 30m\n";
+    let sibling = "# Session refresh\n";
+
+    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("spec JSON");
+    base_spec["requirements"][2]["sources"][0]["path"] = Value::from("notes/cited.md#L1-L4");
+    base_spec["requirements"][3]["sources"][0]["path"] = Value::from("notes/vanished.md#L1-L2");
+    let base_bytes = serde_json::to_vec(&base_spec).expect("serialise base spec");
+
+    let grouping = r#"{"groups": [
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [0, 2], "classes": [[0], [2]]},
+        {"claims": [3], "classes": [[3]]},
+        {"claims": [4], "classes": [[4]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "session.timeout", "scenarios": [
+            {"name": "Timeout", "when": "a session is idle for 30 minutes", "then": "it times out"}
+        ]}
+    ]}"#;
+
+    let mut provider = Provider::answering([grouping, draft]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![
+            requirement("session.timeout", "Sessions expire after 30 minutes of inactivity.")
+                .at("rfcs/timeout.md#L1-L3"),
+        ])),
+    );
+    provider.files.file(".", "guides/kept.md", kept);
+    provider.files.file(".", "notes/cited.md", cited);
+    provider.files.file(".", "rfcs/timeout.md", added);
+    provider.files.file(".", "rfcs/refresh.md", sibling);
+
+    let base = seed(&provider.files, &base_bytes, DESIGN, PLAN);
+    seed_snapshot(
+        &provider.storage,
+        &base,
+        &serde_json::json!({
+            "docs": {
+                "guides/kept.md": sha256("# Older guide\n"),
+                "guides/gone.md": sha256("# Removed guide\n"),
+            }
+        }),
+    );
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "amend", DOCS, "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    let sealed = envelope["applied"]["revision"].as_str().expect("the sealed id");
+    assert_ne!(sealed, base);
+    assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "staged sources.json is pruned");
+    assert_eq!(
+        snapshot(&provider.storage, sealed),
+        serde_json::json!({
+            "docs": {
+                "guides/kept.md": sha256(kept),
+                "notes/cited.md": sha256(cited),
+                "rfcs/refresh.md": sha256(sibling),
+                "rfcs/timeout.md": sha256(added),
+            }
+        }),
+        "keeps existing base and cited files, drops gone ones, and adds the newly cited directory"
+    );
+    assert!(
+        provider.storage.object(SNAPSHOTS_CONTAINER, &format!("{base}.json")).is_some(),
+        "the base revision's snapshot stands alongside the amended one"
+    );
+    provider.model.assert_exhausted();
 }

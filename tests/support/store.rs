@@ -1,7 +1,7 @@
 //! Seeds the scripted capabilities with a sealed revision or a staged candidate, as the engine writes one.
 
 use emery_engine::vcs::{REVISION, SPECIFICATION};
-use emery_engine::{EntryKind, STAGED_CONTAINER, STAGED_KEY};
+use emery_engine::{EntryKind, SNAPSHOTS_CONTAINER, STAGED_CONTAINER, STAGED_KEY};
 use omnia_test::guest::Memory;
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
@@ -123,6 +123,23 @@ pub fn document(name: &str) -> String {
 // The engine's content id: SHA-256 over the length-prefixed bodies, spec, design, then plan.
 pub fn revision(spec: &[u8], design: &[u8], plan: &[u8]) -> String {
     digest(&[spec, design, plan])
+}
+
+pub fn seed_snapshot(storage: &Memory, revision: &str, snapshot: &Value) {
+    let mut body = serde_json::to_string_pretty(snapshot).expect("snapshot JSON");
+    body.push('\n');
+    storage.insert_object(SNAPSHOTS_CONTAINER, &format!("{revision}.json"), body.as_bytes());
+}
+
+pub fn snapshot(storage: &Memory, revision: &str) -> Value {
+    let raw = storage
+        .object(SNAPSHOTS_CONTAINER, &format!("{revision}.json"))
+        .expect("sealed source snapshot");
+    serde_json::from_slice(&raw).expect("source snapshot JSON")
+}
+
+pub fn sha256(content: &str) -> String {
+    hex::encode(Sha256::digest(content.as_bytes()))
 }
 
 fn digest(bodies: &[&[u8]]) -> String {

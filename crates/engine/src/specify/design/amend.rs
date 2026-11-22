@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
-use emery_adapter::source::{Claim, ClaimKind, Evidence};
+use emery_adapter::source::{Claim, ClaimKind};
 use omnia_sdk::Error;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -552,13 +552,7 @@ impl ScopedExtracts {
                 }
             }
 
-            scoped.push(Extract {
-                source: extract.source.clone(),
-                kind: extract.kind,
-                rank: extract.rank,
-                scope: extract.scope,
-                evidence: Evidence { claims },
-            });
+            scoped.push(extract.with_claims(claims));
         }
 
         Self {
