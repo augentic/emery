@@ -13,7 +13,7 @@ use omnia_sdk::Error;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
-use crate::revision::Spec;
+use crate::revision::{Cited, Spec};
 use crate::specify::{Bound, Extract, shape};
 use crate::{Entry, EntryKind, Files};
 
@@ -54,8 +54,10 @@ impl Snapshot {
     }
 
     #[must_use]
-    pub fn get(&self, source: &str) -> Option<&BTreeMap<String, String>> {
-        self.0.get(source)
+    pub fn file_delta(
+        &self, source: &str, current: &BTreeMap<String, String>,
+    ) -> Option<FileDelta> {
+        self.0.get(source).map(|base| FileDelta::between(base, current))
     }
 
     pub fn from_json(bytes: &[u8]) -> Result<Self, Error> {
@@ -68,6 +70,57 @@ impl Snapshot {
         text.push('\n');
         Ok(text)
     }
+}
+
+// Changed and removed workspace files of one source against its base snapshot.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FileDelta {
+    changed: BTreeSet<String>,
+    gone: BTreeSet<String>,
+}
+
+impl FileDelta {
+    #[must_use]
+    fn between(base: &BTreeMap<String, String>, current: &BTreeMap<String, String>) -> Self {
+        let changed = current
+            .iter()
+            .filter(|(file, digest)| base.get(*file) != Some(*digest))
+            .map(|(file, _)| file.clone())
+            .collect();
+        let gone = base.keys().filter(|file| !current.contains_key(*file)).cloned().collect();
+        Self { changed, gone }
+    }
+
+    #[must_use]
+    pub fn changed_count(&self) -> usize {
+        self.changed.len()
+    }
+
+    #[must_use]
+    pub fn gone_count(&self) -> usize {
+        self.gone.len()
+    }
+
+    #[must_use]
+    pub fn is_changed(&self, path: &str) -> bool {
+        self.changed.contains(&canonical_file(path))
+    }
+
+    #[must_use]
+    pub fn is_changed_or_gone(&self, path: &str) -> bool {
+        let file = canonical_file(path);
+        self.changed.contains(&file) || self.gone.contains(&file)
+    }
+
+    #[must_use]
+    pub fn touches_citation(&self, cited: &Cited) -> bool {
+        cited.path.as_deref().is_some_and(|path| self.is_changed_or_gone(path))
+    }
+}
+
+fn canonical_file(raw: &str) -> String {
+    let file = shape::file(raw);
+    beneath(file).unwrap_or_else(|_| file.to_owned())
 }
 
 // Owned base-revision context an amend carries forward while its files exist.
@@ -98,7 +151,7 @@ impl SnapshotBase {
 
     fn tracked_files(&self, source: &str) -> BTreeSet<String> {
         let mut files = self.cited.get(source).cloned().unwrap_or_default();
-        if let Some(recorded) = self.snapshot.as_ref().and_then(|snapshot| snapshot.get(source)) {
+        if let Some(recorded) = self.snapshot.as_ref().and_then(|snapshot| snapshot.0.get(source)) {
             for path in recorded.keys() {
                 if let Ok(file) = beneath(path) {
                     files.insert(file);

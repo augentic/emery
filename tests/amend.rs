@@ -6,6 +6,7 @@ mod support;
 #[path = "support/verbs.rs"]
 mod verbs;
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use emery_adapter::source::{Claim, ClaimKind, SourceKind};
@@ -4891,5 +4892,551 @@ async fn amend_snapshot() {
         provider.storage.object(SNAPSHOTS_CONTAINER, &format!("{base}.json")).is_some(),
         "the base revision's snapshot stands alongside the amended one"
     );
+    provider.model.assert_exhausted();
+}
+
+struct WholeWorkspace {
+    spec: Vec<u8>,
+    plan: Vec<u8>,
+    base: BTreeMap<String, String>,
+    current: BTreeMap<String, String>,
+}
+
+impl WholeWorkspace {
+    fn new(spec: Vec<u8>, plan: Vec<u8>) -> Self {
+        Self {
+            spec,
+            plan,
+            base: BTreeMap::new(),
+            current: BTreeMap::new(),
+        }
+    }
+
+    fn standard() -> Self {
+        Self::new(whole_base_spec(), PLAN.to_vec())
+            .with_unchanged("src/auth.ts", "export function login() {}\n")
+            .with_unchanged("src/session.ts", "export const IDLE_MINUTES = 60;\n")
+            .with_unchanged("src/routes/orders.ts", "export function createOrder() {}\n")
+            .with_unchanged("src/services/pricing.ts", "export const DISCOUNT_UNITS = 20;\n")
+    }
+
+    fn with_unchanged(mut self, path: impl Into<String>, body: impl Into<String>) -> Self {
+        let path = path.into();
+        let body = body.into();
+        self.base.insert(path.clone(), sha256(&body));
+        self.current.insert(path, body);
+        self
+    }
+
+    fn with_changed(
+        mut self, path: impl Into<String>, before: impl AsRef<str>, after: impl Into<String>,
+    ) -> Self {
+        let path = path.into();
+        self.base.insert(path.clone(), sha256(before.as_ref()));
+        self.current.insert(path, after.into());
+        self
+    }
+
+    fn with_edited(mut self, path: impl Into<String>, after: impl Into<String>) -> Self {
+        self.current.insert(path.into(), after.into());
+        self
+    }
+
+    fn with_gone(mut self, path: impl Into<String>, before: impl AsRef<str>) -> Self {
+        let path = path.into();
+        self.base.insert(path.clone(), sha256(before.as_ref()));
+        self.current.remove(&path);
+        self
+    }
+
+    fn without_current(mut self, path: &str) -> Self {
+        self.current.remove(path);
+        self
+    }
+
+    fn seed(&self, provider: &Provider) -> String {
+        let revision = self.seed_unrecorded(provider);
+        seed_snapshot(&provider.storage, &revision, &serde_json::json!({ "code": self.base }));
+        revision
+    }
+
+    fn seed_unrecorded(&self, provider: &Provider) -> String {
+        for (path, body) in &self.current {
+            provider.files.file(".", path, body);
+        }
+        seed(&provider.files, &self.spec, DESIGN, &self.plan)
+    }
+}
+
+fn whole_base_spec() -> Vec<u8> {
+    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+    let tpl = base_spec["requirements"][0].clone();
+    base_spec["requirements"] = serde_json::json!([
+        SpecReq::new("REQ-001", "auth.login", "Users sign in with a credential.")
+            .at("src/auth.ts#L10-L20")
+            .into_json(&tpl),
+        SpecReq::new("REQ-002", "session.timeout", "Sessions expire after an hour of inactivity.")
+            .at("src/session.ts#L5-L12")
+            .into_json(&tpl),
+        SpecReq::new("REQ-003", "orders.create", "A signed-in user places an order.")
+            .at("src/routes/orders.ts#L20-L35")
+            .route("POST /orders")
+            .into_json(&tpl),
+        SpecReq::new(
+            "REQ-004",
+            "orders.discount",
+            "Gold-tier orders of 20 units receive a discount."
+        )
+        .at("src/services/pricing.ts#L8-L18")
+        .into_json(&tpl),
+    ]);
+    serde_json::to_vec(&base_spec).expect("serialise base spec")
+}
+
+// A whole-scope behaviour source whose workspace files match the base snapshot
+// drops every behavioural and prose claim, spending no model turn and leaving
+// every requirement unchanged.
+#[tokio::test]
+async fn amend_whole_unchanged_file() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+
+    let mut provider = Provider::idle();
+    code_with(
+        &mut provider,
+        vec![
+            requirement("auth.sign-in", "Callers authenticate with a credential.")
+                .at("src/auth.ts#L10-L20"),
+            requirement("session.idle-expiry", "Idle sessions expire after sixty minutes.")
+                .at("src/session.ts#L5-L12"),
+            requirement("orders.post.place", "Signed-in callers place orders.")
+                .at("src/routes/orders.ts#L20-L35"),
+            requirement(
+                "orders.post.discount",
+                "Orders of twenty or more units receive the gold discount.",
+            )
+            .at("src/services/pricing.ts#L8-L18"),
+            claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+                .at("src/routes/orders.ts#L20-L35"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+            Claim::new(ClaimKind::Call)
+                .at("src/services/pricing.ts#L12")
+                .with_extra("callee", "pg:Pool.query"),
+            Claim::new(ClaimKind::Excerpt)
+                .at("src/routes/orders.ts#L22-L25")
+                .with_extra("excerpt", "Orders validate line quantities before pricing."),
+        ],
+    );
+    WholeWorkspace::standard().seed(&provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["staged"], false, "{envelope}");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 0, "conflict": 0, "unchanged": 4, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    assert!(provider.model.seen().is_empty(), "no turn when every file matches the base snapshot");
+}
+
+// When one file changes in a whole-scope behaviour source, only claims from
+// that file and the standing requirements in play reach the grouping turn; the
+// rest settle unchanged by code, and a same-stem standing requirement citing
+// an unchanged file stays unchanged rather than retiring by scope.
+#[tokio::test]
+async fn amend_whole_changed_file() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+
+    // index 0 is the one kept claim (`orders.discount`); 1 and 2 are the two
+    // `orders.*` standing requirements in play (`REQ-003`, `REQ-004`)
+    let grouping = r#"{"groups": [
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [0, 2], "classes": [[0], [2]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.discount", "scenarios": [
+            {"name": "Gold discount", "when": "a gold-tier order has 10 units", "then": "the discount applies"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement("auth.login", "Users sign in with a credential.").at("src/auth.ts#L10-L20"),
+            requirement("session.timeout", "Sessions expire after an hour of inactivity.")
+                .at("src/session.ts#L5-L12"),
+            requirement("orders.create", "A signed-in user places an order.")
+                .at("src/routes/orders.ts#L20-L35"),
+            requirement("orders.discount", "Gold-tier orders of 10 units receive a discount.")
+                .at("src/services/pricing.ts#L8-L18"),
+            claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+                .at("src/routes/orders.ts#L20-L35"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    let workspace = WholeWorkspace::standard()
+        .with_edited("src/services/pricing.ts", "export const DISCOUNT_UNITS = 10;\n");
+    workspace.seed(&provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 1, "retired": 0, "conflict": 0, "unchanged": 3, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(request.contains("- 0 `code` `orders.discount`"), "{request}");
+    assert!(!request.contains("`auth.login`"), "unchanged file claim dropped: {request}");
+    assert!(!request.contains("`session.timeout`"), "unchanged file claim dropped: {request}");
+    assert!(!request.contains("- 1 `code`"), "only one extracted claim kept: {request}");
+    assert!(request.contains("- 1 `orders.create`"), "{request}");
+    assert!(request.contains("- 2 `orders.discount`"), "{request}");
+
+    let base_spec: Value = serde_json::from_slice(&workspace.spec).expect("base spec JSON");
+    let (_, amendment) = staged_amendment(&provider);
+    for idx in [0, 1, 2] {
+        assert_eq!(amendment["changes"][idx]["class"], "unchanged", "{amendment}");
+        assert_eq!(
+            amendment["spec"]["requirements"][idx], base_spec["requirements"][idx],
+            "{amendment}"
+        );
+    }
+    assert_eq!(amendment["changes"][3]["class"], "changed", "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+fn gone_file_spec_and_plan() -> (Vec<u8>, Vec<u8>) {
+    let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+    let tpl = base_spec["requirements"][0].clone();
+    base_spec["requirements"] = serde_json::json!([
+        SpecReq::new(
+            "REQ-001",
+            "start.require-database-url",
+            "The program refuses to start when DATABASE_URL is unset.",
+        )
+        .at("src/server.ts#L10-L14")
+        .into_json(&tpl),
+        SpecReq::new("REQ-002", "orders.create", "A signed-in user places an order.")
+            .at("src/routes/orders.ts#L20-L35")
+            .route("POST /orders")
+            .into_json(&tpl),
+        SpecReq::new("REQ-003", "returns.post.create", "A signed-in user submits a return.")
+            .at("src/routes/returns.ts#L15-L30")
+            .route("POST /returns")
+            .into_json(&tpl),
+        SpecReq::new(
+            "REQ-004",
+            "returns.validate-window",
+            "A return outside the thirty-day window is rejected.",
+        )
+        .at("src/services/returns.ts#L10-L24")
+        .into_json(&tpl),
+    ]);
+    let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+    base_plan["parts"][0]["name"] = Value::from("start");
+    base_plan["parts"][0]["requirements"] = serde_json::json!(["REQ-001"]);
+    base_plan["parts"][1]["requirements"] = serde_json::json!(["REQ-002"]);
+    base_plan["parts"].as_array_mut().expect("parts").push(serde_json::json!({
+        "id": "PART-003",
+        "name": "returns",
+        "requirements": ["REQ-003", "REQ-004"],
+        "types": [],
+        "uses": [],
+        "depends-on": [],
+        "brief": ["Delivers customer returns."]
+    }));
+    (
+        serde_json::to_vec(&base_spec).expect("serialise base spec"),
+        serde_json::to_vec(&base_plan).expect("serialise base plan"),
+    )
+}
+
+// Removing a stem's files from a whole-scope behaviour source retires the
+// standing requirements citing those removed files by scope, drops a shared
+// helper claim from an unchanged file before the grouping turn, and leaves
+// every requirement outside the removed stem unchanged.
+#[tokio::test]
+async fn amend_whole_gone_file() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let (spec, plan) = gone_file_spec_and_plan();
+
+    // index 0 is `start.require-database-url` from changed `src/server.ts`;
+    // 1..=3 are `REQ-001`, `REQ-003`, `REQ-004` (`REQ-002` is settled out of play)
+    let grouping = r#"{"groups": [
+        {"claims": [0, 1], "classes": [[0, 1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement(
+                "start.require-database-url",
+                "The program refuses to start when DATABASE_URL is unset.",
+            )
+            .at("src/server.ts#L10-L14"),
+            requirement("orders.create", "A signed-in user places an order.")
+                .at("src/routes/orders.ts#L20-L35"),
+            requirement("validation.positive-int", "Quantities must be positive integers.")
+                .at("src/lib/validation.ts#L1-L3"),
+            claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+                .at("src/routes/orders.ts#L20-L35"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    WholeWorkspace::new(spec, plan)
+        .with_changed(
+            "src/server.ts",
+            "app.use('/orders', orders); app.use('/returns', returns);\n",
+            "app.use('/orders', orders);\n",
+        )
+        .with_unchanged("src/routes/orders.ts", "export function createOrder() {}\n")
+        .with_unchanged(
+            "src/lib/validation.ts",
+            "export function requirePositiveInt(n: number) { return n > 0; }\n",
+        )
+        .with_gone("src/routes/returns.ts", "export function createReturn() {}\n")
+        .with_gone("src/services/returns.ts", "export function validateReturnWindow() {}\n")
+        .seed(&provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 2, "conflict": 0, "unchanged": 2, "by-scope": 2
+        }),
+        "{envelope}"
+    );
+    assert_eq!(provider.model.seen().len(), 1, "grouping is the only turn");
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(
+        !request.contains("validation.positive-int"),
+        "shared helper claim in unchanged file is dropped: {request}"
+    );
+    assert!(!request.contains("`orders.create`"), "`orders.create` settled by code: {request}");
+    assert!(request.contains("`returns.post.create`"), "{request}");
+    assert!(request.contains("`returns.validate-window`"), "{request}");
+
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(amendment["changes"][0]["class"], "unchanged", "{amendment}");
+    assert_eq!(amendment["changes"][1]["class"], "unchanged", "{amendment}");
+    assert_eq!(amendment["changes"][2]["class"], "retired", "{amendment}");
+    assert_eq!(amendment["changes"][2]["scope"], "code", "{amendment}");
+    assert_eq!(amendment["changes"][3]["class"], "retired", "{amendment}");
+    assert_eq!(amendment["changes"][3]["scope"], "code", "{amendment}");
+    provider.model.assert_exhausted();
+}
+
+// Changing a constant file that anchors a `criterion` keeps the leading
+// `requirement` claim from an unchanged handler file under `revision::leads`,
+// so the affected requirement is revised without dropping its statement.
+#[tokio::test]
+async fn amend_whole_constant_elsewhere() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+
+    // index 0 is `orders.discount` (kept via `leads` from `src/services/pricing.ts`),
+    // 1 and 2 are the `orders.*` standing requirements in play (`REQ-003`, `REQ-004`)
+    let grouping = r#"{"groups": [
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [0, 2], "classes": [[0], [2]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.discount", "scenarios": [
+            {"name": "Gold discount", "when": "a gold-tier order has 10 units", "then": "the discount applies"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement("auth.login", "Users sign in with a credential.").at("src/auth.ts#L10-L20"),
+            requirement("session.timeout", "Sessions expire after an hour of inactivity.")
+                .at("src/session.ts#L5-L12"),
+            requirement("orders.create", "A signed-in user places an order.")
+                .at("src/routes/orders.ts#L20-L35"),
+            requirement(
+                "orders.discount",
+                "Gold-tier orders meeting DISCOUNT_UNITS receive a discount.",
+            )
+            .at("src/services/pricing.ts#L8-L18"),
+            claim(
+                ClaimKind::Criterion,
+                "orders.discount.threshold",
+                ("criterion", "DISCOUNT_UNITS is 10."),
+            )
+            .at("src/constants.ts#L1"),
+            claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+                .at("src/routes/orders.ts#L20-L35"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    WholeWorkspace::standard()
+        .with_changed(
+            "src/constants.ts",
+            "export const DISCOUNT_UNITS = 20;\n",
+            "export const DISCOUNT_UNITS = 10;\n",
+        )
+        .seed(&provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 1, "retired": 0, "conflict": 0, "unchanged": 3, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(request.contains("- 0 `code` `orders.discount`"), "{request}");
+    assert!(
+        request.contains("criterion `orders.discount.threshold`: DISCOUNT_UNITS is 10."),
+        "{request}"
+    );
+    assert!(!request.contains("`code` `orders.create`"), "{request}");
+    assert!(!request.contains("`auth.login`"), "{request}");
+    provider.model.assert_exhausted();
+}
+
+// An unchanged whole-scope behaviour source beside a delta prose source
+// stating a `decision` spends no grouping turn, retires nothing, keeps
+// unchanged whole-source contracts/calls out of the design turn, and amends
+// the design section.
+#[tokio::test]
+async fn amend_whole_beside_delta() {
+    let scratch = Scratch::new();
+    let config = scratch.config(&format!(
+        "[[source]]\nadapter = \"{CODE}\"\nscope = \"whole\"\n\n[[source]]\nadapter = \
+         \"{DOCS}\"\nscope = \"delta\"\n\n[target]\nadapter = \"acme:builder@2.1.0\"\nrepository \
+         = \".\"\n"
+    ));
+
+    let design = r#"{"sections": [
+        {"kind": "overview", "blocks": [{"text": "Sign-in issues a session; orders are placed and cancelled under it."}], "revised": []},
+        {"kind": "apis", "blocks": [{"text": "Secrets live in the team vault (from docs)."}], "revised": []}
+    ]}"#;
+    let mut provider = Provider::answering([design]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement("auth.login", "Users sign in with a credential.").at("src/auth.ts#L10-L20"),
+            requirement("session.timeout", "Sessions expire after an hour of inactivity.")
+                .at("src/session.ts#L5-L12"),
+            requirement("orders.create", "A signed-in user places an order.")
+                .at("src/routes/orders.ts#L20-L35"),
+            requirement("orders.discount", "Gold-tier orders of 20 units receive a discount.")
+                .at("src/services/pricing.ts#L8-L18"),
+            claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+                .at("src/routes/orders.ts#L20-L35"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+            Claim::new(ClaimKind::Call)
+                .at("src/services/pricing.ts#L12")
+                .with_extra("callee", "node-fetch:fetch"),
+        ],
+    );
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![claim(ClaimKind::Decision, "secrets.vault", ("decision", VAULT))])),
+    );
+    WholeWorkspace::standard().seed(&provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 0, "conflict": 0, "unchanged": 4, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    assert_eq!(
+        envelope["sections"],
+        serde_json::json!({"preamble": false, "added": ["apis"], "removed": [], "changed": []}),
+        "{envelope}"
+    );
+    assert_eq!(provider.model.seen().len(), 1, "design amend is the only turn; no grouping");
+    let design_turn = provider.model.seen()[0].messages.join("\n");
+    assert!(design_turn.contains(VAULT), "{design_turn}");
+    assert!(!design_turn.contains("node-fetch"), "unchanged code call dropped: {design_turn}");
+    assert!(
+        !design_turn.contains("POST /orders"),
+        "unchanged code contract dropped: {design_turn}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// When no snapshot is recorded for the base revision (for example, on a fresh
+// clone), a whole-scope behaviour source lists every extracted claim and every
+// standing requirement and retires untouched requirements under covered stems.
+#[tokio::test]
+async fn amend_whole_unrecorded() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+
+    // 0..=2 are extracted claims; 3..=6 are all four standing requirements
+    let grouping = r#"{"groups": [
+        {"claims": [0, 3], "classes": [[0, 3]]},
+        {"claims": [1, 4], "classes": [[1, 4]]},
+        {"claims": [2, 5], "classes": [[2, 5]]},
+        {"claims": [6], "classes": [[6]]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement("auth.login", "Users sign in with a credential.").at("src/auth.ts#L10-L20"),
+            requirement("session.timeout", "Sessions expire after an hour of inactivity.")
+                .at("src/session.ts#L5-L12"),
+            requirement("orders.create", "A signed-in user places an order.")
+                .at("src/routes/orders.ts#L20-L35"),
+            claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+                .at("src/routes/orders.ts#L20-L35"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    WholeWorkspace::standard()
+        .without_current("src/services/pricing.ts")
+        .seed_unrecorded(&provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 1, "conflict": 0, "unchanged": 3, "by-scope": 1
+        }),
+        "{envelope}"
+    );
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(request.contains("- 0 `code` `auth.login`"), "{request}");
+    assert!(request.contains("- 1 `code` `session.timeout`"), "{request}");
+    assert!(request.contains("- 2 `code` `orders.create`"), "{request}");
+    assert!(request.contains("- 3 `auth.login`"), "{request}");
+    assert!(request.contains("- 6 `orders.discount`"), "{request}");
     provider.model.assert_exhausted();
 }

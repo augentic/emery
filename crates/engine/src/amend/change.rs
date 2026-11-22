@@ -10,9 +10,10 @@
 //! bases the amended specification drafts from are kept beside the changes,
 //! each under the id its requirement takes. A change that states no
 //! requirement is grouped against nothing and leaves every standing
-//! requirement as it is. A behaviour source read whole then retires what it
-//! falls silent on under the stems it covers or where a base requirement
-//! cites it alone.
+//! requirement as it is. A behaviour source read whole retires untouched
+//! requirements citing a changed or removed file or carrying a vanished
+//! trigger when narrowed against a base source snapshot, and otherwise those
+//! under the stems it covers or citing that source alone.
 
 use std::collections::BTreeSet;
 
@@ -20,7 +21,7 @@ use emery_adapter::Trigger;
 use emery_adapter::source::{ClaimKind, SourceKind};
 use omnia_sdk::{Error, Model, server_error};
 
-use crate::amend::baseline::Baseline;
+use crate::amend::baseline::{Baseline, Standing};
 use crate::revision::{self, Change, ChangeClass, Cited, ReqId, Requirement, Spec};
 use crate::specify::{Basis, Contributor, Extract, GroupingBrief, Scope};
 
@@ -42,17 +43,29 @@ impl ChangeSet {
         model: &M, base: &Spec, extracts: &[Extract],
     ) -> Result<Self, Error> {
         let baseline = Baseline::new(base, extracts);
-        if states_requirements(extracts) {
-            let bases = GroupingBrief::with_standing(
+        if extracts.iter().any(Extract::states_requirements) {
+            let Standing { in_play, settled } = baseline.standing(extracts);
+            let brief = GroupingBrief::with_standing(
                 extracts,
-                baseline.contributors(),
+                in_play,
                 baseline.criteria(),
                 baseline.whole_scope().clone(),
-            )
-            .derive(model)
-            .await?;
-            Self::from_bases(&baseline, extracts, bases)
+            );
+            tracing::info!(
+                claims = brief.claim_count(),
+                standing = brief.standing_count(),
+                settled = settled.len(),
+                "grouping load"
+            );
+            let bases = brief.derive(model).await?;
+            Self::from_bases(&baseline, extracts, bases, settled)
         } else {
+            tracing::info!(
+                claims = 0,
+                standing = 0,
+                settled = baseline.requirements().len(),
+                "grouping load"
+            );
             tracing::info!("the change states no requirement; the specification stands");
             let mut set = Self::unchanged(&baseline);
             set.retire_by_scope(&baseline, extracts, &BTreeSet::new());
@@ -67,12 +80,10 @@ impl ChangeSet {
         }
     }
 
-    // Retires every standing requirement a behaviour source read whole falls
-    // silent on: one no claim touched (and no whole-source detail evidenced)
-    // under a stem the source's requirement claims cover, or one whose base
-    // citations name that source alone. A prose source's scope retires
-    // nothing, and the first source in declaration order to match is the one
-    // named.
+    // Retires standing requirements a behaviour source read whole falls silent
+    // on: for a snapshot-narrowed source, those citing a changed or removed
+    // file of that source or carrying a vanished trigger; otherwise those under
+    // a stem the source's requirement claims cover or citing that source alone.
     fn retire_by_scope(
         &mut self, baseline: &Baseline, extracts: &[Extract], evidenced: &BTreeSet<ReqId>,
     ) {
@@ -86,17 +97,26 @@ impl ChangeSet {
                 );
                 continue;
             }
-            let covered_stems: BTreeSet<String> = extract
-                .evidence
-                .claims
-                .iter()
-                .filter(|claim| claim.kind == ClaimKind::Requirement)
-                .filter_map(|claim| claim.id.as_deref())
-                .map(|id| revision::stem(id).to_owned())
-                .collect();
+            let covered_stems: BTreeSet<String> = if extract.is_narrowed() {
+                BTreeSet::new()
+            } else {
+                extract
+                    .evidence
+                    .claims
+                    .iter()
+                    .filter(|claim| claim.kind == ClaimKind::Requirement)
+                    .filter_map(|claim| claim.id.as_deref())
+                    .map(|id| revision::stem(id).to_owned())
+                    .collect()
+            };
             for change in &mut self.changes {
-                let in_scope = covered_stems.contains(change.stem())
-                    || baseline.cites_only(change.id, &extract.source);
+                let in_scope = match extract.delta() {
+                    Some(delta) => baseline.in_narrowed_scope(change.id, &extract.source, delta),
+                    None => {
+                        covered_stems.contains(change.stem())
+                            || baseline.cites_only(change.id, &extract.source)
+                    }
+                };
                 let is_evidenced =
                     evidenced.contains(&change.id) && baseline.admits_evidenced(change.id);
                 if !change.is_untouched() || is_evidenced || !in_scope {
@@ -118,7 +138,7 @@ impl ChangeSet {
     // ranked as a statement is, so a withdrawal and a revision at one rank
     // are a conflict and the higher-ranked of the two decides.
     fn from_bases(
-        baseline: &Baseline, extracts: &[Extract], bases: Vec<Basis>,
+        baseline: &Baseline, extracts: &[Extract], bases: Vec<Basis>, settled: Vec<Change>,
     ) -> Result<Self, Error> {
         let unmatched: Vec<Contributor> = bases
             .iter()
@@ -141,8 +161,10 @@ impl ChangeSet {
             }
         }
 
+        let mut changes = settled;
+        changes.reserve(matched_bases.len() + added_bases.len());
         let mut set = Self {
-            changes: Vec::with_capacity(matched_bases.len() + added_bases.len()),
+            changes,
             drafted: Vec::new(),
         };
         let mut evidenced = BTreeSet::new();
@@ -261,17 +283,6 @@ fn added_change(id: ReqId, basis: &Basis, sources: Vec<Cited>) -> Change {
         sources,
         scope: None,
     }
-}
-
-// Whether any claim of `extracts` states or withdraws a requirement, so the
-// change is matched against the standing requirements. A change of other
-// claims alone, a `decision` or a `type`, informs the design and nothing of
-// the specification.
-fn states_requirements(extracts: &[Extract]) -> bool {
-    extracts
-        .iter()
-        .flat_map(|extract| &extract.evidence.claims)
-        .any(|claim| matches!(claim.kind, ClaimKind::Requirement | ClaimKind::Retire))
 }
 
 // The `retire-unmatched` refusal: `retires` withdraw behaviours no

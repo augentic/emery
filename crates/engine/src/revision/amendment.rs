@@ -279,9 +279,12 @@ pub struct Change {
     /// requirement; `None` for every entry a claim decided.
     ///
     /// Set on a [`ChangeClass::Retired`] entry alone, whose
-    /// [`sources`](Self::sources) are then empty: the source covers the
-    /// requirement's stem with its requirement claims, or is the sole source
-    /// the base requirement cites, and states nothing of the requirement.
+    /// [`sources`](Self::sources) are then empty: when narrowed against a
+    /// base source snapshot, the requirement cites a changed or removed file
+    /// of that source or carries a vanished trigger; without a snapshot, the
+    /// source covers the requirement's stem with its requirement claims or is
+    /// the sole source the base requirement cites, and states nothing of the
+    /// requirement.
     pub scope: Option<String>,
 }
 

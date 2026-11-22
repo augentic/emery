@@ -449,9 +449,10 @@ impl Display for DesignAmend {
 
 // Narrows whole-scope behaviour extracts to the claims that inform this design
 // amendment: unchanged `type` claims are omitted, drafted amendments keep only
-// claims matching drafted contributors or their cited files, and pure
-// retirements omit surviving whole-scope `call`, `contract`, and `excerpt`
-// claims of unchanged code.
+// claims matching drafted contributors or their cited files, pure retirements
+// omit surviving whole-scope `call`, `contract`, and `excerpt` claims, and
+// non-drafted runs on a snapshot-narrowed source omit `contract` claims from
+// unchanged files.
 struct ScopedExtracts {
     extracts: Vec<Extract>,
     types: BTreeMap<String, String>,
@@ -503,11 +504,14 @@ impl WholeClaims {
         }
     }
 
-    fn keeps(&self, source: &str, claim: &Claim) -> bool {
+    fn keeps(&self, extract: &Extract, claim: &Claim) -> bool {
         match self {
-            Self::Drafted(drafted) => drafted.contains(source, claim),
+            Self::Drafted(drafted) => drafted.contains(&extract.source, claim),
             Self::RetiredOnly => false,
-            Self::All => true,
+            Self::All => extract.delta().is_none_or(|delta| {
+                claim.kind != ClaimKind::Contract
+                    || claim.path.as_deref().is_none_or(|path| delta.is_changed(path))
+            }),
         }
     }
 }
@@ -547,7 +551,7 @@ impl ScopedExtracts {
                     continue;
                 }
 
-                if !whole || policy.keeps(&extract.source, claim) {
+                if !whole || policy.keeps(extract, claim) {
                     claims.push(claim.clone());
                 }
             }

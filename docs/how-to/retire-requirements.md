@@ -78,14 +78,14 @@ repository = "."
 
 When you run `emery amend`:
 
-1. `orders-service` extracts all current `requirement` claims from `src/`.
-2. Emery collects every stem (`<stem>.*`) covered by at least one `requirement` claim emitted by `orders-service` (for example, `orders`), and checks each standing requirement's cited `sources` in the base specification.
-3. Any existing requirement in the current revision that remains `unchanged` (matched by no change claim from any source) and either falls under one of those covered stems or cites `orders-service` alone in the base specification is automatically retired with the note:
+1. `orders-service` extracts all current claims from `src/`.
+2. When `.emery/storage/` holds a source snapshot for the base revision, Emery narrows `orders-service` to claims from changed or newly added files and puts only affected standing requirements in play. Without a base snapshot (for example, on a fresh clone), Emery evaluates every extracted claim and collects covered stems (`<stem>.*`) and sole-source citations.
+3. Any untouched standing requirement citing a changed or removed file of `orders-service` or carrying a vanished trigger (or, without a snapshot, falling under a covered stem or citing `orders-service` alone) is automatically retired with the note:
    ``Note: retired by scope: `orders-service` was read whole and states nothing under `orders`.``
 
-### Important rule: stem coverage in `scope = "whole"`
+### Important rule: snapshot narrowing and fallback in `scope = "whole"`
 
-`scope = "whole"` retires untouched requirements under stems where that behaviour source emitted **at least one** `requirement` claim during the run, or whose non-empty base `sources` cite that behaviour source alone.
+When a base source snapshot is present in `.emery/storage/`, `scope = "whole"` retires untouched requirements only where they cite a changed or removed file of that behaviour source or carry a vanished trigger—leaving untouched files and other stems untouched by code. On a fresh clone with no snapshot yet in `.emery/storage/`, the first amendment falls back to retiring untouched requirements under stems where that behaviour source emitted **at least one** `requirement` claim during the run, or whose non-empty base `sources` cite that behaviour source alone:
 
 - This retires an entire stem automatically when all of its files are deleted from `orders-service` (when `orders-service` was the sole source behind those requirements), while protecting stems owned by *other* sources (such as `billing.*` or `audit.*` from `documentation` or another service) from being wiped out.
 - If a deleted stem's requirements also cited another source (such as `documentation`), `scope = "whole"` leaves them `unchanged`; use Method 1 (`--description` with `emery:intent` or updating `documentation`) to withdraw them explicitly.

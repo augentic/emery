@@ -151,6 +151,16 @@ impl GroupingBrief {
         self.contributors.iter().map(Contributor::stem).collect::<BTreeSet<_>>().len()
     }
 
+    #[must_use]
+    pub const fn claim_count(&self) -> usize {
+        self.changes
+    }
+
+    #[must_use]
+    pub const fn standing_count(&self) -> usize {
+        self.contributors.len().saturating_sub(self.changes)
+    }
+
     fn claims(&self) -> &[Contributor] {
         &self.contributors[..self.changes]
     }
@@ -276,12 +286,6 @@ impl GroupingBrief {
         }
     }
 
-    fn is_other_standing_trigger(&self, standing_index: usize, trigger: &Trigger) -> bool {
-        self.standing()
-            .iter()
-            .any(|other| other.index != standing_index && other.trigger.as_ref() == Some(trigger))
-    }
-
     fn verify_vanished_trigger(
         &self, position: usize, standing_index: usize, members: &BTreeSet<usize>,
         review: &mut Review,
@@ -308,16 +312,16 @@ impl GroupingBrief {
         }
 
         for (source, claims) in &claims_by_source {
-            let has_replacement = self
-                .contracts
-                .trigger_in_source_of(source, claims)
-                .is_some_and(|trigger| !self.is_other_standing_trigger(standing_index, &trigger));
+            let has_replacement =
+                self.contracts.trigger_in_source_of(source, claims).is_some_and(|trigger| {
+                    !self.whole.has_other_standing_trigger(&standing_member.id, &trigger)
+                });
 
             for claim in claims.iter().filter(|claim| claim.id != standing_member.id) {
-                let existing_trigger = self
-                    .contracts
-                    .trigger_in_source(&Cited::from(claim))
-                    .filter(|trigger| self.is_other_standing_trigger(standing_index, trigger));
+                let existing_trigger =
+                    self.contracts.trigger_in_source(&Cited::from(claim)).filter(|trigger| {
+                        self.whole.has_other_standing_trigger(&standing_member.id, trigger)
+                    });
                 if let Some(existing) = existing_trigger {
                     review.note(format_args!(
                         "group {position}: standing requirement {standing_index} (`{}`) carries \
@@ -798,6 +802,7 @@ enum EvidencedGap {
 pub struct WholeScope {
     sources: BTreeMap<String, WholeSource>,
     details: Vec<Detail>,
+    standing_triggers: BTreeMap<Trigger, BTreeSet<String>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -821,6 +826,7 @@ impl WholeScope {
     pub fn from_spec(extracts: &[Extract], spec: &Spec) -> Self {
         let mut sources = BTreeMap::new();
         let mut details = Vec::new();
+        let mut standing_triggers: BTreeMap<Trigger, BTreeSet<String>> = BTreeMap::new();
 
         for extract in extracts.iter().filter(|extract| extract.is_whole_behaviour()) {
             let entry = sources.entry(extract.source.clone()).or_insert_with(WholeSource::default);
@@ -841,6 +847,12 @@ impl WholeScope {
 
         for requirement in &spec.requirements {
             let stem = requirement.stem();
+            if let Some(trigger) = &requirement.trigger {
+                standing_triggers
+                    .entry(trigger.clone())
+                    .or_default()
+                    .insert(requirement.subject.clone());
+            }
             for cited in &requirement.sources {
                 if let Some(path) = cited.path.as_deref()
                     && let Some(whole) = sources.get_mut(&cited.source)
@@ -850,7 +862,18 @@ impl WholeScope {
             }
         }
 
-        Self { sources, details }
+        Self {
+            sources,
+            details,
+            standing_triggers,
+        }
+    }
+
+    #[must_use]
+    pub fn has_other_standing_trigger(&self, subject: &str, trigger: &Trigger) -> bool {
+        self.standing_triggers
+            .get(trigger)
+            .is_some_and(|subjects| subjects.iter().any(|other| other != subject))
     }
 
     #[must_use]

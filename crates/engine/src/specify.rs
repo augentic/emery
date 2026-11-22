@@ -17,7 +17,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use emery_adapter::is_kebab;
 pub use emery_adapter::source::SourceContent;
-use emery_adapter::source::{Claim, Evidence, Source, SourceInput, SourceKind, SourceMetadata};
+use emery_adapter::source::{
+    Claim, ClaimKind, Evidence, Source, SourceInput, SourceKind, SourceMetadata,
+};
 use futures::future;
 use omnia_sdk::api::Context;
 use omnia_sdk::plugins::Digest;
@@ -28,7 +30,7 @@ pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief, WholeS
 pub(crate) use self::design::{DesignAmend, DesignBrief};
 pub(crate) use self::plan::{Draft, Floors, Open, PartAmend, PartBrief, Types};
 use self::snapshot::Workspace;
-pub(crate) use self::snapshot::{Snapshot, SnapshotBase};
+pub(crate) use self::snapshot::{FileDelta, Snapshot, SnapshotBase};
 pub use self::spec::SPEC_CHUNK;
 pub(crate) use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded};
@@ -295,9 +297,15 @@ pub enum Scope {
     Delta,
     /// The source states its subject's behaviour whole.
     ///
-    /// A behaviour source read whole retires every standing requirement
-    /// under a stem its requirement claims cover that no claim of the change
-    /// touches. A prose source's scope is ignored.
+    /// When the base revision holds a recorded source snapshot for a behaviour
+    /// source read whole, [`amend`](crate::amend::amend) narrows its claims to
+    /// changed or newly added files (plus `contract`, `type`, unanchored
+    /// claims, and `requirement` / `criterion` pairs linked across files) and
+    /// retires untouched standing requirements only where they cite a changed
+    /// or removed file of that source or carry a vanished trigger. Without a
+    /// base snapshot (for example, on a fresh clone), every extracted claim is
+    /// evaluated and untouched requirements under covered stems or citing that
+    /// source alone are retired. A prose source's scope is ignored.
     Whole,
 }
 
@@ -467,6 +475,7 @@ impl Bound {
             scope: self.scope,
             evidence,
             files: None,
+            delta: None,
         })
     }
 }
@@ -490,12 +499,42 @@ pub(crate) struct Extract {
     pub(crate) evidence: Evidence,
     // Workspace-relative file paths to lowercase SHA-256 digests; `None` for inline values.
     pub(crate) files: Option<BTreeMap<String, String>>,
+    // Changed and removed workspace files when narrowed against a base snapshot.
+    delta: Option<FileDelta>,
 }
 
 impl Extract {
     #[must_use]
     pub(crate) fn is_whole_behaviour(&self) -> bool {
         self.scope == Scope::Whole && self.kind == SourceKind::Behaviour
+    }
+
+    #[must_use]
+    pub(crate) const fn is_narrowed(&self) -> bool {
+        self.delta.is_some()
+    }
+
+    #[must_use]
+    pub(crate) const fn delta(&self) -> Option<&FileDelta> {
+        self.delta.as_ref()
+    }
+
+    // Whether any claim of this extract states or withdraws a requirement.
+    #[must_use]
+    pub(crate) fn states_requirements(&self) -> bool {
+        self.evidence
+            .claims
+            .iter()
+            .any(|claim| matches!(claim.kind, ClaimKind::Requirement | ClaimKind::Retire))
+    }
+
+    #[must_use]
+    pub(crate) fn narrowed(self, claims: Vec<Claim>, delta: FileDelta) -> Self {
+        Self {
+            evidence: Evidence { claims },
+            delta: Some(delta),
+            ..self
+        }
     }
 
     #[must_use]
@@ -507,6 +546,7 @@ impl Extract {
             scope: self.scope,
             evidence: Evidence { claims },
             files: self.files.clone(),
+            delta: self.delta.clone(),
         }
     }
 

@@ -73,7 +73,7 @@ Each `[[source]]` entry configures one input for [`emery specify`](cli/specify.m
 | `revision` | String | Conditional | — | Branch, tag, or commit SHA to check out when `repository` is set. Required when `repository` is set; forbidden otherwise. |
 | `digest` | String (`sha256:<64-hex>`) | No | — | Pins the adapter `.wasm` binary to an exact SHA-256 content hash. Verified by the host loader before execution. |
 | `rank` | Positive integer (`>= 1`) | No | Adapter kind default | Source authority rank (`1` is highest authority). Used to resolve disagreements between sources. |
-| `scope` | `"delta"` \| `"whole"` | No | `"delta"` | Read by [`emery amend`](cli/amend.md) only (ignored by `specify`). When set to `"whole"` on a behaviour source, untouched existing requirements under stems covered by at least one `requirement` claim from this source are retired automatically. |
+| `scope` | `"delta"` \| `"whole"` | No | `"delta"` | Read by [`emery amend`](cli/amend.md) only (ignored by `specify`). When set to `"whole"` on a behaviour source whose base revision has a recorded source snapshot, `amend` narrows claims to changed or newly added files and retires untouched requirements citing changed or removed files of that source (or whose trigger vanished). When no base snapshot is recorded (for example, in a fresh clone), every extracted claim is judged and untouched requirements under covered stems or citing that source alone are retired. |
 
 ### Source content modes
 
@@ -149,8 +149,8 @@ name = "docs"
 adapter = "emery:documentation@1.2.0"
 
 # 2. Extract behaviour from a local subdirectory.
-# In `emery amend`, scope = "whole" retires untouched requirements under stems
-# covered by this source's claims or citing this source alone in the base spec.
+# In `emery amend`, scope = "whole" narrows to changed files against the base
+# snapshot and retires untouched requirements citing changed or removed files.
 [[source]]
 name = "api-surface"
 adapter = "emery:typescript@1.2.0"

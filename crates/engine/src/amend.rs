@@ -11,6 +11,7 @@
 
 mod baseline;
 mod change;
+mod narrow;
 mod plan;
 
 use emery_adapter::source::Source;
@@ -46,11 +47,14 @@ use crate::{Files, apply, store};
 /// withdraws, and a requirement no claim touches stands unchanged. A change
 /// stating no requirement, a `decision` or a `type` alone, is matched
 /// against nothing and leaves every requirement as it stands. A behaviour
-/// source read whole ([`Scope::Whole`](crate::specify::Scope::Whole)) then
-/// retires every standing requirement no claim touched under a stem its
-/// requirement claims cover or whose base citations name that source alone,
-/// the entry naming the source as its [`Change::scope`]; a prose source's
-/// scope retires nothing. The sources
+/// source read whole ([`Scope::Whole`](crate::specify::Scope::Whole)) is
+/// narrowed to changed or newly added files when the base revision holds a
+/// recorded source snapshot for it, retiring untouched standing requirements
+/// only where they cite a changed or removed file of that source or carry a
+/// vanished trigger, and otherwise falls back to retiring untouched standing
+/// requirements under a stem its requirement claims cover or whose base
+/// citations name that source alone, the entry naming the source as its
+/// [`Change::scope`]; a prose source's scope retires nothing. The sources
 /// are extracted as `specify` extracts them, a repository source read in a
 /// working copy removed once every source answered.
 ///
@@ -146,6 +150,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         Some(SnapshotBase::new(base_snapshot.as_ref(), &revision.spec)),
     )
     .await?;
+    let extracts = narrow::extracts(extracts, base_snapshot.as_ref());
 
     // the change matched against the base, and what it did to each
     // requirement; a change stating none leaves every requirement as it is

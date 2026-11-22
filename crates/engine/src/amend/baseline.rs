@@ -7,22 +7,30 @@
 //! so a change always wins over what it revises and the base decides
 //! nothing but which requirement a claim lands on.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use emery_adapter::Trigger;
 use emery_adapter::source::{ClaimKind, SourceKind};
 
 use crate::Rank;
-use crate::revision::{self, Cited, ReqId, Requirement, Scenario, Spec, Status};
-use crate::specify::{BASELINE, Basis, Contributor, Extract, WholeScope};
+use crate::revision::{self, Change, Cited, ReqId, Requirement, Scenario, Spec, Status};
+use crate::specify::{BASELINE, Basis, Contributor, Extract, FileDelta, WholeScope};
 
 const START_STEM: &str = "start";
+
+// Standing requirements partitioned into those put to the grouping turn and
+// those settled as unchanged by code.
+pub struct Standing {
+    pub in_play: Vec<Contributor>,
+    pub settled: Vec<Change>,
+}
 
 // The base specification as the grouping and the change set read it.
 pub struct Baseline {
     spec: Spec,
     rank: Rank,
     whole: WholeScope,
+    deltas: BTreeMap<String, FileDelta>,
 }
 
 impl Baseline {
@@ -33,10 +41,15 @@ impl Baseline {
             .map(|extract| extract.rank)
             .max()
             .unwrap_or_else(|| Rank::from(SourceKind::Behaviour));
+        let deltas = extracts
+            .iter()
+            .filter_map(|extract| Some((extract.source.clone(), extract.delta()?.clone())))
+            .collect();
         Self {
             spec: spec.clone(),
             rank: lowest.below(),
             whole: WholeScope::from_spec(extracts, spec),
+            deltas,
         }
     }
 
@@ -44,36 +57,72 @@ impl Baseline {
         &self.whole
     }
 
-    // One contributor per requirement, its statement what the requirement
-    // states as it stands (`Requirement::stated`): its body, or the
-    // competing statements of a conflict, so the model sees one standing
-    // requirement however many statements the base reads as its, with its
-    // scenarios summarised underneath so evidenced thresholds and facets are
-    // visible to the grouping. The kind is nominal, since no adapter
-    // extracted the base; `index` is the position among the standing alone,
-    // which the brief re-indexes; the citations are where the requirement
-    // was read, for the brief's anchor hints.
-    pub fn contributors(&self) -> Vec<Contributor> {
-        self.spec
-            .requirements
+    // Partitions the base specification into standing contributors put to the
+    // grouping turn and untouched requirements settled as unchanged by code.
+    pub fn standing(&self, extracts: &[Extract]) -> Standing {
+        let narrow_standing = extracts
             .iter()
-            .filter_map(|requirement| Some((requirement, requirement.stated()?)))
-            .enumerate()
-            .map(|(index, (requirement, statement))| Contributor {
-                source: BASELINE.to_owned(),
-                kind: SourceKind::Documentation,
-                rank: self.rank,
-                id: requirement.subject.clone(),
-                path: None,
-                statement,
-                synopsis: None,
-                notes: self.standing_notes(requirement),
-                withdraws: false,
-                trigger: requirement.trigger.clone(),
-                citations: requirement.sources.clone(),
-                index,
-            })
-            .collect()
+            .filter(|extract| extract.states_requirements())
+            .all(Extract::is_narrowed);
+        let kept_stems: BTreeSet<String> = if narrow_standing {
+            extracts
+                .iter()
+                .flat_map(|extract| &extract.evidence.claims)
+                .filter(|claim| matches!(claim.kind, ClaimKind::Requirement | ClaimKind::Retire))
+                .filter_map(|claim| claim.id.as_deref())
+                .map(|id| revision::stem(id).to_owned())
+                .collect()
+        } else {
+            BTreeSet::new()
+        };
+
+        let mut in_play = Vec::new();
+        let mut settled = Vec::new();
+        for requirement in &self.spec.requirements {
+            let Some(statement) = requirement.stated() else { continue };
+            let active = !narrow_standing
+                || self.cites_narrowed_change(requirement)
+                || kept_stems.contains(requirement.stem())
+                || self.has_vanished_trigger(requirement);
+            if active {
+                let index = in_play.len();
+                in_play.push(Contributor {
+                    source: BASELINE.to_owned(),
+                    kind: SourceKind::Documentation,
+                    rank: self.rank,
+                    id: requirement.subject.clone(),
+                    path: None,
+                    statement,
+                    synopsis: None,
+                    notes: self.standing_notes(requirement),
+                    withdraws: false,
+                    trigger: requirement.trigger.clone(),
+                    citations: requirement.sources.clone(),
+                    index,
+                });
+            } else {
+                settled.push(Change::unchanged(requirement));
+            }
+        }
+        Standing { in_play, settled }
+    }
+
+    fn cites_narrowed_change(&self, requirement: &Requirement) -> bool {
+        requirement.sources.iter().any(|cited| {
+            self.deltas.get(&cited.source).is_some_and(|delta| delta.touches_citation(cited))
+        })
+    }
+
+    // Whether a narrowed whole-scope `source` can retire `id` by silence.
+    pub fn in_narrowed_scope(&self, id: ReqId, source: &str, delta: &FileDelta) -> bool {
+        let Some(requirement) = self.spec.requirement(id) else {
+            return false;
+        };
+        requirement
+            .sources
+            .iter()
+            .any(|cited| cited.source == source && delta.touches_citation(cited))
+            || (requirement.cites(source) && self.has_vanished_trigger(requirement))
     }
 
     // The base's requirements, in id order.
