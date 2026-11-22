@@ -169,70 +169,130 @@ impl GroupingBrief {
         &self.contributors[self.changes..]
     }
 
-    fn verify_placements(
-        &self, placed: &BTreeMap<usize, Vec<usize>>, revising: &BTreeMap<usize, Vec<usize>>,
-        group_has_standing: &[bool], review: &mut Review,
-    ) {
-        let count = self.contributors.len();
-        let has_standing = !self.standing().is_empty();
+    const fn is_change_claim(&self, index: usize) -> bool {
+        index < self.changes
+    }
 
-        // a change claim may join multiple groups only when it covers distinct
-        // standing requirements and revises at most one of them
-        for (&index, groups) in placed {
-            if groups.len() <= 1 {
-                continue;
-            }
-            if !has_standing || index >= self.changes {
-                review.note(format_args!("claim {index} appears in more than one group"));
-                continue;
-            }
-            if groups.iter().any(|&pos| !group_has_standing[pos]) {
-                review.note(format_args!(
-                    "claim {index} appears in more than one group, including one without a \
-                     standing requirement; a claim may join multiple groups only when each holds \
-                     a distinct standing requirement it covers"
-                ));
-                continue;
-            }
-            if revising.get(&index).is_some_and(|revisions| revisions.len() > 1) {
-                review.note(format_args!(
-                    "claim {index} is placed outside the standing requirement's class in more \
-                     than one group; share the standing requirement's class for each standing \
-                     requirement whose behaviour stands unchanged"
-                ));
-            }
+    const fn is_standing_index(&self, index: usize) -> bool {
+        index >= self.changes && index < self.contributors.len()
+    }
+
+    fn verify_placements(&self, placements: &Placements, review: &mut Review) {
+        for index in placements.duplicate_group_members() {
+            review.note(format_args!("claim {index} appears in more than one group"));
         }
 
-        for index in (0..count).filter(|index| !placed.contains_key(index)) {
-            review.note(format_args!("claim {index} is in no group"));
+        for index in 0..self.contributors.len() {
+            if !placements.is_accounted(index) {
+                review.note(format_args!("claim {index} is in no group"));
+            }
         }
 
         // byte-equal ids may not be split across groups
         for group in &self.baseline.groups {
             if group.claims.len() <= 1
-                || !group.claims.iter().all(|index| placed.contains_key(index))
+                || !group.claims.iter().all(|&index| placements.is_accounted(index))
             {
                 continue;
             }
-            let mut shared: Option<BTreeSet<usize>> = None;
-            for index in &group.claims {
-                let positions: BTreeSet<usize> =
-                    placed.get(index).into_iter().flatten().copied().collect();
-                shared = Some(match shared {
-                    None => positions,
-                    Some(prev) => prev.intersection(&positions).copied().collect(),
-                });
-            }
-            if shared.is_some_and(|common| common.is_empty()) {
+            if !placements.all_share_group(&group.claims) {
                 let id = &self.contributors[group.claims[0]].id;
                 review.note(format_args!("claims sharing the id `{id}` are split across groups"));
             }
         }
     }
 
-    fn verify_evidenced(
-        &self, answer: &Grouping, placed: &BTreeMap<usize, Vec<usize>>, review: &mut Review,
+    fn verify_restated(&self, answer: &Grouping, placements: &mut Placements, review: &mut Review) {
+        if self.standing().is_empty() {
+            if !answer.restated.is_empty() {
+                review.note(
+                    "`restated` is only used when `## Standing requirements` is listed; leave it \
+                     empty",
+                );
+            }
+            return;
+        }
+
+        for entry in &answer.restated {
+            self.verify_restated_entry(entry, placements, review);
+        }
+    }
+
+    fn verify_restated_entry(
+        &self, entry: &Restated, placements: &mut Placements, review: &mut Review,
     ) {
+        let valid_claim = self.verify_restated_claim(entry.claim, placements, review);
+        if entry.standing.is_empty() {
+            review.note(format_args!(
+                "`restated` claim {} lists no standing requirements",
+                entry.claim
+            ));
+            return;
+        }
+
+        let mut seen_standing = BTreeSet::new();
+        for &standing_index in &entry.standing {
+            if !self.is_standing_index(standing_index) {
+                review.note(format_args!(
+                    "`restated` standing index {standing_index} is not a standing requirement"
+                ));
+                continue;
+            }
+            if !seen_standing.insert(standing_index) {
+                review.note(format_args!(
+                    "`restated` claim {} lists standing requirement {standing_index} more than \
+                     once",
+                    entry.claim
+                ));
+                continue;
+            }
+            placements.record_restated_standing(standing_index);
+            if valid_claim && placements.shares_group_with(entry.claim, standing_index) {
+                review.note(format_args!(
+                    "`restated` claim {} lists standing requirement {standing_index}, whose group \
+                     already contains claim {}",
+                    entry.claim, entry.claim
+                ));
+            }
+            let standing_member = &self.contributors[standing_index];
+            if let Some(vanished) = self
+                .whole
+                .vanished_trigger(&standing_member.citations, standing_member.trigger.as_ref())
+            {
+                review.note(format_args!(
+                    "`restated` claim {} lists standing requirement {standing_index} (`{}`), \
+                     which carries {} — absent from the extracted contracts; omit it from \
+                     `restated` so whole-source scope retires it",
+                    entry.claim,
+                    standing_member.id,
+                    trigger_note(&vanished),
+                ));
+            }
+        }
+    }
+
+    fn verify_restated_claim(
+        &self, claim: usize, placements: &mut Placements, review: &mut Review,
+    ) -> bool {
+        if !self.is_change_claim(claim) {
+            review.note(format_args!("`restated` claim {claim} is not a change claim"));
+            return false;
+        }
+        if !placements.record_restated_claim(claim) {
+            review.note(format_args!("claim {claim} appears in `restated` more than once"));
+        }
+        if self.contributors[claim].withdraws {
+            review.note(format_args!(
+                "`restated` claim {claim} (`{}`) is a `(retire)` claim; place it in the group of \
+                 the standing requirement it withdraws",
+                self.contributors[claim].id
+            ));
+            return false;
+        }
+        true
+    }
+
+    fn verify_evidenced(&self, answer: &Grouping, placements: &Placements, review: &mut Review) {
         if !self.whole.has_details() {
             if !answer.evidenced.is_empty() {
                 review.note(
@@ -242,22 +302,16 @@ impl GroupingBrief {
             }
             return;
         }
-        let count = self.contributors.len();
         let mut seen_evidenced = BTreeSet::new();
         for &index in &answer.evidenced {
-            if index < self.changes || index >= count {
+            if !self.is_standing_index(index) {
                 review
                     .note(format_args!("`evidenced` index {index} is not a standing requirement"));
             } else if !seen_evidenced.insert(index) {
                 review.note(format_args!(
                     "standing requirement {index} appears in `evidenced` more than once"
                 ));
-            } else if placed
-                .get(&index)
-                .and_then(|positions| positions.first())
-                .and_then(|&pos| answer.groups.get(pos))
-                .is_some_and(|group| group.claims.len() > 1)
-            {
+            } else if placements.is_matched_standing(index, &answer.groups) {
                 review.note(format_args!(
                     "standing requirement {index} is already matched to a claim; list in \
                      `evidenced` only standing requirements that stand alone"
@@ -304,7 +358,7 @@ impl GroupingBrief {
         for claim in members
             .iter()
             .copied()
-            .filter(|&index| index < self.changes)
+            .filter(|&index| self.is_change_claim(index))
             .filter_map(|index| self.contributors.get(index))
             .filter(|claim| !claim.withdraws && self.whole.contains_source(&claim.source))
         {
@@ -354,93 +408,94 @@ impl GroupingBrief {
     }
 
     fn write_instructions(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.standing().is_empty() {
+            return f.write_str(
+                "\nAnswer with every index in one group, and every group's claims in one \
+                 agreeing class. Two claims of one source that describe one requirement under \
+                 different stems — the first segment of their ids — are one group, whatever \
+                 nouns their seams gave them. Two claims of one source with different ids under \
+                 one stem are distinct requirements: the call that minted them under one noun \
+                 told them apart, and a group that merges them is split, each id its own \
+                 requirement.\n",
+            );
+        }
+
         f.write_str(
-            "\nAnswer with every index in a group, and every group's claims in exactly one \
-             agreeing class. Two claims of one source that describe one requirement under \
-             different stems — the first segment of their ids — are one group, whatever nouns \
-             their seams gave them. Without a standing requirement, two claims of one source \
-             with different ids under one stem are distinct requirements: the call that minted \
-             them under one noun told them apart, and a group that merges them is split, each id \
-             its own requirement.\n",
+            "\nAnswer with every index in at most one group: every standing requirement in one \
+             group, every change claim in one group or in `restated`, and every group's claims \
+             in one agreeing class. Two claims of one source that describe one requirement \
+             under different stems — the first segment of their ids — are one group, whatever \
+             nouns their seams gave them.\n\nEach standing requirement is one requirement of \
+             the current specification, shown with its scenarios; claims carry any criteria \
+             extracted under them. A claim that restates, revises, or narrows a standing \
+             requirement joins its group, in the standing requirement's class when the \
+             behaviour, values, thresholds, and outcomes match (even if reworded or given \
+             another sub-stem or leaf id) and in a class of its own when a value, condition, or \
+             outcome changed. Multiple claims of one source under one stem that state facets of \
+             one standing requirement join that standing requirement's group in one class — the \
+             standing requirement's class when unchanged, or one class of their own when \
+             revised — rather than adding separate groups for already-stated facets. Two \
+             standing requirements never share a group. When one change claim states nothing \
+             beyond what one or more standing requirements already state, list `{\"claim\": \
+             <claim>, \"standing\": [<standing>, ...]}` in `restated` (omitting the claim from \
+             `groups`, or placing it in one revised standing requirement's group and listing \
+             only the other unchanged standing requirements in `restated`). A claim stating a \
+             behaviour no standing requirement or scenario covers is a group of its own. A \
+             standing requirement no claim touches is a group of its own too.\n\nA claim marked \
+             `(retire)` withdraws the behaviour its id names rather than stating one: it joins \
+             the group of the standing requirement that states the behaviour, in a class of its \
+             own, and is never a group of its own, of other claims alone, or in `restated`, \
+             since a withdrawal of a behaviour the specification does not hold is refused after \
+             your answer.\n",
         )?;
-        if !self.standing().is_empty() {
-            f.write_str(
-                "\nEach standing requirement is one requirement of the current specification, \
-                 shown with its scenarios; claims carry any criteria extracted under them. A \
-                 claim that restates, revises, or narrows the behaviour a standing requirement \
-                 states joins its group, in the standing requirement's class when the behaviour, \
-                 values, thresholds, and outcomes match (even if reworded or given another \
-                 sub-stem or leaf id) and in a class of its own when a value, a condition, or an \
-                 outcome changed. Multiple claims of one source under one stem that together \
-                 state facets of one standing requirement join that standing requirement's group \
-                 in one class — the standing requirement's class when nothing changed, or one \
-                 class of their own when revised — rather than adding separate groups for \
-                 already-stated facets. When a single claim consolidates behaviours the current \
-                 specification holds as distinct standing requirements, place that claim in each \
-                 covered standing requirement's group (in the standing requirement's class for \
-                 each whose behaviour is unchanged, and outside it in at most one group). A \
-                 claim stating a behaviour no standing requirement covers is a group of its own. \
-                 A standing requirement no claim touches is a group of its own too. Two standing \
-                 requirements never share a group: an answer that merges them is refused.\n\nA \
-                 claim marked `(retire)` withdraws the behaviour its id names rather than \
-                 stating one: it joins the group of the standing requirement that states the \
-                 behaviour, in a class of its own, and is never a group of its own or of other \
-                 claims alone, since a withdrawal of a behaviour the specification does not hold \
-                 is refused after your answer.\n",
-            )?;
-            if !self.whole.is_empty() {
-                let sources = self
-                    .whole
-                    .source_names()
-                    .map(|name| format!("`{name}`"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
+        if !self.whole.is_empty() {
+            if let Some(sources) = self.whole.narrowed_sources() {
+                writeln!(
+                    f,
+                    "\nWhole-scope changed-file extraction ({sources}): claims from unchanged \
+                     files were omitted before grouping, while same-stem standing requirements \
+                     read at unchanged files remain listed in play. Leave any standing \
+                     requirement whose behaviour no listed claim touches alone in its own group \
+                     — standing requirements read at unchanged files with live contracts stay \
+                     unchanged automatically, so never force claims from a changed file onto \
+                     unrelated standing requirements on the stem or into `restated`.",
+                )?;
+            }
+            if let Some(sources) = self.whole.full_sources() {
                 writeln!(
                     f,
                     "\nWhole-scope re-extraction ({sources}): every file of the source was \
-                     re-extracted, including files the change did not touch, so untouched \
-                     routes, modules, and `start` bootstrap code appear again alongside any \
-                     edit. On an existing route, message surface, or `start` bootstrap, a claim \
-                     spelling out an inherited precondition or shared-helper outcome already \
-                     covered by standing requirements (such as per-action missing-entity lookup \
-                     when entity lookup and not-found shaping already stand), a validation or \
-                     normalisation facet already covered by a standing requirement or scenario \
-                     (including a claim spanning validation rules and default persistence across \
-                     two standing requirements, placed in both groups), or process startup, \
-                     framework header or middleware setup (`x-powered-by`), and listen mechanics \
-                     (`listen` or `serve` after startup checks) joins the \
-                     covered standing requirement's group in the standing requirement's class \
-                     rather than adding a standalone requirement. On a live route or message \
-                     surface, when a service-layer claim (such as loading from the store, \
-                     caching, and returning the resource) covers both a cache or store standing \
-                     requirement and a route-level return standing requirement on that same \
-                     surface, place that claim in both standing requirements' groups (in each \
-                     standing requirement's class when unchanged) rather than leaving the live \
-                     surface's return requirement ungrouped. Never match an untriggered helper \
-                     claim (or a claim on another standing route or message) to a standing \
-                     requirement whose whole-scope route or message trigger vanished (`absent \
-                     from extracted contracts`); leave a standing requirement whose surface \
-                     vanished alone in its own group so whole-source scope retires it, unless \
-                     the group binds a replacement contract for that surface. Leave a \
-                     whole-scope claim in a singleton group only when it states behaviour absent \
-                     from every standing requirement and scenario, such as a newly added route \
-                     or message surface, a new stem, or a newly added domain rule."
+                     re-extracted, including files the change did not touch. When a \
+                     re-extracted claim only repeats preconditions, facets, or startup setup \
+                     already stated by standing requirements or scenarios, place it in the \
+                     covered standing requirement's class or list the covered standing \
+                     requirements in `restated` rather than adding a duplicate requirement; \
+                     leave a claim in a singleton group only when it states behaviour absent \
+                     from every standing requirement and scenario.",
                 )?;
             }
-            if self.whole.has_details() {
-                f.write_str(
-                    "\nWhen a standing requirement stands alone in its group only because this \
-                     extraction recorded its behaviour in `## Whole-source detail` as an \
-                     `excerpt` or `call` rather than a `requirement` claim, and that detail in \
-                     its cited file (or under its stem when its whole-scope route or message \
-                     contract still stands) shows the behaviour is still implemented unchanged, \
-                     list that standing requirement's index in `evidenced` so whole-source scope \
-                     does not retire it. Never list in `evidenced` a standing requirement matched \
-                     to a claim, one whose route or message trigger vanished from the extracted \
-                     contracts, or one whose cited file holds no matching `## Whole-source \
-                     detail`.\n",
-                )?;
-            }
+            f.write_str(
+                "\nNever match an untriggered claim or another surface's claim to, or list in \
+                 `restated` or `evidenced`, a standing requirement whose whole-scope route or \
+                 message trigger vanished (`absent from extracted contracts`); leave a standing \
+                 requirement whose surface vanished alone in its own group so whole-source \
+                 scope retires it, unless the group binds a replacement contract for that \
+                 surface.\n",
+            )?;
+        }
+        if self.whole.has_details() {
+            f.write_str(
+                "\nWhen a standing requirement stands alone in its group only because this \
+                 extraction recorded its behaviour in `## Whole-source detail` as an `excerpt` \
+                 or `call` rather than a `requirement` claim, and that detail in its cited file \
+                 (or under its stem when its whole-scope route or message contract still \
+                 stands) shows the behaviour is still implemented unchanged, list that standing \
+                 requirement's index in `evidenced` so whole-source scope does not retire it. \
+                 Never list in `evidenced` a standing requirement matched to a claim or listed \
+                 in `restated`, one whose route or message trigger vanished from the extracted \
+                 contracts, or one whose cited file holds no matching `## Whole-source \
+                 detail`.\n",
+            )?;
         }
         Ok(())
     }
@@ -461,6 +516,19 @@ impl Brief for GroupingBrief {
             Self::at(schema, pointer)?.insert("maximum".to_owned(), json!(last));
         }
         Self::at(schema, "/properties/groups")?.insert("minItems".to_owned(), json!(1));
+        if self.standing().is_empty() {
+            Self::at(schema, "/properties")?.remove("restated");
+            Self::at(schema, "/$defs")?.remove("Restated");
+        } else {
+            let last_claim = self.changes.saturating_sub(1);
+            Self::at(schema, "/$defs/Restated/properties/claim")?
+                .insert("maximum".to_owned(), json!(last_claim));
+            Self::at(schema, "/$defs/Restated/properties/standing")?
+                .insert("minItems".to_owned(), json!(1));
+            let items = Self::at(schema, "/$defs/Restated/properties/standing/items")?;
+            items.insert("minimum".to_owned(), json!(self.changes));
+            items.insert("maximum".to_owned(), json!(last));
+        }
         if self.whole.has_details() {
             let items = Self::at(schema, "/properties/evidenced/items")?;
             items.insert("minimum".to_owned(), json!(self.changes));
@@ -473,9 +541,7 @@ impl Brief for GroupingBrief {
 
     fn verify(&self, answer: &Grouping, review: &mut Review) {
         let count = self.contributors.len();
-        let mut placed: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        let mut revising: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-        let mut group_has_standing = Vec::with_capacity(answer.groups.len());
+        let mut placements = Placements::default();
 
         for (position, group) in answer.groups.iter().enumerate() {
             if group.claims.is_empty() {
@@ -491,7 +557,7 @@ impl Brief for GroupingBrief {
                         "group {position}: claim {index} appears more than once in the group"
                     ));
                 } else {
-                    placed.entry(index).or_default().push(position);
+                    placements.record_group(index, position);
                 }
             }
 
@@ -536,37 +602,26 @@ impl Brief for GroupingBrief {
 
             // two standing requirements are two requirements already
             let standing_indices: Vec<usize> =
-                members.iter().copied().filter(|&index| index >= self.changes).collect();
-            group_has_standing.push(!standing_indices.is_empty());
+                members.iter().copied().filter(|&index| self.is_standing_index(index)).collect();
             if standing_indices.len() > 1 {
-                let standing: BTreeSet<&str> = standing_indices
+                let standing: BTreeSet<String> = standing_indices
                     .iter()
-                    .filter_map(|&index| {
-                        self.contributors.get(index).map(|member| member.id.as_str())
-                    })
+                    .filter_map(|&index| self.contributors.get(index))
+                    .map(|member| format!("`{}`", member.id))
                     .collect();
-                let ids =
-                    standing.iter().map(|id| format!("`{id}`")).collect::<Vec<_>>().join(", ");
+                let ids = standing.into_iter().collect::<Vec<_>>().join(", ");
                 review.note(format_args!(
                     "group {position} merges the standing requirements {ids}, which the current \
                      specification holds as distinct requirements"
                 ));
             } else if let [standing_index] = standing_indices.as_slice() {
                 self.verify_vanished_trigger(position, *standing_index, &members, review);
-                let standing_class =
-                    group.classes.iter().find(|class| class.contains(standing_index));
-                for &index in members.iter().filter(|&&index| index < self.changes) {
-                    if self.contributors.get(index).is_some_and(|member| !member.withdraws)
-                        && !standing_class.is_some_and(|class| class.contains(&index))
-                    {
-                        revising.entry(index).or_default().push(position);
-                    }
-                }
             }
         }
 
-        self.verify_placements(&placed, &revising, &group_has_standing, review);
-        self.verify_evidenced(answer, &placed, review);
+        self.verify_restated(answer, &mut placements, review);
+        self.verify_placements(&placements, review);
+        self.verify_evidenced(answer, &placements, review);
     }
 
     fn into_output(self, answer: Grouping) -> Result<Vec<Basis>, Error> {
@@ -790,6 +845,68 @@ fn join_indices(indices: &[usize]) -> String {
     indices.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
 }
 
+#[derive(Default)]
+struct Placements {
+    groups_by_member: BTreeMap<usize, BTreeSet<usize>>,
+    restated_claims: BTreeSet<usize>,
+    restated_standing: BTreeSet<usize>,
+}
+
+impl Placements {
+    fn record_group(&mut self, member: usize, group: usize) {
+        self.groups_by_member.entry(member).or_default().insert(group);
+    }
+
+    fn record_restated_claim(&mut self, claim: usize) -> bool {
+        self.restated_claims.insert(claim)
+    }
+
+    fn record_restated_standing(&mut self, standing: usize) {
+        self.restated_standing.insert(standing);
+    }
+
+    fn duplicate_group_members(&self) -> impl Iterator<Item = usize> + '_ {
+        self.groups_by_member.iter().filter(|(_, groups)| groups.len() > 1).map(|(&index, _)| index)
+    }
+
+    fn is_accounted(&self, member: usize) -> bool {
+        self.groups_by_member.contains_key(&member) || self.restated_claims.contains(&member)
+    }
+
+    fn in_group(&self, member: usize, group: usize) -> bool {
+        self.groups_by_member.get(&member).is_some_and(|groups| groups.contains(&group))
+    }
+
+    fn shares_group_with(&self, claim: usize, standing: usize) -> bool {
+        match (self.groups_by_member.get(&claim), self.groups_by_member.get(&standing)) {
+            (Some(claim_groups), Some(standing_groups)) => {
+                !claim_groups.is_disjoint(standing_groups)
+            }
+            _ => false,
+        }
+    }
+
+    fn all_share_group(&self, members: &[usize]) -> bool {
+        let Some((&first, rest)) = members.split_first() else {
+            return true;
+        };
+        self.groups_by_member.get(&first).is_some_and(|groups| {
+            groups.iter().any(|&group| rest.iter().all(|&member| self.in_group(member, group)))
+        })
+    }
+
+    fn is_matched_standing(&self, standing: usize, groups: &[Group]) -> bool {
+        self.restated_standing.contains(&standing)
+            || self
+                .groups_by_member
+                .get(&standing)
+                .into_iter()
+                .flatten()
+                .filter_map(|&pos| groups.get(pos))
+                .any(|group| group.claims.len() > 1)
+    }
+}
+
 enum EvidencedGap {
     MissingContract(Trigger),
     MissingDetail,
@@ -807,6 +924,7 @@ pub struct WholeScope {
 
 #[derive(Debug, Default, Clone)]
 struct WholeSource {
+    narrowed: bool,
     triggers: BTreeSet<Trigger>,
     stem_files: BTreeMap<String, BTreeSet<String>>,
 }
@@ -830,6 +948,7 @@ impl WholeScope {
 
         for extract in extracts.iter().filter(|extract| extract.is_whole_behaviour()) {
             let entry = sources.entry(extract.source.clone()).or_insert_with(WholeSource::default);
+            entry.narrowed = extract.is_narrowed();
             for claim in &extract.evidence.claims {
                 if claim.kind == ClaimKind::Contract
                     && let Some(Ok(trigger)) = claim.trigger()
@@ -937,8 +1056,22 @@ impl WholeScope {
         &self.details
     }
 
-    fn source_names(&self) -> impl Iterator<Item = &str> {
-        self.sources.keys().map(String::as_str)
+    fn narrowed_sources(&self) -> Option<String> {
+        self.quoted_sources(true)
+    }
+
+    fn full_sources(&self) -> Option<String> {
+        self.quoted_sources(false)
+    }
+
+    fn quoted_sources(&self, narrowed: bool) -> Option<String> {
+        let names: Vec<String> = self
+            .sources
+            .iter()
+            .filter(|(_, whole)| whole.narrowed == narrowed)
+            .map(|(name, _)| format!("`{name}`"))
+            .collect();
+        (!names.is_empty()).then(|| names.join(", "))
     }
 
     fn evidenced_gap(
@@ -1261,20 +1394,17 @@ impl Display for Hint {
                     write!(
                         f,
                         "- {lead} {surface} with standing requirement {sole} across files; match \
-                         what states its behaviour to standing requirement {sole} (in its class \
-                         when unchanged) rather than leaving a standing requirement on a live \
-                         surface ungrouped."
+                         a claim that states or revises its behaviour to standing requirement \
+                         {sole} (in its class when unchanged)."
                     )
                 } else {
                     let standing_list = join_indices(standing);
                     write!(
                         f,
                         "- {lead} {surface} with standing requirements {standing_list} across \
-                         files; a service-layer claim that also states the resource returned on \
-                         the surface may join both a service/cache standing requirement's group \
-                         and the surface's return standing requirement's group (in each standing \
-                         requirement's class when unchanged) rather than leaving a standing \
-                         requirement on a live surface ungrouped."
+                         files; match each claim to the standing requirement whose behaviour it \
+                         states or revises, and list any other standing requirement on the \
+                         surface whose behaviour a claim repeats unchanged in `restated`."
                     )
                 }
             }
@@ -1288,11 +1418,26 @@ impl Display for Hint {
 #[schemars(title = "Emery grouping answer")]
 pub struct Grouping {
     /// One group per requirement.
-    pub groups: Vec<Group>,
+    groups: Vec<Group>,
+    /// Change claims that state nothing beyond what the listed standing
+    /// requirements already state.
+    #[serde(default)]
+    restated: Vec<Restated>,
     /// Standing requirement indices that stand alone in `groups` yet are still
     /// evidenced unchanged in `## Whole-source detail`.
     #[serde(default)]
-    pub evidenced: Vec<usize>,
+    evidenced: Vec<usize>,
+}
+
+/// A change claim that only restates one or more standing requirements.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct Restated {
+    /// Index of the change claim.
+    claim: usize,
+    /// Standing requirement indices whose statements and scenarios already
+    /// cover `claim`.
+    standing: Vec<usize>,
 }
 
 impl Grouping {
@@ -1301,9 +1446,9 @@ impl Grouping {
     // grouping.
     fn baseline(contributors: &[Contributor]) -> Self {
         let mut groups: Vec<Group> = Vec::new();
-        let mut by_id: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut by_id: BTreeMap<String, usize> = BTreeMap::new();
         for (index, claim) in contributors.iter().enumerate() {
-            let position = *by_id.entry(claim.id.as_str()).or_insert_with(|| {
+            let position = *by_id.entry(claim.id.clone()).or_insert_with(|| {
                 groups.push(Group::default());
                 groups.len() - 1
             });
@@ -1322,6 +1467,7 @@ impl Grouping {
 
         Self {
             groups,
+            restated: Vec::new(),
             evidenced: Vec::new(),
         }
     }
@@ -1349,8 +1495,13 @@ impl Grouping {
         }
         Self {
             groups,
+            restated: self.restated,
             evidenced: self.evidenced,
         }
+    }
+
+    fn restated_standing(&self) -> BTreeSet<usize> {
+        self.restated.iter().flat_map(|entry| entry.standing.iter().copied()).collect()
     }
 
     // Ordered by each group's earliest claim and numbered from `REQ-001` in
@@ -1358,12 +1509,21 @@ impl Grouping {
     fn bases(
         &self, contributors: &[Contributor], criteria: &[String], contracts: &Contracts,
     ) -> Result<Vec<Basis>, Error> {
+        let restated = self.restated_standing();
         let evidenced: BTreeSet<usize> = self.evidenced.iter().copied().collect();
         let mut groups: Vec<OrderedGroup> = Vec::with_capacity(self.groups.len());
         for group in &self.groups {
             let first = group.claims.iter().copied().min().unwrap_or_default();
             let last = group.claims.iter().copied().max().unwrap_or_default();
-            let is_evidenced = group.claims.len() == 1 && evidenced.contains(&group.claims[0]);
+            let retained = if group.claims.iter().any(|index| restated.contains(index)) {
+                Some(Retained::Restated)
+            } else if let [sole] = group.claims.as_slice()
+                && evidenced.contains(sole)
+            {
+                Some(Retained::Evidenced)
+            } else {
+                None
+            };
             let mut classes = Vec::with_capacity(group.classes.len());
             for class in &group.classes {
                 let members = class
@@ -1379,14 +1539,14 @@ impl Grouping {
             groups.push(OrderedGroup {
                 order: (first, last),
                 classes,
-                evidenced: is_evidenced,
+                retained,
             });
         }
         groups.sort_by_key(|group| group.order);
         groups
             .into_iter()
             .zip(ReqId::sequence())
-            .map(|(group, id)| Basis::of(id, group.classes, criteria, contracts, group.evidenced))
+            .map(|(group, id)| Basis::of(id, group.classes, criteria, contracts, group.retained))
             .collect()
     }
 }
@@ -1394,17 +1554,17 @@ impl Grouping {
 struct OrderedGroup {
     order: (usize, usize),
     classes: Vec<Vec<Contributor>>,
-    evidenced: bool,
+    retained: Option<Retained>,
 }
 
 /// The claims assigned to one requirement and their agreement classes.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Group {
+struct Group {
     /// Indices of every claim describing this requirement.
-    pub claims: Vec<usize>,
-    /// Partitions of [`Group::claims`] that express equivalent statements.
-    pub classes: Vec<Vec<usize>>,
+    claims: Vec<usize>,
+    /// Partitions of `claims` that express equivalent statements.
+    classes: Vec<Vec<usize>>,
 }
 
 impl Group {
@@ -1462,6 +1622,16 @@ impl Group {
     }
 }
 
+// How an untouched standing requirement was retained against whole-source
+// scope retirement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Retained {
+    // Covered unchanged by a change claim in `Grouping::restated`.
+    Restated,
+    // Backed unchanged by `## Whole-source detail` in `Grouping::evidenced`.
+    Evidenced,
+}
+
 // Reconciled facts used to construct one requirement.
 //
 // Contributors are grouped by agreement, with the winning class first.
@@ -1479,9 +1649,9 @@ pub struct Basis {
     pub trigger: Option<Trigger>,
     // Agreement classes, with the winning class first.
     pub classes: Vec<Vec<Contributor>>,
-    // Whether a standing requirement with no matching `requirement` claim is
-    // still evidenced in `## Whole-source detail`.
-    pub evidenced: bool,
+    // How a standing requirement was retained against whole-source scope
+    // retirement when no change claim joined its group.
+    pub retained: Option<Retained>,
     // Stems of contracts bound by non-`BASELINE` contributors in `classes`.
     contract_stems: BTreeSet<String>,
 }
@@ -1489,7 +1659,7 @@ pub struct Basis {
 impl Basis {
     fn of(
         id: ReqId, mut classes: Vec<Vec<Contributor>>, criteria: &[String], contracts: &Contracts,
-        evidenced: bool,
+        retained: Option<Retained>,
     ) -> Result<Self, Error> {
         // refuse an empty class, so every class below has a lead
         if classes.is_empty() || classes.iter().any(Vec::is_empty) {
@@ -1518,7 +1688,7 @@ impl Basis {
             covered,
             trigger,
             classes,
-            evidenced,
+            retained,
             contract_stems,
         })
     }
@@ -1560,7 +1730,7 @@ impl Basis {
             covered: self.covered,
             trigger,
             classes: self.classes,
-            evidenced: false,
+            retained: None,
             contract_stems: self.contract_stems,
         })
     }

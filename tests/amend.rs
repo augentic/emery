@@ -1240,9 +1240,9 @@ async fn amend_scoped_equivalent() {
 // standing requirements by scope:
 // - multiple finer-grained claims of one `(source, stem)` placed in one
 //   standing requirement's class stay unsplit on that requirement (`unchanged`);
-// - one consolidated claim covering distinct standing requirements may join
-//   each standing requirement's group without merging the standing requirements
-//   (while invalid multi-group placements are refused and corrected);
+// - one consolidated claim covering distinct standing requirements is omitted
+//   from `groups` and listed in `restated` (while multi-group placement is
+//   refused and corrected);
 // - a standing requirement whose behaviour was extracted only as an `excerpt`
 //   in `## Whole-source detail` and named in `evidenced` is preserved rather
 //   than retired by scope.
@@ -1269,8 +1269,10 @@ async fn amend_scoped_granularity() {
     let valid = r#"{"groups": [
         {"claims": [0, 1, 3], "classes": [[0, 1, 3]]},
         {"claims": [4], "classes": [[4]]},
-        {"claims": [2, 5], "classes": [[2, 5]]},
-        {"claims": [2, 6], "classes": [[2, 6]]}
+        {"claims": [5], "classes": [[5]]},
+        {"claims": [6], "classes": [[6]]}
+    ], "restated": [
+        {"claim": 2, "standing": [5, 6]}
     ], "evidenced": [4]}"#;
     let design = format!(
         r#"{{"sections": [
@@ -1321,10 +1323,7 @@ async fn amend_scoped_granularity() {
     );
     let exchanges = provider.model.exchanges();
     let finding = exchanges[0].outcome.as_ref().expect_err("invalid multi-group answer rejected");
-    assert!(
-        finding.contains("claim 2 is placed outside the standing requirement's class"),
-        "{finding}"
-    );
+    assert!(finding.contains("claim 2 appears in more than one group"), "{finding}");
     assert!(finding.contains("standing requirement 3 is already matched to a claim"), "{finding}");
 
     let (_, amendment) = staged_amendment(&provider);
@@ -1386,7 +1385,9 @@ async fn amend_scoped_facets() {
         {"claims": [0, 1, 4], "classes": [[0, 4], [1]]},
         {"claims": [2], "classes": [[2]]},
         {"claims": [3], "classes": [[3]]},
-        {"claims": [5, 0], "classes": [[0, 5]]}
+        {"claims": [5], "classes": [[5]]}
+    ], "restated": [
+        {"claim": 0, "standing": [5]}
     ]}"#;
     let added_draft = r#"{"preamble": [], "requirements": [
         {"subject": "orders.post.gift-note", "scenarios": [
@@ -1834,7 +1835,7 @@ async fn amend_scoped_vanished_route_rejects_untriggered_claim() {
         {"claims": [0, 5], "classes": [[0, 5]]},
         {"claims": [1], "classes": [[1]]},
         {"claims": [2, 6], "classes": [[2, 6]]},
-        {"claims": [3, 7], "classes": [[3, 7]]},
+        {"claims": [7], "classes": [[7]]},
         {"claims": [8], "classes": [[8]]},
         {"claims": [3, 9], "classes": [[3, 9]]},
         {"claims": [4, 10], "classes": [[4, 10]]}
@@ -2033,9 +2034,10 @@ fn amended_requirement(amendment: &Value, req_id: &str) -> Value {
 // On an untouched live route (`GET /api/orders/{id}`) whose return-order
 // standing requirement was read in a thin route wrapper (`src/routes/orders.ts`)
 // while re-extracted claims anchored in `src/services/orders.ts`, `## Baseline`
-// emits a cross-file route hint and placing `orders.get-id.load-and-cache` in
-// both `REQ-034` and `REQ-036` (or evidencing `REQ-034` through stem detail on
-// the live route) keeps every standing requirement unchanged.
+// emits a cross-file route hint and listing `REQ-034` in `restated` for
+// `orders.get-id.load-and-cache` alongside `REQ-036` (or evidencing `REQ-034`
+// through stem detail on the live route) keeps every standing requirement
+// unchanged.
 #[tokio::test]
 async fn amend_scoped_live_route_cross_layer() {
     let scratch = Scratch::new();
@@ -2043,11 +2045,13 @@ async fn amend_scoped_live_route_cross_layer() {
     let mut fixture = ScopedFixture::live_route_cross_layer();
 
     // 0..=3 are `code`'s claims; 4..=7 are `REQ-001`, `REQ-034`, `REQ-035`, `REQ-036`
-    let multi_grouping = r#"{"groups": [
+    let restated_grouping = r#"{"groups": [
         {"claims": [0, 4], "classes": [[0, 4]]},
-        {"claims": [3, 5], "classes": [[3, 5]]},
+        {"claims": [5], "classes": [[5]]},
         {"claims": [2, 6], "classes": [[2, 6]]},
         {"claims": [1, 3, 7], "classes": [[1, 3, 7]]}
+    ], "restated": [
+        {"claim": 3, "standing": [5]}
     ]}"#;
     let unchanged_apis_design = format!(
         r#"{{"sections": [
@@ -2055,7 +2059,7 @@ async fn amend_scoped_live_route_cross_layer() {
             {{"kind": "apis", "blocks": [{{"text": "Inbound HTTP exposes GET /api/orders/{{id}} (REQ-034, REQ-035, REQ-036)."}}], "revised": []}}
         ]}}"#
     );
-    let mut provider = Provider::answering([multi_grouping, unchanged_apis_design.as_str()]);
+    let mut provider = Provider::answering([restated_grouping, unchanged_apis_design.as_str()]);
     fixture.seed_into(&mut provider);
 
     let resp =
@@ -2292,30 +2296,54 @@ struct SpecReq {
 }
 
 impl SpecReq {
-    fn new(id: &str, subject: &str, body: &str) -> Self {
+    fn new(id: impl Into<String>, subject: impl Into<String>, body: impl Into<String>) -> Self {
         Self {
-            id: id.to_owned(),
-            subject: subject.to_owned(),
+            id: id.into(),
+            subject: subject.into(),
             source: "code".to_owned(),
             path: None,
             trigger: None,
-            body: body.to_owned(),
+            body: body.into(),
         }
     }
 
-    fn source(mut self, source: &str) -> Self {
-        self.source = source.to_owned();
+    fn source(mut self, source: impl Into<String>) -> Self {
+        self.source = source.into();
         self
     }
 
-    fn at(mut self, path: &str) -> Self {
-        self.path = Some(path.to_owned());
+    fn at(mut self, path: impl Into<String>) -> Self {
+        self.path = Some(path.into());
         self
     }
 
-    fn route(mut self, route: &str) -> Self {
-        self.trigger = Some(Trigger::Http(Route::parse(route).expect("valid route")));
+    fn route(mut self, route: impl AsRef<str>) -> Self {
+        self.trigger = Some(Trigger::Http(Route::parse(route.as_ref()).expect("valid route")));
         self
+    }
+
+    fn orders_fixture(requirements: impl IntoIterator<Item = Self>) -> (Vec<u8>, Vec<u8>) {
+        let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+        let tpl = base_spec["requirements"][0].clone();
+        let reqs: Vec<Self> = requirements.into_iter().collect();
+        let req_ids: Vec<String> = reqs.iter().map(|req| req.id.clone()).collect();
+        base_spec["requirements"] =
+            Value::Array(reqs.into_iter().map(|req| req.into_json(&tpl)).collect());
+
+        let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+        base_plan["parts"] = serde_json::json!([{
+            "id": "PART-001",
+            "name": "orders",
+            "requirements": req_ids,
+            "types": ["orders.line", "orders.order"],
+            "uses": [],
+            "depends-on": [],
+            "brief": ["Delivers orders."]
+        }]);
+        (
+            serde_json::to_vec(&base_spec).expect("serialise base spec"),
+            serde_json::to_vec(&base_plan).expect("serialise base plan"),
+        )
     }
 
     fn into_json(self, template: &Value) -> Value {
@@ -5438,5 +5466,238 @@ async fn amend_whole_unrecorded() {
     assert!(request.contains("- 2 `code` `orders.create`"), "{request}");
     assert!(request.contains("- 3 `auth.login`"), "{request}");
     assert!(request.contains("- 6 `orders.discount`"), "{request}");
+    provider.model.assert_exhausted();
+}
+
+fn transition_spec_and_plan() -> (Vec<u8>, Vec<u8>) {
+    SpecReq::orders_fixture([
+        SpecReq::new(
+            "REQ-001",
+            "orders.post-id-confirm",
+            "A pending order transitions to confirmed.",
+        )
+        .at("src/services/orders.ts#L40-L48")
+        .route("POST /orders/{id}/confirm"),
+        SpecReq::new("REQ-002", "orders.post-id-ship", "A confirmed order transitions to shipped.")
+            .at("src/services/orders.ts#L50-L58")
+            .route("POST /orders/{id}/ship"),
+        SpecReq::new(
+            "REQ-003",
+            "orders.post-id-cancel",
+            "A pending or confirmed order transitions to cancelled.",
+        )
+        .at("src/services/orders.ts#L60-L68")
+        .route("POST /orders/{id}/cancel"),
+    ])
+}
+
+// One shared transition helper claim in a changed service file that only
+// repeats three standing transition requirements may be omitted from `groups`
+// and listed in `restated`: all three standing requirements stay unchanged
+// without needing `## Whole-source detail`, none is retired by scope, and no
+// duplicate helper requirement is added.
+#[tokio::test]
+async fn amend_restated() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+    let (spec, plan) = transition_spec_and_plan();
+
+    // index 0 is `orders.apply-transition`; 1..=3 are `REQ-001..REQ-003`
+    let grouping = r#"{"groups": [
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [3], "classes": [[3]]}
+    ], "restated": [
+        {"claim": 0, "standing": [1, 2, 3]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement(
+                "orders.apply-transition",
+                "Order transitions validate allowed prior states and persist the target status.",
+            )
+            .at("src/services/orders.ts#L40-L65"),
+            claim(
+                ClaimKind::Contract,
+                "orders.post-id-confirm",
+                ("route", "POST /orders/{id}/confirm"),
+            )
+            .at("src/routes/orders.ts#L10-L14"),
+            claim(ClaimKind::Contract, "orders.post-id-ship", ("route", "POST /orders/{id}/ship"))
+                .at("src/routes/orders.ts#L16-L20"),
+            claim(
+                ClaimKind::Contract,
+                "orders.post-id-cancel",
+                ("route", "POST /orders/{id}/cancel"),
+            )
+            .at("src/routes/orders.ts#L22-L26"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    WholeWorkspace::new(spec, plan)
+        .with_unchanged("src/routes/orders.ts", "export function registerOrderRoutes() {}\n")
+        .with_changed(
+            "src/services/orders.ts",
+            "export function confirmOrder() {}\nexport function shipOrder() {}\n",
+            "export function applyTransition() {}\n",
+        )
+        .seed(&provider);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["staged"], false, "all three stay unchanged, nothing staged: {envelope}");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 0, "conflict": 0, "unchanged": 3, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+    assert_eq!(provider.model.seen().len(), 1, "grouping is the only turn");
+
+    let turn = &provider.model.seen()[0];
+    let request = turn.messages.join("\n");
+    assert!(request.contains("Whole-scope changed-file extraction (`code`)"), "{request}");
+    assert!(!request.contains("every file of the source was re-extracted"), "{request}");
+
+    let SeenFormat::Schema { schema, .. } = &turn.format else {
+        panic!("the grouping is steered by schema");
+    };
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    let restated = &schema["$defs"]["Restated"]["properties"];
+    assert_eq!(restated["claim"]["maximum"], 0, "{schema}");
+    assert_eq!(restated["standing"]["minItems"], 1, "{schema}");
+    assert_eq!(restated["standing"]["items"]["minimum"], 1, "{schema}");
+    assert_eq!(restated["standing"]["items"]["maximum"], 3, "{schema}");
+    assert_eq!(schema["properties"]["evidenced"], Value::Null, "{schema}");
+    provider.model.assert_exhausted();
+}
+
+fn restated_invalid_spec_and_plan() -> (Vec<u8>, Vec<u8>) {
+    SpecReq::orders_fixture([
+        SpecReq::new("REQ-001", "orders.post.create", "A valid request creates a pending order.")
+            .at("src/routes/orders.ts#L10-L20")
+            .route("POST /orders"),
+        SpecReq::new(
+            "REQ-002",
+            "orders.post-id-confirm",
+            "A pending order transitions to confirmed.",
+        )
+        .at("src/services/orders.ts#L40-L48")
+        .route("POST /orders/{id}/confirm"),
+        SpecReq::new("REQ-003", "orders.post-id-ship", "A confirmed order transitions to shipped.")
+            .at("src/services/orders.ts#L50-L58")
+            .route("POST /orders/{id}/ship"),
+        SpecReq::new("REQ-004", "orders.put-id-lines", "A pending order's lines may be replaced.")
+            .at("src/routes/orders.ts#L30-L40")
+            .route("PUT /orders/{id}/lines"),
+        SpecReq::new(
+            "REQ-005",
+            "orders.export",
+            "A signed-in user downloads the order book as a spreadsheet.",
+        )
+        .source("docs"),
+    ])
+}
+
+// Breaking any `restated` verify rule is refused with its finding, and the
+// corrected answer lands.
+#[tokio::test]
+async fn amend_restated_invalid() {
+    let scratch = Scratch::new();
+    let config = scratch.config(&format!(
+        "[[source]]\nadapter = \"{DOCS}\"\n\n[[source]]\nadapter = \"{CODE}\"\nscope = \
+         \"whole\"\n\n[target]\nadapter = \"acme:builder@2.1.0\"\nrepository = \".\"\n"
+    ));
+    let (spec_bytes, plan_bytes) = restated_invalid_spec_and_plan();
+
+    // 0 is `docs` retire (`orders.export`); 1 and 2 are `code` claims
+    // (`orders.post.create`, `orders.apply-transition`); 3..=7 are `REQ-001..REQ-005`
+    let invalid = r#"{"groups": [
+        {"claims": [1, 3], "classes": [[1, 3]]},
+        {"claims": [4], "classes": [[4]]},
+        {"claims": [5], "classes": [[5]]},
+        {"claims": [6], "classes": [[6]]},
+        {"claims": [0, 7], "classes": [[0], [7]]}
+    ], "restated": [
+        {"claim": 3, "standing": [4]},
+        {"claim": 0, "standing": [4]},
+        {"claim": 2, "standing": []},
+        {"claim": 1, "standing": [2, 3, 6]},
+        {"claim": 1, "standing": [5]}
+    ]}"#;
+    let valid = r#"{"groups": [
+        {"claims": [1, 3], "classes": [[1, 3]]},
+        {"claims": [4], "classes": [[4]]},
+        {"claims": [5], "classes": [[5]]},
+        {"claims": [6], "classes": [[6]]},
+        {"claims": [0, 7], "classes": [[0], [7]]}
+    ], "restated": [
+        {"claim": 2, "standing": [4, 5]}
+    ]}"#;
+
+    let mut provider = Provider::answering([invalid, valid]);
+    provider.source.evidence.insert(
+        "docs".to_owned(),
+        Ok(evidence(vec![retire(
+            "orders.export",
+            "Downloading the order book as a spreadsheet is withdrawn.",
+        )])),
+    );
+    code_with(
+        &mut provider,
+        vec![
+            requirement("orders.post.create", "A valid request creates a pending order.")
+                .at("src/routes/orders.ts#L10-L20"),
+            requirement(
+                "orders.apply-transition",
+                "Order transitions validate allowed prior states and persist the target status.",
+            )
+            .at("src/services/orders.ts#L40-L65"),
+            claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+                .at("src/routes/orders.ts#L10-L20"),
+            claim(
+                ClaimKind::Contract,
+                "orders.post-id-confirm",
+                ("route", "POST /orders/{id}/confirm"),
+            )
+            .at("src/routes/orders.ts#L22-L24"),
+            claim(ClaimKind::Contract, "orders.post-id-ship", ("route", "POST /orders/{id}/ship"))
+                .at("src/routes/orders.ts#L26-L28"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    seed(&provider.files, &spec_bytes, DESIGN, &plan_bytes);
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 2, "conflict": 0, "unchanged": 3, "by-scope": 1
+        }),
+        "{envelope}"
+    );
+
+    let exchanges = provider.model.exchanges();
+    let finding = exchanges[0].outcome.as_ref().expect_err("invalid `restated` rejected");
+    for expected in [
+        "`restated` claim 3 is not a change claim",
+        "`restated` claim 0 (`orders.export`) is a `(retire)` claim",
+        "`restated` claim 2 lists no standing requirements",
+        "`restated` standing index 2 is not a standing requirement",
+        "`restated` claim 1 lists standing requirement 3, whose group already contains claim 1",
+        "`restated` claim 1 lists standing requirement 6 (`orders.put-id-lines`), which carries \
+         route `PUT /orders/{id}/lines` — absent from the extracted contracts",
+        "claim 1 appears in `restated` more than once",
+    ] {
+        assert!(finding.contains(expected), "missing `{expected}` in:\n{finding}");
+    }
     provider.model.assert_exhausted();
 }

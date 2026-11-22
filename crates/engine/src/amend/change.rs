@@ -15,7 +15,7 @@
 //! trigger when narrowed against a base source snapshot, and otherwise those
 //! under the stems it covers or citing that source alone.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use emery_adapter::Trigger;
 use emery_adapter::source::{ClaimKind, SourceKind};
@@ -23,7 +23,7 @@ use omnia_sdk::{Error, Model, server_error};
 
 use crate::amend::baseline::{Baseline, Standing};
 use crate::revision::{self, Change, ChangeClass, Cited, ReqId, Requirement, Spec};
-use crate::specify::{Basis, Contributor, Extract, GroupingBrief, Scope};
+use crate::specify::{Basis, Contributor, Extract, GroupingBrief, Retained, Scope};
 
 pub struct ChangeSet {
     // One per requirement of the amended specification and per requirement
@@ -68,7 +68,7 @@ impl ChangeSet {
             );
             tracing::info!("the change states no requirement; the specification stands");
             let mut set = Self::unchanged(&baseline);
-            set.retire_by_scope(&baseline, extracts, &BTreeSet::new());
+            set.retire_by_scope(&baseline, extracts, &BTreeMap::new());
             Ok(set)
         }
     }
@@ -85,7 +85,7 @@ impl ChangeSet {
     // file of that source or carrying a vanished trigger; otherwise those under
     // a stem the source's requirement claims cover or citing that source alone.
     fn retire_by_scope(
-        &mut self, baseline: &Baseline, extracts: &[Extract], evidenced: &BTreeSet<ReqId>,
+        &mut self, baseline: &Baseline, extracts: &[Extract], retained: &BTreeMap<ReqId, Retained>,
     ) {
         for extract in extracts.iter().filter(|extract| extract.scope == Scope::Whole) {
             if extract.kind != SourceKind::Behaviour {
@@ -117,9 +117,12 @@ impl ChangeSet {
                             || baseline.cites_only(change.id, &extract.source)
                     }
                 };
-                let is_evidenced =
-                    evidenced.contains(&change.id) && baseline.admits_evidenced(change.id);
-                if !change.is_untouched() || is_evidenced || !in_scope {
+                let is_retained = match retained.get(&change.id) {
+                    Some(Retained::Restated) => true,
+                    Some(Retained::Evidenced) => baseline.admits_evidenced(change.id),
+                    None => false,
+                };
+                if !change.is_untouched() || is_retained || !in_scope {
                     continue;
                 }
                 tracing::info!(
@@ -167,11 +170,11 @@ impl ChangeSet {
             changes,
             drafted: Vec::new(),
         };
-        let mut evidenced = BTreeSet::new();
+        let mut retained = BTreeMap::new();
         for (requirement, basis) in matched_bases {
             let sources: Vec<Cited> = basis.change_contributors().map(Cited::from).collect();
-            if basis.evidenced {
-                evidenced.insert(requirement.id);
+            if let Some(how) = basis.retained {
+                retained.insert(requirement.id, how);
             }
             let change = matched_change(baseline, requirement, &basis, sources);
             set.record(change, basis, baseline.preserved_trigger(requirement))?;
@@ -179,7 +182,7 @@ impl ChangeSet {
         set.changes.sort_by_key(|change| change.id);
 
         // retire silent whole-scope requirements
-        set.retire_by_scope(baseline, extracts, &evidenced);
+        set.retire_by_scope(baseline, extracts, &retained);
         let unchanged: BTreeSet<ReqId> = set
             .changes
             .iter()
