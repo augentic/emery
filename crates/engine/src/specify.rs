@@ -30,7 +30,7 @@ pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief, Retain
 pub(crate) use self::design::{DesignAmend, DesignBrief};
 pub(crate) use self::plan::{Draft, Floors, Open, PartAmend, PartBrief, Types};
 use self::snapshot::Workspace;
-pub(crate) use self::snapshot::{FileDelta, Snapshot, SnapshotBase};
+pub(crate) use self::snapshot::{FileDelta, FileSnapshot, Snapshot, SnapshotBase};
 pub use self::spec::SPEC_CHUNK;
 pub(crate) use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded};
@@ -497,9 +497,9 @@ pub(crate) struct Extract {
     pub(crate) rank: Rank,
     pub(crate) scope: Scope,
     pub(crate) evidence: Evidence,
-    // Workspace-relative file paths to lowercase SHA-256 digests; `None` for inline values.
-    pub(crate) files: Option<BTreeMap<String, String>>,
-    // Changed and removed workspace files when narrowed against a base snapshot.
+    // Workspace-relative file paths to file snapshots; `None` for inline values.
+    pub(crate) files: Option<BTreeMap<String, FileSnapshot>>,
+    // Changed spans and removed workspace files when narrowed against a base snapshot.
     delta: Option<FileDelta>,
 }
 

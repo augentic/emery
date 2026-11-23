@@ -1,4 +1,4 @@
-//! Narrows whole-scope behaviour extracts to claims from changed files.
+//! Narrows whole-scope behaviour extracts to claims overlapping changed spans or added files.
 
 use emery_adapter::source::{Claim, ClaimKind};
 
@@ -51,7 +51,7 @@ fn narrow_one(mut extract: Extract, base_snapshot: Option<&Snapshot>) -> Extract
 }
 
 fn kept_claims(claims: &[Claim], delta: &FileDelta) -> Vec<bool> {
-    // contracts, types, unanchored claims, and claims in changed files
+    // contracts, types, unanchored claims, and claims overlapping changed spans or added files
     let mut keep: Vec<bool> = claims
         .iter()
         .map(|claim| {

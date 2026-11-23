@@ -1,30 +1,180 @@
-//! Hashes workspace source files for per-revision change detection.
+//! Hashes workspace source files and line structure for per-revision change detection.
 //!
-//! Captures the lowercase SHA-256 digest of every regular file in directories
-//! cited by a workspace source's claims, alongside any base-snapshot or
-//! standing-citation files that still exist.
+//! Captures the lowercase SHA-256 digest, per-line 64-bit hashes, and structural
+//! line spans of every regular file in directories cited by a workspace source's
+//! claims, alongside any base-snapshot or standing-citation files that still exist.
+
+mod diff;
+mod scan;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::RangeInclusive;
 use std::path::Path;
 
 use anyhow::Context;
 use emery_adapter::beneath;
+use emery_adapter::source::Anchor;
 use omnia_sdk::Error;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest as _, Sha256};
 
+use self::diff::SpanDelta;
 use crate::revision::{Cited, Spec};
 use crate::specify::{Bound, Extract, shape};
 use crate::{Entry, EntryKind, Files};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(from = "[usize; 2]", into = "[usize; 2]")]
+pub struct LineSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl LineSpan {
+    #[must_use]
+    pub const fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+
+    #[must_use]
+    pub const fn contains(self, line: usize) -> bool {
+        self.start <= line && line <= self.end
+    }
+
+    #[must_use]
+    pub const fn lines(self) -> RangeInclusive<usize> {
+        self.start..=self.end
+    }
+}
+
+impl From<[usize; 2]> for LineSpan {
+    fn from([start, end]: [usize; 2]) -> Self {
+        Self { start, end }
+    }
+}
+
+impl From<LineSpan> for [usize; 2] {
+    fn from(span: LineSpan) -> Self {
+        [span.start, span.end]
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FileSnapshot {
+    pub sha256: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lines: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routines: Vec<LineSpan>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub values: Vec<usize>,
+}
+
+impl FileSnapshot {
+    #[must_use]
+    pub fn from_bytes(path: &str, bytes: &[u8]) -> Self {
+        let sha256 = sha256_hex(bytes);
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return Self::digest_only(sha256);
+        };
+        let scanned = scan::scan(path, text);
+        Self {
+            sha256,
+            lines: scanned.lines,
+            routines: scanned.routines,
+            imports: scanned.imports,
+            values: scanned.values,
+        }
+    }
+
+    #[must_use]
+    const fn digest_only(sha256: String) -> Self {
+        Self {
+            sha256,
+            lines: Vec::new(),
+            routines: Vec::new(),
+            imports: Vec::new(),
+            values: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn has_lines(&self) -> bool {
+        !self.lines.is_empty()
+    }
+
+    #[must_use]
+    pub fn is_import_line(&self, line: usize) -> bool {
+        self.imports.binary_search(&line).is_ok()
+    }
+
+    #[must_use]
+    pub fn is_value_line(&self, line: usize) -> bool {
+        self.values.binary_search(&line).is_ok()
+    }
+
+    fn normalise(&mut self) {
+        self.routines.sort_unstable();
+        self.routines.dedup();
+        self.imports.sort_unstable();
+        self.imports.dedup();
+        self.values.sort_unstable();
+        self.values.dedup();
+    }
+}
+
+impl<'de> Deserialize<'de> for FileSnapshot {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Legacy(String),
+            Structured {
+                sha256: String,
+                #[serde(default)]
+                lines: Vec<u64>,
+                #[serde(default)]
+                routines: Vec<LineSpan>,
+                #[serde(default)]
+                imports: Vec<usize>,
+                #[serde(default)]
+                values: Vec<usize>,
+            },
+        }
+
+        match Repr::deserialize(deserializer)? {
+            Repr::Legacy(sha256) => Ok(Self::digest_only(sha256)),
+            Repr::Structured {
+                sha256,
+                lines,
+                routines,
+                imports,
+                values,
+            } => {
+                let mut snapshot = Self {
+                    sha256,
+                    lines,
+                    routines,
+                    imports,
+                    values,
+                };
+                snapshot.normalise();
+                Ok(snapshot)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Snapshot(BTreeMap<String, BTreeMap<String, String>>);
+pub struct Snapshot(BTreeMap<String, BTreeMap<String, FileSnapshot>>);
 
 impl Snapshot {
     pub const NAME: &str = "sources";
 
-    // Hashes each workspace source's cited directories and tracked prior
+    // Snapshots each workspace source's cited directories and tracked prior
     // files before temporary checkouts are removed, populating `extract.files`
     // and settling the revision's snapshot.
     pub async fn capture<F: Files>(
@@ -37,7 +187,7 @@ impl Snapshot {
                 .entry(workspace.at.clone())
                 .or_insert_with(|| ListingCache::new(workspace.at.clone()));
             extract.files =
-                Some(hash_source(files, workspace, extract, base.as_ref(), cache).await?);
+                Some(snapshot_source(files, workspace, extract, base.as_ref(), cache).await?);
         }
         Ok(base.map_or_else(|| Self::from_extracts(extracts), |base| base.into_snapshot(extracts)))
     }
@@ -55,7 +205,7 @@ impl Snapshot {
 
     #[must_use]
     pub fn file_delta(
-        &self, source: &str, current: &BTreeMap<String, String>,
+        &self, source: &str, current: &BTreeMap<String, FileSnapshot>,
     ) -> Option<FileDelta> {
         self.0.get(source).map(|base| FileDelta::between(base, current))
     }
@@ -72,21 +222,30 @@ impl Snapshot {
     }
 }
 
-// Changed and removed workspace files of one source against its base snapshot.
+// Changed spans and removed workspace files of one source against its base snapshot.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FileDelta {
-    changed: BTreeSet<String>,
+    changed: BTreeMap<String, SpanDelta>,
     gone: BTreeSet<String>,
 }
 
 impl FileDelta {
     #[must_use]
-    fn between(base: &BTreeMap<String, String>, current: &BTreeMap<String, String>) -> Self {
-        let changed = current
-            .iter()
-            .filter(|(file, digest)| base.get(*file) != Some(*digest))
-            .map(|(file, _)| file.clone())
-            .collect();
+    fn between(
+        base: &BTreeMap<String, FileSnapshot>, current: &BTreeMap<String, FileSnapshot>,
+    ) -> Self {
+        let mut changed = BTreeMap::new();
+        for (file, cur) in current {
+            match base.get(file) {
+                None => {
+                    changed.insert(file.clone(), SpanDelta::Whole);
+                }
+                Some(prior) if prior.sha256 != cur.sha256 => {
+                    changed.insert(file.clone(), SpanDelta::between(prior, cur));
+                }
+                Some(_) => {}
+            }
+        }
         let gone = base.keys().filter(|file| !current.contains_key(*file)).cloned().collect();
         Self { changed, gone }
     }
@@ -103,24 +262,39 @@ impl FileDelta {
 
     #[must_use]
     pub fn is_changed(&self, path: &str) -> bool {
-        self.changed.contains(&canonical_file(path))
-    }
-
-    #[must_use]
-    pub fn is_changed_or_gone(&self, path: &str) -> bool {
-        let file = canonical_file(path);
-        self.changed.contains(&file) || self.gone.contains(&file)
+        let parsed = ParsedAnchor::parse(path);
+        self.changed.get(&parsed.file).is_some_and(|delta| delta.overlaps_current(parsed.span))
     }
 
     #[must_use]
     pub fn touches_citation(&self, cited: &Cited) -> bool {
-        cited.path.as_deref().is_some_and(|path| self.is_changed_or_gone(path))
+        let Some(raw) = cited.path.as_deref() else {
+            return false;
+        };
+        let parsed = ParsedAnchor::parse(raw);
+        self.gone.contains(&parsed.file)
+            || self.changed.get(&parsed.file).is_some_and(|delta| delta.overlaps_base(parsed.span))
     }
 }
 
-fn canonical_file(raw: &str) -> String {
-    let file = shape::file(raw);
-    beneath(file).unwrap_or_else(|_| file.to_owned())
+struct ParsedAnchor {
+    file: String,
+    span: Option<LineSpan>,
+}
+
+impl ParsedAnchor {
+    fn parse(raw: &str) -> Self {
+        let span =
+            Anchor::parse(raw).ok().and_then(|anchor| anchor.lines).and_then(|(start, end)| {
+                Some(LineSpan::new(usize::try_from(start).ok()?, usize::try_from(end).ok()?))
+            });
+        let file = shape::file(raw);
+        let canonical = beneath(file).unwrap_or_else(|_| file.to_owned());
+        Self {
+            file: canonical,
+            span,
+        }
+    }
 }
 
 // Owned base-revision context an amend carries forward while its files exist.
@@ -212,10 +386,10 @@ impl Workspace {
     }
 }
 
-async fn hash_source<F: Files>(
+async fn snapshot_source<F: Files>(
     files: &F, workspace: &Workspace, extract: &Extract, base: Option<&SnapshotBase>,
     cache: &mut ListingCache,
-) -> Result<BTreeMap<String, String>, Error> {
+) -> Result<BTreeMap<String, FileSnapshot>, Error> {
     // directories holding any file a claim's `path` names
     let cited_dirs: BTreeSet<String> = extract
         .evidence
@@ -256,13 +430,14 @@ async fn hash_source<F: Files>(
         }
     }
 
-    // digest each present file
-    let mut digests = BTreeMap::new();
+    // snapshot each present file
+    let mut snapshots = BTreeMap::new();
     for file in present {
         let bytes = files.read(workspace.at(), &workspace.resolve(&file)).await?;
-        digests.insert(file, sha256_hex(&bytes));
+        let entry = FileSnapshot::from_bytes(&file, &bytes);
+        snapshots.insert(file, entry);
     }
-    Ok(digests)
+    Ok(snapshots)
 }
 
 // Cached directory listings beneath one working copy, deciding presence by

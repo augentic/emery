@@ -17,7 +17,7 @@ use omnia_test::guest::{Memory, ScriptedModel};
 use serde_json::Value;
 use support::provider::{Provider, Rendezvous, claim, digest, evidence, requirement, retire};
 use support::scratch::Scratch;
-use support::store::{carry, seed, sha256, snapshot, staged, written};
+use support::store::{carry, line_hashes, seed, sha256, snapshot, staged, written};
 use support::{cli_ok, fail};
 
 // The one-source reference most scenarios name; the scripted loader lands
@@ -227,13 +227,24 @@ async fn gen_spec() {
     provider.model.assert_exhausted();
 }
 
-// Uncited regular siblings in a cited directory join the snapshot; symlinks,
-// directories, uncited directories, and inline sources stay out.
+// Uncited regular siblings in a cited directory join the snapshot with line
+// hashes and structural spans (never raw source text); symlinks, directories,
+// uncited directories, and inline sources stay out.
 #[tokio::test]
 async fn gen_snapshot() {
     let grouping = r#"{"groups": [{"claims": [0, 1], "classes": [[0, 1]]}]}"#;
-    let greeting = "export const greeting = 'hello';\n";
-    let sibling = "export const trim = (value: string) => value.trim();\n";
+    let greeting = "import { format } from './helper';\nexport const greeting = 'hello';\n";
+    let sibling = concat!(
+        "export class Greeter {\n",
+        "  say(): string {\n",
+        "    return 'hello';\n",
+        "  }\n",
+        "\n",
+        "  wave(): string {\n",
+        "    return 'bye';\n",
+        "  }\n",
+        "}\n",
+    );
     let mut provider = Provider::answering([grouping, SPEC_ANSWER, DESIGN_ANSWER]);
     provider.source.evidence.insert(
         "source".to_owned(),
@@ -281,16 +292,31 @@ async fn gen_snapshot() {
 
     let id = committed(&provider.storage);
     assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "staged sources.json is pruned");
+    let recorded = snapshot(&provider.storage, &id);
     assert_eq!(
-        snapshot(&provider.storage, &id),
+        recorded,
         serde_json::json!({
             "source": {
-                "src/greeting.ts": sha256(greeting),
-                "src/helper.ts": sha256(sibling),
+                "src/greeting.ts": {
+                    "sha256": sha256(greeting),
+                    "lines": line_hashes(greeting),
+                    "imports": [1],
+                    "values": [2],
+                },
+                "src/helper.ts": {
+                    "sha256": sha256(sibling),
+                    "lines": line_hashes(sibling),
+                    "routines": [[2, 4], [6, 8]],
+                },
             }
         }),
-        "snapshots/{id}.json holds cited and sibling regular files alone"
+        "snapshots/{id}.json holds cited and sibling regular files with hashes and spans alone"
     );
+    let raw = String::from_utf8(
+        provider.storage.object(SNAPSHOTS_CONTAINER, &format!("{id}.json")).expect("snapshot blob"),
+    )
+    .expect("snapshot UTF-8");
+    assert!(!raw.contains("Greeter") && !raw.contains("'hello'"), "no source text stored: {raw}");
     assert_eq!(provider.storage.objects(SNAPSHOTS_CONTAINER), [format!("{id}.json")]);
     provider.model.assert_exhausted();
 }

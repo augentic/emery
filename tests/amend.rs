@@ -19,7 +19,9 @@ use omnia_test::SeenFormat;
 use serde_json::Value;
 use support::provider::{Provider, claim, cli, evidence, requirement, retire};
 use support::scratch::Scratch;
-use support::store::{seed, seed_snapshot, sha256, snapshot, stage, stage_amendment, written};
+use support::store::{
+    line_hashes, seed, seed_snapshot, sha256, snapshot, stage, stage_amendment, written,
+};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 use verbs::verbs;
@@ -4908,10 +4910,22 @@ async fn amend_snapshot() {
         snapshot(&provider.storage, sealed),
         serde_json::json!({
             "docs": {
-                "guides/kept.md": sha256(kept),
-                "notes/cited.md": sha256(cited),
-                "rfcs/refresh.md": sha256(sibling),
-                "rfcs/timeout.md": sha256(added),
+                "guides/kept.md": {
+                    "sha256": sha256(kept),
+                    "lines": line_hashes(kept),
+                },
+                "notes/cited.md": {
+                    "sha256": sha256(cited),
+                    "lines": line_hashes(cited),
+                },
+                "rfcs/refresh.md": {
+                    "sha256": sha256(sibling),
+                    "lines": line_hashes(sibling),
+                },
+                "rfcs/timeout.md": {
+                    "sha256": sha256(added),
+                    "lines": line_hashes(added),
+                },
             }
         }),
         "keeps existing base and cited files, drops gone ones, and adds the newly cited directory"
@@ -4926,6 +4940,7 @@ async fn amend_snapshot() {
 struct WholeWorkspace {
     spec: Vec<u8>,
     plan: Vec<u8>,
+    before: BTreeMap<String, String>,
     base: BTreeMap<String, String>,
     current: BTreeMap<String, String>,
 }
@@ -4935,9 +4950,28 @@ impl WholeWorkspace {
         Self {
             spec,
             plan,
+            before: BTreeMap::new(),
             base: BTreeMap::new(),
             current: BTreeMap::new(),
         }
+    }
+
+    fn from_parts(
+        requirements: impl IntoIterator<Item = SpecReq>, parts: impl IntoIterator<Item = PartSpec>,
+    ) -> Self {
+        let mut base_spec: Value = serde_json::from_slice(SPEC).expect("base spec JSON");
+        let tpl = base_spec["requirements"][0].clone();
+        base_spec["requirements"] =
+            Value::Array(requirements.into_iter().map(|req| req.into_json(&tpl)).collect());
+
+        let mut base_plan: Value = serde_json::from_slice(PLAN).expect("base plan JSON");
+        base_plan["parts"] = Value::Array(
+            parts.into_iter().enumerate().map(|(idx, part)| part.into_json(idx + 1)).collect(),
+        );
+        Self::new(
+            serde_json::to_vec(&base_spec).expect("serialise base spec"),
+            serde_json::to_vec(&base_plan).expect("serialise base plan"),
+        )
     }
 
     fn standard() -> Self {
@@ -4951,16 +4985,19 @@ impl WholeWorkspace {
     fn with_unchanged(mut self, path: impl Into<String>, body: impl Into<String>) -> Self {
         let path = path.into();
         let body = body.into();
+        self.before.insert(path.clone(), body.clone());
         self.base.insert(path.clone(), sha256(&body));
         self.current.insert(path, body);
         self
     }
 
     fn with_changed(
-        mut self, path: impl Into<String>, before: impl AsRef<str>, after: impl Into<String>,
+        mut self, path: impl Into<String>, before: impl Into<String>, after: impl Into<String>,
     ) -> Self {
         let path = path.into();
-        self.base.insert(path.clone(), sha256(before.as_ref()));
+        let before = before.into();
+        self.base.insert(path.clone(), sha256(&before));
+        self.before.insert(path.clone(), before);
         self.current.insert(path, after.into());
         self
     }
@@ -4970,9 +5007,11 @@ impl WholeWorkspace {
         self
     }
 
-    fn with_gone(mut self, path: impl Into<String>, before: impl AsRef<str>) -> Self {
+    fn with_gone(mut self, path: impl Into<String>, before: impl Into<String>) -> Self {
         let path = path.into();
-        self.base.insert(path.clone(), sha256(before.as_ref()));
+        let before = before.into();
+        self.base.insert(path.clone(), sha256(&before));
+        self.before.insert(path.clone(), before);
         self.current.remove(&path);
         self
     }
@@ -4988,11 +5027,59 @@ impl WholeWorkspace {
         revision
     }
 
+    async fn seed_scanned(&self, provider: &Provider) -> String {
+        let revision = self.seed_unrecorded(provider);
+        let recorded = capture_code_snapshot(&self.before).await;
+        seed_snapshot(&provider.storage, &revision, &recorded);
+        revision
+    }
+
     fn seed_unrecorded(&self, provider: &Provider) -> String {
         for (path, body) in &self.current {
             provider.files.file(".", path, body);
         }
         seed(&provider.files, &self.spec, DESIGN, &self.plan)
+    }
+}
+
+struct PartSpec {
+    name: String,
+    requirements: Vec<String>,
+    types: Vec<String>,
+}
+
+impl PartSpec {
+    fn new<I, S>(name: impl Into<String>, requirements: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self {
+            name: name.into(),
+            requirements: requirements.into_iter().map(Into::into).collect(),
+            types: Vec::new(),
+        }
+    }
+
+    fn with_types<I, S>(mut self, types: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.types = types.into_iter().map(Into::into).collect();
+        self
+    }
+
+    fn into_json(self, number: usize) -> Value {
+        serde_json::json!({
+            "id": format!("PART-{number:03}"),
+            "name": self.name,
+            "requirements": self.requirements,
+            "types": self.types,
+            "uses": [],
+            "depends-on": [],
+            "brief": [format!("Delivers {}.", self.name)]
+        })
     }
 }
 
@@ -5699,5 +5786,443 @@ async fn amend_restated_invalid() {
     ] {
         assert!(finding.contains(expected), "missing `{expected}` in:\n{finding}");
     }
+    provider.model.assert_exhausted();
+}
+
+async fn capture_code_snapshot(files: &BTreeMap<String, String>) -> Value {
+    let spec_answer = include_str!("specify/spec-draft.json");
+    let design_answer = include_str!("specify/design-draft.json");
+    let mut tmp = Provider::answering([spec_answer, design_answer]);
+    for (path, body) in files {
+        tmp.files.file(".", path, body);
+    }
+    let claims = files
+        .keys()
+        .map(|path| {
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'.")
+                .at(format!("{path}#L1"))
+        })
+        .collect();
+    code_with(&mut tmp, claims);
+    cli_ok(&tmp, &["emery", "specify", CODE, "--apply", "--config", PROJECT_CONFIG]).await;
+    let raw = tmp.storage.state(REVISION_KEY).expect("sealed revision key");
+    let id = String::from_utf8(raw).expect("revision id UTF-8");
+    snapshot(&tmp.storage, &id)
+}
+
+fn deleted_method_requirements() -> Vec<SpecReq> {
+    vec![
+        SpecReq::new("REQ-001", "orders.post.create", "A valid request creates a pending order.")
+            .at("src/routes/orders.ts#L6-L8")
+            .route("POST /orders"),
+        SpecReq::new(
+            "REQ-002",
+            "orders.validate-non-empty-lines",
+            "An order must contain at least one line item.",
+        )
+        .at("src/services/orders.ts#L8-L10"),
+        SpecReq::new(
+            "REQ-003",
+            "orders.put-id-lines.replace",
+            "A pending order's line items may be replaced.",
+        )
+        .at("src/routes/orders.ts#L9-L12")
+        .route("PUT /orders/{id}/lines"),
+        SpecReq::new(
+            "REQ-004",
+            "orders.amend-validate",
+            "Line replacements validate positive line quantities.",
+        )
+        .at("src/services/orders.ts#L14-L17"),
+        SpecReq::new("REQ-005", "customers.delete-id", "Deleting a customer removes its record.")
+            .at("src/services/customers.ts#L2-L4")
+            .route("DELETE /customers/{id}"),
+    ]
+}
+
+fn deleted_method_workspace() -> WholeWorkspace {
+    WholeWorkspace::from_parts(
+        deleted_method_requirements(),
+        [
+            PartSpec::new("orders", ["REQ-001", "REQ-002", "REQ-003", "REQ-004"])
+                .with_types(["orders.line", "orders.order"]),
+            PartSpec::new("customers", ["REQ-005"]),
+        ],
+    )
+    .with_changed(
+        "src/routes/orders.ts",
+        concat!(
+            "import { Router } from \"express\";\n",
+            "import { OrderService, validateAmendInput } from \"../services/orders\";\n\n",
+            "export function createOrdersRouter(orders: OrderService): Router {\n",
+            "  const router = Router();\n",
+            "  router.post(\"/orders\", (req, res) => {\n",
+            "    res.status(201).json(orders.place(req.body));\n",
+            "  });\n",
+            "  router.put(\"/orders/:id/lines\", (req, res) => {\n",
+            "    validateAmendInput(req.body);\n",
+            "    res.json(orders.amend(req.params.id, req.body));\n",
+            "  });\n",
+            "  return router;\n}\n",
+        ),
+        concat!(
+            "import { Router } from \"express\";\n",
+            "import { OrderService } from \"../services/orders\";\n\n",
+            "export function createOrdersRouter(orders: OrderService): Router {\n",
+            "  const router = Router();\n",
+            "  router.post(\"/orders\", (req, res) => {\n",
+            "    res.status(201).json(orders.place(req.body));\n",
+            "  });\n",
+            "  return router;\n}\n",
+        ),
+    )
+    .with_changed(
+        "src/services/orders.ts",
+        concat!(
+            "import { CustomerStore } from \"./customers\";\n",
+            "import { LineInput, parseAmendLines } from \"./validation\";\n\n",
+            "export class OrderService {\n",
+            "  constructor(private readonly customers: CustomerStore) {}\n\n",
+            "  place(lines: LineInput[]) {\n",
+            "    if (lines.length === 0) {\n",
+            "      throw new Error(\"empty lines\");\n",
+            "    }\n",
+            "    return { status: \"pending\", lines };\n",
+            "  }\n\n",
+            "  amend(id: string, lines: LineInput[]) {\n",
+            "    const parsed = parseAmendLines(lines);\n",
+            "    return { id, status: \"pending\", lines: parsed };\n",
+            "  }\n}\n",
+        ),
+        concat!(
+            "import { CustomerStore } from \"./customers\";\n",
+            "import { LineInput } from \"./validation\";\n\n",
+            "export class OrderService {\n",
+            "  constructor(private readonly customers: CustomerStore) {}\n\n",
+            "  place(lines: LineInput[]) {\n",
+            "    if (lines.length === 0) {\n",
+            "      throw new Error(\"empty lines\");\n",
+            "    }\n",
+            "    return { status: \"pending\", lines };\n",
+            "  }\n}\n",
+        ),
+    )
+    .with_unchanged(
+        "src/services/customers.ts",
+        "export class CustomerStore {\n  delete(id: string) {\n    return { deleted: id };\n  }\n}\n",
+    )
+}
+
+// Deleting one route callback and one service method (plus import cleanup) from
+// shared `orders` files drops claims from untouched sibling methods and
+// cross-seam callers, spends no grouping turn, keeps surviving untriggered
+// requirements in the modified file unchanged, and retires deleted and
+// vanished-trigger requirements by scope.
+#[tokio::test]
+async fn amend_whole_deleted_method_in_shared_file() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+
+    let mut provider = Provider::idle();
+    code_with(
+        &mut provider,
+        vec![
+            requirement("orders.post.create", "A valid request creates a pending order.")
+                .at("src/routes/orders.ts#L6-L8"),
+            requirement(
+                "orders.validate-non-empty-lines",
+                "An order must contain at least one line item.",
+            )
+            .at("src/services/orders.ts#L8-L10"),
+            requirement(
+                "customers.delete-active-orders",
+                "Customers with active orders cannot be deleted.",
+            )
+            .at("src/services/orders.ts#L7-L12"),
+            claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+                .at("src/routes/orders.ts#L6-L8"),
+            claim(ClaimKind::Contract, "customers.delete-id", ("route", "DELETE /customers/{id}"))
+                .at("src/services/customers.ts#L2-L4"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    deleted_method_workspace().seed_scanned(&provider).await;
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 0, "retired": 2, "conflict": 0, "unchanged": 3, "by-scope": 2
+        }),
+        "{envelope}"
+    );
+    assert!(
+        provider.model.seen().is_empty(),
+        "pure deletion in shared files drops every surviving claim and spends no turn"
+    );
+
+    let (_, amendment) = staged_amendment(&provider);
+    assert_eq!(amendment["changes"][0]["class"], "unchanged", "{amendment}");
+    assert_eq!(amendment["changes"][1]["class"], "unchanged", "{amendment}");
+    assert_eq!(amendment["changes"][2]["class"], "retired", "{amendment}");
+    assert_eq!(amendment["changes"][2]["scope"], "code", "{amendment}");
+    assert_eq!(amendment["changes"][3]["class"], "retired", "{amendment}");
+    assert_eq!(amendment["changes"][3]["scope"], "code", "{amendment}");
+    assert_eq!(amendment["changes"][4]["class"], "unchanged", "{amendment}");
+}
+
+fn appended_method_workspace() -> WholeWorkspace {
+    WholeWorkspace::from_parts(
+        [
+            SpecReq::new("REQ-001", "customers.post.create", "A valid request creates a customer.")
+                .at("src/routes/customers.ts#L6-L8")
+                .route("POST /customers"),
+            SpecReq::new("REQ-002", "customers.get-id", "A customer is retrieved by identifier.")
+                .at("src/routes/customers.ts#L9-L11")
+                .route("GET /customers/{id}"),
+            SpecReq::new("REQ-003", "orders.post.create", "A valid request creates an order.")
+                .at("src/services/orders.ts#L2-L4")
+                .route("POST /orders"),
+        ],
+        [
+            PartSpec::new("customers", ["REQ-001", "REQ-002"]),
+            PartSpec::new("orders", ["REQ-003"]).with_types(["orders.line", "orders.order"]),
+        ],
+    )
+    .with_changed(
+        "src/routes/customers.ts",
+        concat!(
+            "import { Router } from \"express\";\n",
+            "import { CustomerService } from \"../services/customers\";\n\n",
+            "export function createCustomersRouter(customers: CustomerService): Router {\n",
+            "  const router = Router();\n",
+            "  router.post(\"/customers\", (req, res) => {\n",
+            "    res.status(201).json(customers.create(req.body));\n",
+            "  });\n",
+            "  router.get(\"/customers/:id\", (req, res) => {\n",
+            "    res.json(customers.get(req.params.id));\n",
+            "  });\n",
+            "  return router;\n}\n",
+        ),
+        concat!(
+            "import { Router } from \"express\";\n",
+            "import { CustomerService } from \"../services/customers\";\n\n",
+            "export function createCustomersRouter(customers: CustomerService): Router {\n",
+            "  const router = Router();\n",
+            "  router.post(\"/customers\", (req, res) => {\n",
+            "    res.status(201).json(customers.create(req.body));\n",
+            "  });\n",
+            "  router.get(\"/customers/:id\", (req, res) => {\n",
+            "    res.json(customers.get(req.params.id));\n",
+            "  });\n",
+            "  router.delete(\"/customers/:id\", (req, res) => {\n",
+            "    res.status(204).send(customers.remove(req.params.id));\n",
+            "  });\n",
+            "  return router;\n}\n",
+        ),
+    )
+    .with_changed(
+        "src/services/customers.ts",
+        concat!(
+            "export class CustomerService {\n",
+            "  create(name: string) {\n    return { id: \"c1\", name };\n  }\n\n",
+            "  get(id: string) {\n    return { id };\n  }\n}\n",
+        ),
+        concat!(
+            "import { OrderReader } from \"./orders\";\n",
+            "export class CustomerService {\n",
+            "  create(name: string) {\n    return { id: \"c1\", name };\n  }\n\n",
+            "  get(id: string) {\n    return { id };\n  }\n\n",
+            "  remove(id: string) {\n",
+            "    if (OrderReader.hasActive(id)) {\n      throw new Error(\"active orders\");\n    }\n",
+            "    return true;\n  }\n}\n",
+        ),
+    )
+    .with_unchanged(
+        "src/services/orders.ts",
+        "export class OrderReader {\n  static hasActive(_id: string): boolean {\n    return false;\n  }\n}\n",
+    )
+}
+
+// Appending a method and import to shared `customers` files keeps only claims
+// overlapping the added spans, dropping untouched sibling `create`/`get` claims
+// and cross-seam `orders` claims so `orders` never enters `standing in play`.
+#[tokio::test]
+async fn amend_whole_appended_method_in_shared_file() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+
+    // 0 is kept `customers.remove-guard`; 1 and 2 are `REQ-001` and `REQ-002`
+    let grouping = r#"{"groups": [
+        {"claims": [1], "classes": [[1]]},
+        {"claims": [2], "classes": [[2]]},
+        {"claims": [0], "classes": [[0]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "customers.remove-guard", "scenarios": [
+            {"name": "Active orders block removal", "when": "a customer with active orders is removed", "then": "removal is rejected"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement("customers.post.create", "A valid request creates a customer.")
+                .at("src/routes/customers.ts#L6-L8"),
+            requirement("customers.get-id", "A customer is retrieved by identifier.")
+                .at("src/routes/customers.ts#L9-L11"),
+            requirement(
+                "orders.lookup-customer",
+                "Order placement verifies that the customer exists.",
+            )
+            .at("src/services/customers.ts#L7-L9"),
+            requirement(
+                "customers.remove-guard",
+                "A customer with active orders cannot be removed.",
+            )
+            .at("src/routes/customers.ts#L12-L14"),
+            claim(
+                ClaimKind::Criterion,
+                "customers.remove-guard.active",
+                ("criterion", "OrderReader.hasActive blocks removal."),
+            )
+            .at("src/services/customers.ts#L12-L14"),
+            claim(ClaimKind::Contract, "customers.post", ("route", "POST /customers"))
+                .at("src/routes/customers.ts#L6-L8"),
+            claim(ClaimKind::Contract, "customers.get-id", ("route", "GET /customers/{id}"))
+                .at("src/routes/customers.ts#L9-L11"),
+            claim(ClaimKind::Contract, "orders.post", ("route", "POST /orders"))
+                .at("src/services/orders.ts#L2-L4"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    appended_method_workspace().seed_scanned(&provider).await;
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 1, "changed": 0, "retired": 0, "conflict": 0, "unchanged": 3, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(request.contains("- 0 `code` `customers.remove-guard`"), "{request}");
+    assert!(!request.contains("`code` `customers.post.create`"), "{request}");
+    assert!(!request.contains("`code` `customers.get-id`"), "{request}");
+    assert!(!request.contains("orders.lookup-customer"), "{request}");
+    assert!(!request.contains("`orders.post.create`"), "`orders` stays out of play: {request}");
+    provider.model.assert_exhausted();
+}
+
+fn modified_interior_workspace() -> WholeWorkspace {
+    WholeWorkspace::from_parts(
+        [
+            SpecReq::new("REQ-001", "orders.discount", "Eligible orders receive a 15% discount.")
+                .at("src/services/pricing.ts#L1-L7"),
+            SpecReq::new("REQ-002", "billing.tax", "Orders accrue an 8% sales tax.")
+                .at("src/services/pricing.ts#L9-L12"),
+            SpecReq::new("REQ-003", "orders.bulk-threshold", "Orders of 20 units qualify as bulk.")
+                .at("src/services/thresholds.ts#L3-L5"),
+        ],
+        [
+            PartSpec::new("orders", ["REQ-001", "REQ-003"])
+                .with_types(["orders.line", "orders.order"]),
+            PartSpec::new("billing", ["REQ-002"]),
+        ],
+    )
+    .with_changed(
+        "src/services/pricing.ts",
+        concat!(
+            "export function applyDiscount(total: number, units: number): number {\n",
+            "  if (units < 20) {\n    return total;\n  }\n",
+            "  const rate = 0.15;\n  return total * (1 - rate);\n}\n\n",
+            "export function calculateTax(total: number): number {\n",
+            "  const taxRate = 0.08;\n  return total * taxRate;\n}\n",
+        ),
+        concat!(
+            "export function applyDiscount(total: number, units: number): number {\n",
+            "  if (units < 20) {\n    return total;\n  }\n",
+            "  const rate = 0.20;\n  return total * (1 - rate);\n}\n\n",
+            "export function calculateTax(total: number): number {\n",
+            "  const taxRate = 0.08;\n  return total * taxRate;\n}\n",
+        ),
+    )
+    .with_changed(
+        "src/services/thresholds.ts",
+        concat!(
+            "export const BULK_MIN_UNITS = 20;\n\n",
+            "export function qualifiesForBulk(units: number): boolean {\n",
+            "  return units >= BULK_MIN_UNITS;\n}\n",
+        ),
+        concat!(
+            "export const BULK_MIN_UNITS = 10;\n\n",
+            "export function qualifiesForBulk(units: number): boolean {\n",
+            "  return units >= BULK_MIN_UNITS;\n}\n",
+        ),
+    )
+}
+
+// Modifying one interior line of a multi-line function expands to that
+// function's leaf routine span (keeping a claim anchored at the function head
+// while dropping sibling functions' claims), and modifying a top-level constant
+// activates the file's claims.
+#[tokio::test]
+async fn amend_whole_modified_interior_line() {
+    let scratch = Scratch::new();
+    let config = scoped(&scratch, CODE, "whole");
+
+    // 0 (`orders.discount`) and 1 (`orders.bulk-threshold`) are kept;
+    // 2 (`REQ-001`) and 3 (`REQ-003`) are in play (`REQ-002` `billing.tax` is settled by code)
+    let grouping = r#"{"groups": [
+        {"claims": [0, 2], "classes": [[0], [2]]},
+        {"claims": [1, 3], "classes": [[1], [3]]}
+    ]}"#;
+    let draft = r#"{"preamble": [], "requirements": [
+        {"subject": "orders.discount", "scenarios": [
+            {"name": "20% discount", "when": "an eligible order is priced", "then": "a 20% discount applies"}
+        ]},
+        {"subject": "orders.bulk-threshold", "scenarios": [
+            {"name": "10-unit threshold", "when": "an order has 10 units", "then": "it qualifies as bulk"}
+        ]}
+    ]}"#;
+    let mut provider = Provider::answering([grouping, draft]);
+    code_with(
+        &mut provider,
+        vec![
+            requirement("orders.discount", "Eligible orders receive a 20% discount.")
+                .at("src/services/pricing.ts#L1-L2"),
+            requirement("billing.tax", "Orders accrue an 8% sales tax.")
+                .at("src/services/pricing.ts#L9-L12"),
+            requirement("orders.bulk-threshold", "Orders of 10 units qualify as bulk.")
+                .at("src/services/thresholds.ts#L3-L5"),
+            claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { id: string }")),
+            claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { sku: string }")),
+        ],
+    );
+    modified_interior_workspace().seed_scanned(&provider).await;
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "amend", "--config", &config]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["tally"],
+        serde_json::json!({
+            "added": 0, "changed": 2, "retired": 0, "conflict": 0, "unchanged": 1, "by-scope": 0
+        }),
+        "{envelope}"
+    );
+
+    let request = provider.model.seen()[0].messages.join("\n");
+    assert!(request.contains("- 0 `code` `orders.discount`"), "{request}");
+    assert!(request.contains("- 1 `code` `orders.bulk-threshold`"), "{request}");
+    assert!(!request.contains("billing.tax"), "untouched sibling function dropped: {request}");
     provider.model.assert_exhausted();
 }

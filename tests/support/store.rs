@@ -142,6 +142,15 @@ pub fn sha256(content: &str) -> String {
     hex::encode(Sha256::digest(content.as_bytes()))
 }
 
+pub fn line_hash(line: &str) -> u64 {
+    let digest = Sha256::digest(line.as_bytes());
+    u64::from_be_bytes(digest[..8].try_into().expect("8-byte prefix"))
+}
+
+pub fn line_hashes(content: &str) -> Vec<u64> {
+    content.lines().map(line_hash).collect()
+}
+
 fn digest(bodies: &[&[u8]]) -> String {
     let mut hasher = Sha256::new();
     for body in bodies {

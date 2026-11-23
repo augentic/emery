@@ -11,9 +11,9 @@
 //! each under the id its requirement takes. A change that states no
 //! requirement is grouped against nothing and leaves every standing
 //! requirement as it is. A behaviour source read whole retires untouched
-//! requirements citing a changed or removed file or carrying a vanished
-//! trigger when narrowed against a base source snapshot, and otherwise those
-//! under the stems it covers or citing that source alone.
+//! requirements citing a changed or deleted span, citing a removed file, or
+//! carrying a vanished trigger when narrowed against a base source snapshot,
+//! and otherwise those under the stems it covers or citing that source alone.
 
 use std::collections::{BTreeMap, BTreeSet};
 

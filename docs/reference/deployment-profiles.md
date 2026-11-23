@@ -43,7 +43,7 @@ The engine accesses local staging state and the cached revision pointer exclusiv
 | Cached revision pointer | `StateStore` | default bucket | `current-revision` | Cached `emery/<id>` label name (always verified against the target Git repository). |
 | Staged candidate blobs | `BlobStore` | `staged` | `<id>/spec.json`, `<id>/design.json`, `<id>/plan.json`, `<id>/sources.json` | Unsealed candidate revision documents and workspace source snapshot. |
 | Staged amendment blobs | `BlobStore` | `staged` | `<id>/amendment.json`, `<id>/sources.json` | Unsealed `Amendment` document and workspace source snapshot. |
-| Source snapshot blobs | `BlobStore` | `snapshots` | `<revision-id>.json` | Per-revision map of workspace source file SHA-256 digests recorded when [`emery apply`](cli/apply.md) seals a candidate or amendment. |
+| Source snapshot blobs | `BlobStore` | `snapshots` | `<revision-id>.json` | Per-revision map of workspace source file SHA-256 digests, per-line 64-bit hashes, and structural line spans (never raw source text) recorded when [`emery apply`](cli/apply.md) seals a candidate or amendment. |
 
 > [!NOTE]
 > Sealed revisions do **not** live in `.emery/storage/`. Once [`emery apply`](cli/apply.md) runs, the authoritative revision lives in the target Git repository as `spec/{spec,design,plan}.json` on branch `emery/<id>`, the staged `sources.json` is copied to `snapshots/<revision-id>.json`, and the staging container is cleared.
