@@ -219,8 +219,8 @@ fn retire_unmatched(retires: &[&Contributor<'_>]) -> Error {
         .collect::<Vec<_>>()
         .join(", ");
     let what = if retires.len() > 1 { "withdraw behaviours" } else { "withdraws a behaviour" };
-    Error::BadRequest {
-        code: "retire-unmatched".into(),
-        description: format!("retire {named} {what} no requirement of the current revision states"),
-    }
+    Error::bad_request(
+        "retire-unmatched",
+        format!("retire {named} {what} no requirement of the current revision states"),
+    )
 }

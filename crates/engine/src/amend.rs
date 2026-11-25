@@ -92,7 +92,7 @@ use crate::{apply, store};
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the run is refused:
+/// - Returns [`omnia_sdk::ErrorKind::BadRequest`] when the run is refused:
 ///   - an empty source list, with code `specify-source-required`;
 ///   - a source named `baseline`, the reserved name;
 ///   - no target, with code `build-target-required`;
@@ -103,11 +103,11 @@ use crate::{apply, store};
 ///     list, an adapter, or a model answer under;
 ///   - the classes [`apply`](crate::apply::apply) reads the repository
 ///     under.
-/// - Returns [`Error::NotFound`] with code `spec-not-generated` when the
+/// - Returns [`omnia_sdk::ErrorKind::NotFound`] with code `spec-not-generated` when the
 ///   repository holds no revision, naming a staged candidate where one
 ///   stands, and with code `revision-not-found` as `specify` does.
-/// - Returns [`Error::ServerError`] and [`Error::BadGateway`] as `specify`
-///   does, and [`Error::ServerError`] where a plan settled by code alone
+/// - Returns [`omnia_sdk::ErrorKind::ServerError`] and [`omnia_sdk::ErrorKind::BadGateway`] as `specify`
+///   does, and [`omnia_sdk::ErrorKind::ServerError`] where a plan settled by code alone
 ///   breaks the plan's rules.
 /// - Returns what [`apply`](crate::apply::apply) fails with sealing the
 ///   amendment under [`AmendInput::apply`], the amendment left staged.
@@ -167,7 +167,7 @@ pub async fn amend(input: AmendInput) -> Result<AmendOutput, Error> {
     // sections redrafted over the pruned base where any claim informs one
     // and the pruned base itself otherwise
     let chunks = SpecBrief::amending(&extracts, &drafted);
-    let drafting = future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge()));
+    let drafting = future::try_join_all(chunks.into_iter().map(super::brief::Brief::judge));
     let (drafts, design) = match DesignAmend::new(&extracts, &drafted, &changes, &base_design) {
         Some(brief) => future::try_join(drafting, brief.judge()).await?,
         None => (drafting.await?, base_design),

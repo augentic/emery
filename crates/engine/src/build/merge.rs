@@ -11,7 +11,7 @@ use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::beneath;
 use omnia_sdk::vcs::{Change, ChangeKind, Rule, Strategy};
-use omnia_sdk::{Error, Model, Vcs, server_error};
+use omnia_sdk::{Error, ErrorKind, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -20,7 +20,7 @@ use super::{Built, Progress, Run, gated, kind_at};
 use crate::brief::{Brief, Review};
 use crate::revision::Part;
 use crate::vcs::WorkingCopy;
-use crate::{EntryKind, Files, is_retryable};
+use crate::{EntryKind, files, is_retryable};
 
 // A slice's merge under the adapter's rules, left at the paths no rule
 // resolved: what this slice and one merged before it in the wave both
@@ -39,8 +39,8 @@ impl UnresolvedMerge<'_> {
     // Resolves every path with the model, seals the resolutions in the
     // slice's working copy over its commit, and merges the slice again with
     // each resolution taken whole: the merge commit, and the paths resolved.
-    pub async fn resolve<P: Model + Vcs + Files>(
-        self, run: &Run<'_>, provider: &P, progress: &Progress,
+    pub async fn resolve(
+        self, run: &Run<'_>, progress: &Progress,
     ) -> Result<(String, Vec<String>), Error> {
         let scheduled = self.built.slice;
         let part = self.built.part;
@@ -55,8 +55,8 @@ impl UnresolvedMerge<'_> {
         // each path a text file on both sides, read before any turn is spent
         let mut conflicts = Vec::with_capacity(self.paths.len());
         for path in &self.paths {
-            let integrated = self.side(provider, run.integration, path, Side::Integrated).await?;
-            let slice = self.side(provider, worktree, path, Side::Slice).await?;
+            let integrated = self.side(run.integration, path, Side::Integrated).await?;
+            let slice = self.side(worktree, path, Side::Slice).await?;
             conflicts.push(Conflict {
                 path: path.clone(),
                 integrated,
@@ -94,12 +94,12 @@ impl UnresolvedMerge<'_> {
             merged,
             conflicts,
         };
-        let resolutions = match brief.judge(provider).await {
+        let resolutions = match brief.judge().await {
             Ok(resolutions) => resolutions,
-            Err(error @ Error::BadRequest { .. }) if !is_retryable(&error) => {
+            Err(error) if error.kind() == ErrorKind::BadRequest && !is_retryable(&error) => {
                 return Err(self.unresolved(format_args!(
                     "the model's resolution was refused within the available rounds: {}",
-                    findings_of(&error.description())
+                    findings_of(error.description())
                 )));
             }
             Err(error) => return Err(error),
@@ -111,25 +111,25 @@ impl UnresolvedMerge<'_> {
         for file in &resolutions {
             let path = beneath(&file.path)
                 .map_err(|bad| server_error!("the resolution at `{}` {bad}", file.path))?;
-            provider.write(worktree.path(), &path, file.content.as_bytes()).await?;
+            files::write(worktree.path(), &path, file.content.as_bytes()).await?;
         }
-        let pending = worktree.pending(provider).await?;
-        gated(provider, worktree.path(), "the merge's resolution", &pending).await?;
+        let pending = worktree.pending().await?;
+        gated(worktree.path(), "the merge's resolution", &pending).await?;
         let mut resolved: Vec<String> = resolutions.into_iter().map(|file| file.path).collect();
         resolved.sort_unstable();
         let subject = format!("{id} {} resolved at {}", part.name, resolved.join(", "));
-        let commit = worktree.commit(provider, &subject).await?.unwrap_or(self.commit);
+        let commit = worktree.commit(&subject).await?.unwrap_or(self.commit);
 
         // merged again, each resolution taken whole and the rules as before
         let policy: Vec<Rule> = resolved
             .iter()
             .map(|path| Rule {
-                paths: format!("/{path}"),
+                pattern: format!("/{path}"),
                 strategy: Strategy::Theirs,
             })
             .chain(run.policy.iter().cloned())
             .collect();
-        let merged = run.integration.merge(provider, &commit, self.message, &policy).await?;
+        let merged = run.integration.merge(&commit, self.message, &policy).await?;
         match merged.commit {
             Some(commit) => Ok((commit, resolved)),
             None => Err(server_error!(
@@ -144,9 +144,7 @@ impl UnresolvedMerge<'_> {
     // engine never writes, one the slice removed, one `side` does not hold
     // as a regular file, or one that is not text is nothing the model can
     // resolve, so no turn is spent on it.
-    async fn side<P: Files>(
-        &self, provider: &P, copy: &WorkingCopy, path: &str, side: Side,
-    ) -> Result<String, Error> {
+    async fn side(&self, copy: &WorkingCopy, path: &str, side: Side) -> Result<String, Error> {
         if let Err(bad) = beneath(path) {
             return Err(self.unresolved(format_args!("`{path}` {bad}")));
         }
@@ -155,7 +153,7 @@ impl UnresolvedMerge<'_> {
         if removed {
             return Err(self.unresolved(format_args!("the slice removed `{path}`")));
         }
-        match kind_at(provider, copy.path(), path).await? {
+        match kind_at(copy.path(), path).await? {
             Some(EntryKind::File) => {}
             Some(EntryKind::Link) => {
                 return Err(
@@ -171,18 +169,18 @@ impl UnresolvedMerge<'_> {
                 return Err(self.unresolved(format_args!("{side} does not hold `{path}`")));
             }
         }
-        String::from_utf8(provider.read(copy.path(), path).await?)
+        String::from_utf8(files::read(copy.path(), path).await?)
             .map_err(|_bytes| self.unresolved(format_args!("`{path}` is not text in {side}")))
     }
 
     fn unresolved(&self, why: impl Display) -> Error {
-        Error::BadRequest {
-            code: "merge-unresolved".into(),
-            description: format!(
+        Error::bad_request(
+            "merge-unresolved",
+            format!(
                 "its merge conflicts at {}, and the conflict cannot be resolved: {why}",
                 self.paths.join(", ")
             ),
-        }
+        )
     }
 }
 

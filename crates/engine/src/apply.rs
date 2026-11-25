@@ -35,13 +35,13 @@ use crate::vcs::{BuildRepo, TargetRef};
 ///
 /// # Errors
 ///
-/// - Returns [`Error::NotFound`]:
+/// - Returns [`omnia_sdk::ErrorKind::NotFound`]:
 ///   - with code `nothing-staged`, when nothing is staged;
 ///   - with code `revision-not-found`, when the repository the target
 ///     names does not exist or has no default branch, or what the run
 ///     already holds under the target's name was cloned or created under
 ///     another origin.
-/// - Returns [`Error::BadRequest`]:
+/// - Returns [`omnia_sdk::ErrorKind::BadRequest`]:
 ///   - with code `lineage-exists`, when the staged candidate was not staged
 ///     fresh and the current revision amends an earlier one; the candidate
 ///     stays staged;
@@ -60,9 +60,9 @@ use crate::vcs::{BuildRepo, TargetRef};
 ///   - with code `base-not-sealed`, when the project repository has no
 ///     commit to seal over;
 ///   - with code `secret-detected`, when a document carries a credential.
-/// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
+/// - Returns [`omnia_sdk::ErrorKind::BadGateway`] when the remote refuses, cannot be
 ///   reached, or wants credentials.
-/// - Returns [`Error::ServerError`] when storage or version control fails,
+/// - Returns [`omnia_sdk::ErrorKind::ServerError`] when storage or version control fails,
 ///   or the candidate no longer matches its identifier.
 pub async fn apply(input: ApplyInput) -> Result<ApplyOutput, Error> {
     let repo = input.target.repo()?;

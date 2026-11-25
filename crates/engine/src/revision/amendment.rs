@@ -70,9 +70,9 @@ impl Amendment {
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::BadRequest`] with code `spec-outdated` when the
+    /// - Returns [`omnia_sdk::ErrorKind::BadRequest`] with code `spec-outdated` when the
     ///   document uses a different grammar.
-    /// - Returns [`Error::ServerError`] when the content does not match
+    /// - Returns [`omnia_sdk::ErrorKind::ServerError`] when the content does not match
     ///   `id`, is not valid JSON, or does not match the document shape.
     pub fn read(id: &str, body: &[u8]) -> Result<Self, Error> {
         if Self::identify(body) != id {

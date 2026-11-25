@@ -95,7 +95,7 @@ async fn key_entry(bucket: &Bucket, key: &str, unreadable: &'static str) -> KeyE
 async fn cas_bytes(
     bucket: &Bucket, key: &str, entry: &KeyEntry, value: &[u8], what: &'static str,
 ) -> Result<(), Error> {
-    match bucket.compare_and_swap(key, entry.revision, value, None).await.context(what)? {
+    match bucket.compare_and_swap(key, entry.revision.clone(), value, None).await.context(what)? {
         Ok(_) => Ok(()),
         Err(_conflict) => Err(server_error!("{what}: another writer changed the entry first")),
     }
@@ -209,7 +209,10 @@ impl Slot {
     // naming none.
     async fn swap(self, entry: &KeyEntry) -> Result<(), Error> {
         let bucket = bucket().await?;
-        let when = entry.revision.map_or(Precondition::Absent, Precondition::Matches);
+        let when = entry
+            .revision
+            .as_ref()
+            .map_or(Precondition::Absent, |revision| Precondition::Matches(revision.clone()));
         match bucket
             .set_json_if(STAGED_KEY, &self, None, when)
             .await

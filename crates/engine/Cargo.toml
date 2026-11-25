@@ -29,8 +29,5 @@ tracing.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
 
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-omnia-test = { workspace = true, features = ["host"] }
-
 [lints]
 workspace = true

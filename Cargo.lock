@@ -1185,7 +1185,6 @@ dependencies = [
  "futures",
  "hex",
  "omnia-sdk",
- "omnia-test",
  "schemars 1.2.3",
  "semver",
  "serde",

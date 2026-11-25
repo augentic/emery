@@ -95,7 +95,7 @@ pub fn strategy_for(rules: &[Rule], path: &str) -> Option<Strategy> {
 pub struct Merged {
     /// The commit the working copy reached when the merge sealed.
     pub commit: Option<String>,
-    /// Paths the merge left in conflict when [`commit`] is `None`.
+    /// Paths the merge left in conflict when `commit` is `None`.
     pub conflicts: Vec<String>,
 }
 
@@ -455,11 +455,11 @@ impl SourceClone {
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::NotFound`] with code `revision-not-found` when the
+    /// - Returns [`omnia_sdk::ErrorKind::NotFound`] with code `revision-not-found` when the
     ///   URL names no repository.
-    /// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
+    /// - Returns [`omnia_sdk::ErrorKind::BadGateway`] when the remote refuses, cannot be
     ///   reached, or wants credentials.
-    /// - Returns [`Error::ServerError`] when the capability fails otherwise.
+    /// - Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails otherwise.
     pub async fn ensure(&self) -> Result<(), Error> {
         ensure(&self.url, &self.path()).await
     }
@@ -468,23 +468,25 @@ impl SourceClone {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
+    /// Returns [`omnia_sdk::ErrorKind::NotFound`] with code `revision-not-found` when the
     /// repository holds no such revision, and the classes
     /// [`ensure`](Self::ensure) names otherwise.
     pub async fn resolve(&self, revision: &str) -> Result<String, Error> {
         let subject = self.subject();
         let workspace = workspace_at(&self.path(), subject).await?;
-        match workspace
+        workspace
             .resolve(revision.to_owned())
             .await
             .map_err(|error| subject.refusal(error))?
-        {
-            Some(commit) => Ok(commit),
-            None => Err(Error::not_found(
-                "revision-not-found",
-                format!("{subject} has no `{revision}`"),
-            )),
-        }
+            .map_or_else(
+                || {
+                    Err(Error::not_found(
+                        "revision-not-found",
+                        format!("{subject} has no `{revision}`"),
+                    ))
+                },
+                Ok,
+            )
     }
 
     fn subject(&self) -> Subject<'_> {
@@ -553,7 +555,8 @@ enum Subject<'a> {
 }
 
 impl Subject<'_> {
-    fn refusal(self, error: Error) -> Error {
+    fn refusal(self, error: impl Into<Error>) -> Error {
+        let error = error.into();
         match error.kind() {
             ErrorKind::NotFound => Error::not_found(
                 "revision-not-found",
@@ -629,7 +632,7 @@ impl TargetRef {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BadRequest`] when the name is not kebab-case.
+    /// Returns [`omnia_sdk::ErrorKind::BadRequest`] when the name is not kebab-case.
     pub fn repo(&self) -> Result<BuildRepo, Error> {
         BuildRepo::settle(&self.name, self.repository.as_deref())
     }
@@ -655,7 +658,7 @@ impl BuildRepo {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BadRequest`] when `name` is not kebab-case.
+    /// Returns [`omnia_sdk::ErrorKind::BadRequest`] when `name` is not kebab-case.
     pub fn settle(name: &str, repository: Option<&str>) -> Result<Self, Error> {
         if !is_kebab(name) {
             return Err(bad_request!("target `{name}` is not a kebab-case name"));
@@ -701,13 +704,13 @@ impl BuildRepo {
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::BadRequest`] with code `repository-required` when
+    /// - Returns [`omnia_sdk::ErrorKind::BadRequest`] with code `repository-required` when
     ///   the project is no repository.
-    /// - Returns [`Error::NotFound`] with code `revision-not-found` when the
+    /// - Returns [`omnia_sdk::ErrorKind::NotFound`] with code `revision-not-found` when the
     ///   URL names no repository or the clone has no default branch.
-    /// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
+    /// - Returns [`omnia_sdk::ErrorKind::BadGateway`] when the remote refuses, cannot be
     ///   reached, or wants credentials.
-    /// - Returns [`Error::ServerError`] when the capability fails otherwise.
+    /// - Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails otherwise.
     pub async fn head(&self) -> Result<Option<String>, Error> {
         match self {
             Self::Project => {
@@ -718,41 +721,41 @@ impl BuildRepo {
                     }
                     Err(error) => return Err(Subject::Project.refusal(error)),
                 };
-                match workspace.head().await.map_err(|error| Subject::Project.refusal(error))? {
-                    Some(head) => Ok(Some(head)),
-                    None => Ok(None),
-                }
+                workspace
+                    .head()
+                    .await
+                    .map_err(|error| Subject::Project.refusal(error))?
+                    .map_or(Ok(None), |head| Ok(Some(head)))
             }
             Self::Target { name, url: Some(url) } => {
                 let at = target_path(name);
                 let subject = Subject::Repository(url);
                 ensure(url, &at).await?;
                 let workspace = workspace_at(&at, subject).await?;
-                match workspace
+                workspace
                     .resolve(DEFAULT_BRANCH.to_owned())
                     .await
                     .map_err(|error| subject.refusal(error))?
-                {
-                    Some(head) => Ok(Some(head)),
-                    None => Err(Error::not_found(
-                        "revision-not-found",
-                        format!("{subject} has no `{DEFAULT_BRANCH}`"),
-                    )),
-                }
+                    .map_or_else(
+                        || {
+                            Err(Error::not_found(
+                                "revision-not-found",
+                                format!("{subject} has no `{DEFAULT_BRANCH}`"),
+                            ))
+                        },
+                        |head| Ok(Some(head)),
+                    )
             }
             Self::Target { name, url: None } => {
                 let at = target_path(name);
                 match vcs::open(&at).await {
                     Err(error) if is_not_found(&error) => Ok(None),
                     Err(error) => Err(self.subject().refusal(error)),
-                    Ok(workspace) => match workspace
+                    Ok(workspace) => workspace
                         .head()
                         .await
                         .map_err(|error| self.subject().refusal(error))?
-                    {
-                        Some(head) => Ok(Some(head)),
-                        None => Ok(None),
-                    },
+                        .map_or(Ok(None), |head| Ok(Some(head))),
                 }
             }
         }
@@ -766,10 +769,10 @@ impl BuildRepo {
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::BadRequest`] with code `repository-required` when
+    /// - Returns [`omnia_sdk::ErrorKind::BadRequest`] with code `repository-required` when
     ///   the project is no repository, and with code `base-not-sealed` when
     ///   its checkout holds pending changes, listed.
-    /// - Returns [`Error::ServerError`] when the capability fails otherwise.
+    /// - Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails otherwise.
     pub async fn base(&self, head: &str) -> Result<String, Error> {
         if matches!(self, Self::Project) {
             project_clean().await?;
@@ -784,7 +787,7 @@ impl BuildRepo {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ServerError`] when the capability fails.
+    /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
     pub async fn init(&self) -> Result<(), Error> {
         let Self::Target { name, url: None } = self else {
             return Ok(());
@@ -813,8 +816,8 @@ impl BuildRepo {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
-    /// repository holds no `base`, and [`Error::ServerError`] when the
+    /// Returns [`omnia_sdk::ErrorKind::NotFound`] with code `revision-not-found` when the
+    /// repository holds no `base`, and [`omnia_sdk::ErrorKind::ServerError`] when the
     /// capability fails otherwise.
     pub async fn merged_under(
         &self, label: &str, base: &str, revision: &str,
@@ -865,8 +868,8 @@ impl BuildRepo {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
-    /// repository holds no `head`, and [`Error::ServerError`] when the
+    /// Returns [`omnia_sdk::ErrorKind::NotFound`] with code `revision-not-found` when the
+    /// repository holds no `head`, and [`omnia_sdk::ErrorKind::ServerError`] when the
     /// capability fails otherwise.
     pub async fn cut_integration(&self, head: &str, revision: &str) -> Result<Integration, Error> {
         let copy = WorkingCopy {
@@ -927,9 +930,8 @@ impl BuildRepo {
             Err(error) => return Err(subject.refusal(error)),
             Ok(workspace) => workspace,
         };
-        let staged = match integration.head().await.map_err(|error| subject.refusal(error))? {
-            Some(staged) => staged,
-            None => return Ok(None),
+        let Some(staged) = integration.head().await.map_err(|error| subject.refusal(error))? else {
+            return Ok(None);
         };
         if staged == head {
             return Ok(None);
@@ -937,8 +939,14 @@ impl BuildRepo {
         let repo = workspace_at(&self.path(), self.subject()).await?;
         let descends = match repo.is_ancestor(head.to_owned(), staged.clone()).await {
             Ok(descends) => descends,
-            Err(error) if is_not_found(&error) => false,
-            Err(error) => return Err(self.subject().refusal(error)),
+            Err(error) => {
+                let error: Error = error.into();
+                if is_not_found(&error) {
+                    false
+                } else {
+                    return Err(self.subject().refusal(error));
+                }
+            }
         };
         if !descends {
             tracing::warn!(
@@ -981,25 +989,22 @@ impl BuildRepo {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ServerError`] when the capability fails.
+    /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
     pub async fn labelled(&self, label: &str) -> Result<Option<String>, Error> {
         let workspace = workspace_at(&self.path(), self.subject()).await?;
-        match workspace
+        workspace
             .bookmark(label.to_owned())
             .await
             .map_err(|error| self.subject().refusal(error))?
-        {
-            Some(commit) => Ok(Some(commit)),
-            None => Ok(None),
-        }
+            .map_or(Ok(None), |commit| Ok(Some(commit)))
     }
 
     /// Whether `descendant` descends from `ancestor` in the repository.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
-    /// repository holds neither commit, and [`Error::ServerError`] when the
+    /// Returns [`omnia_sdk::ErrorKind::NotFound`] with code `revision-not-found` when the
+    /// repository holds neither commit, and [`omnia_sdk::ErrorKind::ServerError`] when the
     /// capability fails otherwise.
     pub async fn descends(&self, ancestor: &str, descendant: &str) -> Result<bool, Error> {
         let workspace = workspace_at(&self.path(), self.subject()).await?;
@@ -1013,8 +1018,8 @@ impl BuildRepo {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
-    /// repository holds no such commit, and [`Error::ServerError`] when the
+    /// Returns [`omnia_sdk::ErrorKind::NotFound`] with code `revision-not-found` when the
+    /// repository holds no such commit, and [`omnia_sdk::ErrorKind::ServerError`] when the
     /// capability fails otherwise.
     pub async fn label(&self, label: &str, commit: &str) -> Result<(), Error> {
         let workspace = workspace_at(&self.path(), self.subject()).await?;
@@ -1101,8 +1106,8 @@ impl WorkingCopy {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
-    /// repository holds no such revision, and [`Error::ServerError`] when the
+    /// Returns [`omnia_sdk::ErrorKind::NotFound`] with code `revision-not-found` when the
+    /// repository holds no such revision, and [`omnia_sdk::ErrorKind::ServerError`] when the
     /// capability fails otherwise.
     pub async fn cut(repo: &str, at: &str, revision: &str) -> Result<Self, Error> {
         let copy = Self { at: at.to_owned() };
@@ -1147,7 +1152,7 @@ impl WorkingCopy {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ServerError`] when the capability fails.
+    /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
     pub async fn pending(&self) -> Result<Vec<Change>, Error> {
         pending(&self.at).await
     }
@@ -1156,7 +1161,7 @@ impl WorkingCopy {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ServerError`] when the capability fails.
+    /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
     pub async fn commit(&self, message: &str) -> Result<Option<String>, Error> {
         let workspace = workspace_at(&self.at, self.subject()).await?;
         workspace.commit(message.to_owned()).await.map_err(|error| self.subject().refusal(error))
@@ -1169,8 +1174,8 @@ impl WorkingCopy {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::NotFound`] with code `revision-not-found` when the
-    /// repository holds no such commit, and [`Error::ServerError`] when the
+    /// Returns [`omnia_sdk::ErrorKind::NotFound`] with code `revision-not-found` when the
+    /// repository holds no such commit, and [`omnia_sdk::ErrorKind::ServerError`] when the
     /// capability fails otherwise.
     pub async fn merge(
         &self, revision: &str, message: &str, policy: &[Rule],
@@ -1200,7 +1205,7 @@ impl WorkingCopy {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ServerError`] when the capability fails.
+    /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
     pub async fn head(&self) -> Result<String, Error> {
         let workspace = workspace_at(&self.at, self.subject()).await?;
         workspace
@@ -1214,7 +1219,7 @@ impl WorkingCopy {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::ServerError`] when the capability fails.
+    /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
     pub async fn remove(self) -> Result<(), Error> {
         let workspace = workspace_at(&self.at, self.subject()).await?;
         workspace.remove().await.map_err(|error| self.subject().refusal(error))
@@ -1229,7 +1234,7 @@ impl WorkingCopy {
 ///
 /// # Errors
 ///
-/// Returns [`Error::ServerError`] when the capability fails.
+/// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
 pub async fn pending(at: &str) -> Result<Vec<Change>, Error> {
     let subject = Subject::WorkingCopy(at);
     let workspace = workspace_at(at, subject).await?;

@@ -13,24 +13,25 @@ mod schedule;
 use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 
-use emery_adapter::target::{DesignType, Outcome, Slice as SliceInput, Target, Task};
+use emery_adapter::target::{
+    self as target_adapter, DesignType, Outcome, Slice as SliceInput, Task,
+};
 use emery_adapter::{BadPath, SPECIFICATION, beneath};
 use futures::{FutureExt as _, StreamExt as _, stream};
-use omnia_sdk::api::Context;
-use omnia_sdk::plugins::Digest;
 use omnia_sdk::vcs::{Change, ChangeKind, Rule, Strategy};
-use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, server_error};
+use omnia_sdk::{Error, server_error};
 use serde::{Deserialize, Serialize};
 
 use self::merge::UnresolvedMerge;
 pub(crate) use self::schedule::Schedule;
 pub use self::schedule::{BudgetSource, DEFAULT_BUDGET, ScheduledSlice};
 use crate::adapter::{self, AdapterRef, Loaded};
+use crate::files::{self, EntryKind};
 pub use crate::revision::{BadId, PartId, ReqId, SliceId, Waves};
 use crate::revision::{Design, Part, Spec};
 pub use crate::store::StagedKind;
 use crate::vcs::{BuildRepo, INTEGRATION, Integration, Message, StagedSlice, WorkingCopy};
-use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, vcs};
+use crate::{RETRIES, describe, is_retryable, secrets, store, vcs};
 
 /// Builds every slice of the current plan through the target adapter `input` names.
 ///
@@ -63,7 +64,7 @@ use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, v
 ///
 /// # Errors
 ///
-/// - Returns [`Error::NotFound`]:
+/// - Returns [`omnia_sdk::ErrorKind::NotFound`]:
 ///   - with code `spec-not-generated`, when the repository holds no sealed
 ///     revision, naming a label that fell behind the head and a staged
 ///     candidate where either stands;
@@ -71,7 +72,7 @@ use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, v
 ///     does not exist or has no default branch, or what the run already
 ///     holds under the target's name was cloned or created under another
 ///     origin.
-/// - Returns [`Error::BadRequest`] when the run is refused:
+/// - Returns [`omnia_sdk::ErrorKind::BadRequest`] when the run is refused:
 ///   - when the target's name is not kebab-case;
 ///   - with code `spec-outdated`, when the stored revision uses another
 ///     grammar;
@@ -107,7 +108,7 @@ use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, v
 ///     model's resolution is refused within the available rounds; the
 ///     slice's copy and the integration copy stay for inspection;
 ///   - a slice the adapter refuses or answers no acceptable report for.
-/// - Returns [`Error::ServerError`] when the adapter answers a task with
+/// - Returns [`omnia_sdk::ErrorKind::ServerError`] when the adapter answers a task with
 ///   an outcome of another kind, a report breaks the report gate, a
 ///   verdict breaks [`Verdict::findings`](emery_adapter::target::Verdict::findings),
 ///   a slice's working copy no longer sits on the head it was cut at, a
@@ -115,7 +116,7 @@ use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, v
 ///   initialisation's or a verification's changes seal as no commit, the
 ///   slices left to build wait on one another, or storage or version
 ///   control fails.
-/// - Returns [`Error::BadGateway`] when the adapter, its acquisition, the
+/// - Returns [`omnia_sdk::ErrorKind::BadGateway`] when the adapter, its acquisition, the
 ///   model, or the repository's remote fails upstream; a slice's build, a
 ///   conflict's resolution, or a wave's verification is put twice before it
 ///   does, as one the backend's time budget ended is; the initialisation,
@@ -125,14 +126,10 @@ use crate::{EntryKind, Files, RETRIES, describe, is_retryable, secrets, store, v
 /// names the slice, its wave, and the slices merged before it, those built
 /// beside it in its wave included. A failure at a wave's verification names
 /// the wave, the slices merged in it, and where the label stands.
-pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + Files>(
-    context: Context<P>, input: BuildInput,
-) -> Result<BuildOutput, Error> {
-    let provider = context.provider();
-
+pub async fn build(input: BuildInput) -> Result<BuildOutput, Error> {
     // the repository the build lands in, which holds the revision it builds
     let repo = BuildRepo::settle(&input.name, input.repository.as_deref())?;
-    let mut standing = store::current(provider, &repo).await?;
+    let mut standing = store::current(&repo).await?;
     let Some(current) = standing.current.take() else {
         return Err(store::not_generated(&standing).await);
     };
@@ -146,13 +143,13 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     let Loaded {
         id: adapter,
         metadata,
-    } = adapter::load_target(provider, &input.adapter, input.digest.as_ref()).await?;
+    } = adapter::load_target(&input.adapter, input.digest.as_deref()).await?;
 
     // the base, and what the label already holds over it
     let head = standing.head.as_deref().unwrap_or(&current.commit);
-    let base = repo.base(provider, head).await?;
+    let base = repo.base(head).await?;
     let label = store::label(&revision_id);
-    let labelled = repo.merged_under(provider, &label, &base, &revision_id).await?;
+    let labelled = repo.merged_under(&label, &base, &revision_id).await?;
     let (budget, budget_source) =
         BudgetSource::resolve(input.budget, input.budget_source, metadata.budget);
     let mut progress = Progress::start(&base, labelled);
@@ -160,10 +157,10 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         copy: integration,
         head,
         staged,
-    } = repo.cut_integration(provider, &progress.head, &revision_id).await?;
+    } = repo.cut_integration(&progress.head, &revision_id).await?;
     let schedule = Schedule::new(&revision.plan, &revision.spec, budget, &progress.merged, &staged);
     progress.stage(head, staged, schedule.resumed().to_vec());
-    let initialised = progress.initialise(provider, &repo, &integration, &adapter).await?;
+    let initialised = progress.initialise(&repo, &integration, &adapter).await?;
 
     let parts = revision.plan.waves();
     let waves = schedule.waves();
@@ -205,8 +202,8 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
         jobs: input.jobs,
     };
 
-    run.waves(provider, &mut progress).await?;
-    integration.remove(provider).await?;
+    run.waves(&mut progress).await?;
+    integration.remove().await?;
 
     Ok(BuildOutput {
         revision: revision_id,
@@ -247,7 +244,7 @@ pub struct BuildInput {
     /// bytes to it, stored or fetched. `None` trusts whatever the load
     /// resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub digest: Option<Digest>,
+    pub digest: Option<String>,
     /// The repository the plan is built into.
     ///
     /// A URL builds into a clone of it, from its default branch as the
@@ -447,9 +444,7 @@ pub(crate) struct Run<'a> {
 
 impl<'a> Run<'a> {
     // Wave by wave, until every slice is merged.
-    async fn waves<P: Model + Target + Vcs + Files>(
-        &self, provider: &P, progress: &mut Progress,
-    ) -> Result<(), Error> {
+    async fn waves(&self, progress: &mut Progress) -> Result<(), Error> {
         let schedule = self.schedule;
         let mut wave = 0;
         while schedule.unbuilt(&progress.merged).next().is_some() {
@@ -463,14 +458,14 @@ impl<'a> Run<'a> {
                 ));
             }
             wave += 1;
-            self.wave(provider, progress, wave, &ready).await?;
+            self.wave(progress, wave, &ready).await?;
         }
         Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(wave))]
-    async fn wave<P: Model + Target + Vcs + Files>(
-        &self, provider: &P, progress: &mut Progress, wave: usize, ready: &[&'a ScheduledSlice],
+    async fn wave(
+        &self, progress: &mut Progress, wave: usize, ready: &[&'a ScheduledSlice],
     ) -> Result<(), Error> {
         // a slice an earlier run staged is merged already; the rest build
         let mut merged = Vec::with_capacity(ready.len());
@@ -502,7 +497,7 @@ impl<'a> Run<'a> {
         let head = progress.head.clone();
         let mut builds = Vec::with_capacity(pending.len());
         for slice in pending.iter().copied() {
-            builds.push(self.build(provider, slice, &head, wave).map(move |built| (slice, built)));
+            builds.push(self.build_slice(slice, &head, wave).map(move |built| (slice, built)));
         }
         let mut outcomes: Vec<(&'a ScheduledSlice, Result<Built<'a>, Error>)> = if builds.is_empty()
         {
@@ -518,9 +513,9 @@ impl<'a> Run<'a> {
         let mut failed = None;
         for (slice, outcome) in outcomes {
             match outcome {
-                Ok(built) => match self.integrate(provider, progress, built, wave).await {
+                Ok(built) => match self.integrate(progress, built, wave).await {
                     Ok(()) => merged.push(slice.id),
-                    Err(error) => return Err(at_slice(error, slice, wave, &progress.built)),
+                    Err(error) => return Err(at_slice(&error, slice, wave, &progress.built)),
                 },
                 Err(error) => {
                     failed.get_or_insert((slice, error));
@@ -528,7 +523,7 @@ impl<'a> Run<'a> {
             }
         }
         if let Some((slice, error)) = failed {
-            return Err(at_slice(error, slice, wave, &progress.built));
+            return Err(at_slice(&error, slice, wave, &progress.built));
         }
         if merged.is_empty() {
             tracing::info!("nothing merged; the wave leaves the integrated head as it was");
@@ -537,15 +532,15 @@ impl<'a> Run<'a> {
 
         // the integrated tree, verified by the adapter and labelled
         merged.sort_unstable();
-        if let Err(error) = self.verify(provider, progress, wave, &merged).await {
-            return Err(at_wave(error, wave, &merged, self.label, progress.labelled.as_deref()));
+        if let Err(error) = self.verify(progress, wave, &merged).await {
+            return Err(at_wave(&error, wave, &merged, self.label, progress.labelled.as_deref()));
         }
         Ok(())
     }
 
     #[tracing::instrument(skip_all, fields(slice = %slice.id, name = %slice.name))]
-    async fn build<P: Target + Vcs>(
-        &self, provider: &P, slice: &'a ScheduledSlice, head: &str, wave: usize,
+    async fn build_slice(
+        &self, slice: &'a ScheduledSlice, head: &str, wave: usize,
     ) -> Result<Built<'a>, Error> {
         let part = self.schedule.part(slice.part).ok_or_else(|| {
             server_error!("slice `{}` names unknown part `{}`", slice.id, slice.part)
@@ -587,8 +582,8 @@ impl<'a> Run<'a> {
         let mut attempt = 0;
         let (worktree, outcome) = loop {
             attempt += 1;
-            let worktree = WorkingCopy::cut(provider, &self.repo.path(), &at, head).await?;
-            match Target::run(provider, self.adapter, worktree.path(), &task).await {
+            let worktree = WorkingCopy::cut(&self.repo.path(), &at, head).await?;
+            match target_adapter::run(self.adapter, worktree.path(), &task).await {
                 Ok(outcome) => break (worktree, outcome),
                 Err(error) if attempt < RETRIES && is_retryable(&error) => {
                     tracing::warn!(
@@ -596,7 +591,7 @@ impl<'a> Run<'a> {
                         description = %error.description(),
                         "build failed upstream or timed out; building again"
                     );
-                    worktree.remove(provider).await?;
+                    worktree.remove().await?;
                 }
                 Err(error) => return Err(error),
             }
@@ -639,15 +634,15 @@ impl<'a> Run<'a> {
     // under the adapter's rules, the paths they leave conflicted resolved
     // with the model and merged in their place. The slice's working copy is
     // removed once merged, and left for inspection when the slice fails.
-    async fn integrate<P: Model + Vcs + Files>(
-        &self, provider: &P, progress: &mut Progress, built: Built<'_>, wave: usize,
+    async fn integrate(
+        &self, progress: &mut Progress, built: Built<'_>, wave: usize,
     ) -> Result<(), Error> {
         let scheduled = built.slice;
         let part = built.part;
         let slice = scheduled.id;
 
         // the copy still sits where it was cut
-        let head = built.worktree.head(provider).await?;
+        let head = built.worktree.head().await?;
         if head != progress.head {
             return Err(server_error!(
                 "its working copy sits on `{head}`, not the `{}` it was cut at: the build sealed \
@@ -658,8 +653,8 @@ impl<'a> Run<'a> {
 
         // what the build changed, as the copy holds it rather than as the
         // report lists it, held to the seal gates before any of it is sealed
-        let pending = built.worktree.pending(provider).await?;
-        gated(provider, built.worktree.path(), "the build", &pending).await?;
+        let pending = built.worktree.pending().await?;
+        gated(built.worktree.path(), "the build", &pending).await?;
         let mut written: Vec<String> = pending.iter().map(|change| change.path.clone()).collect();
         written.sort_unstable();
 
@@ -679,11 +674,10 @@ impl<'a> Run<'a> {
 
         // the slice's commit merged under the rules; what they leave
         // conflicted is resolved with the model and merged in its place
-        let (commit, resolved) = match built.worktree.commit(provider, &message).await? {
+        let (commit, resolved) = match built.worktree.commit(&message).await? {
             None => (None, Vec::new()),
             Some(commit) => {
-                let merged =
-                    self.integration.merge(provider, &commit, &message, self.policy).await?;
+                let merged = self.integration.merge(&commit, &message, self.policy).await?;
                 if let Some(commit) = merged.commit {
                     (Some(commit), Vec::new())
                 } else {
@@ -694,12 +688,12 @@ impl<'a> Run<'a> {
                         message: &message,
                         paths: merged.conflicts,
                     };
-                    let (commit, resolved) = unresolved.resolve(self, provider, progress).await?;
+                    let (commit, resolved) = unresolved.resolve(self, progress).await?;
                     (Some(commit), resolved)
                 }
             }
         };
-        built.worktree.remove(provider).await?;
+        built.worktree.remove().await?;
 
         tracing::info!(
             slice = %slice,
@@ -726,8 +720,8 @@ impl<'a> Run<'a> {
 
     // Has the adapter verify the integrated tree, seals what its checks and
     // repairs left behind, and labels the head the wave reached.
-    async fn verify<P: Target + Vcs + Files>(
-        &self, provider: &P, progress: &mut Progress, wave: usize, merged: &[SliceId],
+    async fn verify(
+        &self, progress: &mut Progress, wave: usize, merged: &[SliceId],
     ) -> Result<(), Error> {
         // a verify that fails upstream or runs out of time is put again over
         // the same copy, since nothing of it is sealed until the verdict and
@@ -735,8 +729,7 @@ impl<'a> Run<'a> {
         let mut attempt = 0;
         let outcome = loop {
             attempt += 1;
-            match Target::run(provider, self.adapter, self.integration.path(), &Task::Verify).await
-            {
+            match target_adapter::run(self.adapter, self.integration.path(), &Task::Verify).await {
                 Ok(outcome) => break outcome,
                 Err(error) if attempt < RETRIES && is_retryable(&error) => {
                     tracing::warn!(
@@ -762,17 +755,17 @@ impl<'a> Run<'a> {
         if !verdict.passed {
             let failures: Vec<String> =
                 verdict.failures.iter().map(|failure| format!("- {failure}")).collect();
-            return Err(Error::BadRequest {
-                code: "verify-failed".into(),
-                description: format!("verification failed:\n{}", failures.join("\n")),
-            });
+            return Err(Error::bad_request(
+                "verify-failed",
+                format!("verification failed:\n{}", failures.join("\n")),
+            ));
         }
 
         // what the checks and their repairs left behind, held to the seal
         // gates and sealed as the wave's own commit
-        let pending = self.integration.pending(provider).await?;
+        let pending = self.integration.pending().await?;
         if !pending.is_empty() {
-            gated(provider, self.integration.path(), "the verification", &pending).await?;
+            gated(self.integration.path(), "the verification", &pending).await?;
             let ids: Vec<String> = merged.iter().map(ToString::to_string).collect();
             let message = format!(
                 "Wave {wave} verified\n\nRevision: {}\nAdapter: {}\nSlices: {}",
@@ -780,7 +773,7 @@ impl<'a> Run<'a> {
                 self.reference,
                 ids.join(", ")
             );
-            let Some(commit) = self.integration.commit(provider, &message).await? else {
+            let Some(commit) = self.integration.commit(&message).await? else {
                 return Err(server_error!(
                     "the verification left {} paths pending, yet sealing them made no commit",
                     pending.len()
@@ -800,8 +793,8 @@ impl<'a> Run<'a> {
             progress.sealed.push(Seal { wave, commit, paths });
         }
 
-        let head = self.integration.head(provider).await?;
-        self.repo.label(provider, self.label, &head).await?;
+        let head = self.integration.head().await?;
+        self.repo.label(self.label, &head).await?;
         tracing::info!(merged = merged.len(), %head, "wave verified");
         progress.verified.push(Verified {
             wave,
@@ -817,14 +810,14 @@ impl<'a> Run<'a> {
 // What stands at `path` beneath the working copy at `at`, walked a directory
 // at a time so no link on the way is followed; `None` when nothing does, or
 // something on the way is no directory.
-async fn kind_at<P: Files>(provider: &P, at: &str, path: &str) -> Result<Option<EntryKind>, Error> {
+async fn kind_at(at: &str, path: &str) -> Result<Option<EntryKind>, Error> {
     let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
     let Some((file, directories)) = segments.split_last() else {
         return Ok(None);
     };
     let mut directory = String::from(".");
     for segment in directories {
-        let entries = provider.list(at, &directory).await?;
+        let entries = files::list(at, &directory).await?;
         match entries.iter().find(|entry| entry.name == *segment) {
             Some(entry) if entry.kind == EntryKind::Directory => {}
             _ => return Ok(None),
@@ -832,23 +825,21 @@ async fn kind_at<P: Files>(provider: &P, at: &str, path: &str) -> Result<Option<
         directory =
             if directory == "." { (*segment).to_owned() } else { format!("{directory}/{segment}") };
     }
-    let entries = provider.list(at, &directory).await?;
+    let entries = files::list(at, &directory).await?;
     Ok(entries.into_iter().find(|entry| entry.name == *file).map(|entry| entry.kind))
 }
 
 // Has the adapter scaffold its layout into the tree at `at` and answers what
 // it left pending, held to the seal gates. Not put again on a failure
 // upstream: an init puts no turn, so a failure is the adapter's.
-async fn initialise<P: Target + Vcs + Files>(
-    provider: &P, adapter: &str, at: &str,
-) -> Result<Vec<Change>, Error> {
+async fn initialise(adapter: &str, at: &str) -> Result<Vec<Change>, Error> {
     tracing::info!(tree = at, "initialising");
-    let outcome = Target::run(provider, adapter, at, &Task::Init).await?;
+    let outcome = target_adapter::run(adapter, at, &Task::Init).await?;
     if outcome != Outcome::Initialised {
         return Err(server_error!("`{adapter}` answered {outcome} to {}", Task::Init));
     }
-    let pending = vcs::pending(provider, at).await?;
-    gated(provider, at, "the initialisation", &pending).await?;
+    let pending = vcs::pending(at).await?;
+    gated(at, "the initialisation", &pending).await?;
     tracing::info!(scaffolded = pending.len(), "initialised");
     Ok(pending)
 }
@@ -858,25 +849,23 @@ async fn initialise<P: Target + Vcs + Files>(
 // store's alone to write and a commit carrying one would rewrite the revision
 // its label names, then the secret gate. The specification guard reads
 // nothing, so it runs first and a refusal reads no file.
-async fn gated<P: Files>(
-    provider: &P, at: &str, wrote: &str, pending: &[Change],
-) -> Result<(), Error> {
+async fn gated(at: &str, wrote: &str, pending: &[Change]) -> Result<(), Error> {
     let rewritten: Vec<String> = pending
         .iter()
         .filter(|change| matches!(beneath(&change.path), Err(BadPath::Specification)))
         .map(|change| format!("- {}", change.path))
         .collect();
     if !rewritten.is_empty() {
-        return Err(Error::BadRequest {
-            code: "spec-rewritten".into(),
-            description: format!(
+        return Err(Error::bad_request(
+            "spec-rewritten",
+            format!(
                 "what {wrote} wrote touches `{SPECIFICATION}/`, where the sealed specification \
                  lives, so none of it is sealed:\n{}",
                 rewritten.join("\n")
             ),
-        });
+        ));
     }
-    let leaks = secrets::findings(provider, at, pending).await?;
+    let leaks = secrets::findings(at, pending).await?;
     if !leaks.is_empty() {
         return Err(secrets::refusal(wrote, &leaks));
     }
@@ -946,19 +935,19 @@ impl Progress {
     // `.gitignore` of the engine's own directory beside it where the layout
     // holds none, so a checkout of the result ignores `.emery/`. One
     // resumed from a slice was initialised by the run that merged it.
-    async fn initialise<P: Target + Vcs + Files>(
-        &mut self, provider: &P, repo: &BuildRepo, integration: &WorkingCopy, adapter: &str,
+    async fn initialise(
+        &mut self, repo: &BuildRepo, integration: &WorkingCopy, adapter: &str,
     ) -> Result<Option<Initialised>, Error> {
         if !self.merged.is_empty() || !self.staged.is_empty() {
             return Ok(None);
         }
-        let mut changes = initialise(provider, adapter, integration.path()).await?;
+        let mut changes = initialise(adapter, integration.path()).await?;
         let (path, content) = IGNORE;
         if repo.is_created()
             && !changes.iter().any(|change| change.path == path)
-            && kind_at(provider, integration.path(), path).await?.is_none()
+            && kind_at(integration.path(), path).await?.is_none()
         {
-            provider.write(integration.path(), path, content).await?;
+            files::write(integration.path(), path, content).await?;
             changes.push(Change {
                 path: path.to_owned(),
                 kind: ChangeKind::Added,
@@ -967,7 +956,7 @@ impl Progress {
         if changes.is_empty() {
             return Ok(None);
         }
-        let Some(commit) = integration.commit(provider, vcs::INITIALISE).await? else {
+        let Some(commit) = integration.commit(vcs::INITIALISE).await? else {
             return Err(server_error!(
                 "the initialisation left {} paths pending, yet sealing them made no commit",
                 changes.len()
@@ -993,7 +982,7 @@ pub(crate) struct Built<'a> {
 // A slice's failure keeps its class and code; the description gains the
 // slice it failed at, its wave, and the slices merged before it, which
 // stay committed in the integration working copy.
-fn at_slice(error: Error, slice: &ScheduledSlice, wave: usize, built: &[BuiltSlice]) -> Error {
+fn at_slice(error: &Error, slice: &ScheduledSlice, wave: usize, built: &[BuiltSlice]) -> Error {
     let ids: Vec<String> = built.iter().map(|built| built.id.to_string()).collect();
     let before = match ids.as_slice() {
         [] => String::new(),
@@ -1013,7 +1002,7 @@ fn at_slice(error: Error, slice: &ScheduledSlice, wave: usize, built: &[BuiltSli
 // A wave's failure keeps its class and code; the description gains the
 // wave, the slices merged in it, and where the label stands.
 fn at_wave(
-    error: Error, wave: usize, merged: &[SliceId], label: &str, labelled: Option<&str>,
+    error: &Error, wave: usize, merged: &[SliceId], label: &str, labelled: Option<&str>,
 ) -> Error {
     let ids: Vec<String> = merged.iter().map(ToString::to_string).collect();
     let merged = match ids.as_slice() {

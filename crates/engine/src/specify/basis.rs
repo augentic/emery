@@ -775,7 +775,7 @@ impl<'a> Basis<'a> {
     // sources' `contract` claims.
     #[must_use]
     pub fn requirement(&self, scenarios: Vec<Scenario>) -> Requirement {
-        let body = self.statement().map(|statement| vec![statement.to_owned()]).unwrap_or_default();
+        let body = self.statement().map_or_default(|statement| vec![statement.to_owned()]);
         let noted: &[Vec<Contributor<'a>>] = match self.status {
             Status::Agreed | Status::Unknown => &[],
             Status::Divergence => &self.classes[1..],

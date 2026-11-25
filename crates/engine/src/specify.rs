@@ -63,7 +63,7 @@ use crate::{Rank, apply, preopen_path, store, vcs};
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the run is refused:
+/// - Returns [`omnia_sdk::ErrorKind::BadRequest`] when the run is refused:
 ///   - an empty source list, with code `specify-source-required`;
 ///   - an amendment standing staged, with code `amendment-pending`;
 ///   - a current revision that amends an earlier one, without
@@ -85,11 +85,11 @@ use crate::{Rank, apply, preopen_path, store, vcs};
 ///   - a source that refuses its input;
 ///   - sources that between them contribute no requirement claim;
 ///   - a synthesis or slicing answer that cannot be accepted.
-/// - Returns [`Error::NotFound`] with code `revision-not-found` when a
+/// - Returns [`omnia_sdk::ErrorKind::NotFound`] with code `revision-not-found` when a
 ///   repository, or the revision a source reads it at, does not exist.
-/// - Returns [`Error::ServerError`] when evidence has [`Evidence::findings`],
+/// - Returns [`omnia_sdk::ErrorKind::ServerError`] when evidence has [`Evidence::findings`],
 ///   or serialisation, storage, or version control fails.
-/// - Returns [`Error::BadGateway`] when an adapter, its acquisition, the
+/// - Returns [`omnia_sdk::ErrorKind::BadGateway`] when an adapter, its acquisition, the
 ///   model, or a repository's remote fails upstream.
 /// - Returns what [`apply`](crate::apply::apply) fails with reading the
 ///   target's repository, before any adapter loads, and sealing the
@@ -127,7 +127,7 @@ pub async fn specify(input: SpecifyInput) -> Result<SpecifyOutput, Error> {
 
     // the slicing owns the design's data types alone, so it follows the design
     let (drafts, (design, plan)) = future::try_join(
-        future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge())),
+        future::try_join_all(chunks.into_iter().map(super::brief::Brief::judge)),
         async {
             let design = DesignBrief::new(&extracts, &bases).judge().await?;
             let plan = PartBrief::new(&bases, Types::of(&design)).derive().await?;
@@ -375,7 +375,7 @@ impl<'a> Bound<'a> {
             }
             bound.push(Self {
                 adapter: &source.adapter,
-                digest: source.digest.as_ref(),
+                digest: source.digest.as_deref(),
                 repository: source.repository.as_ref(),
                 rank: source.rank,
                 scope: source.scope,

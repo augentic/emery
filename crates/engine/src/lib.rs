@@ -31,7 +31,8 @@ use std::path::{Component, Path, PathBuf};
 pub use adapter::{AdapterRef, Axis};
 pub use authority::Rank;
 pub use files::{Entry, EntryKind};
-use omnia_sdk::{Error, ErrorKind, bad_request};
+use omnia_sdk::{Error, bad_request};
+pub use omnia_sdk::ErrorKind;
 pub use store::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 
 // How many times a question to the model, a slice's build, or a wave's
@@ -54,14 +55,14 @@ const REJECTED: &str = "## Previous answer (rejected)";
 #[must_use]
 pub fn is_retryable(error: &Error) -> bool {
     match error.kind() {
-        ErrorKind::BadGateway => true,
-        ErrorKind::BadRequest => {
+        omnia_sdk::ErrorKind::BadGateway => true,
+        omnia_sdk::ErrorKind::BadRequest => {
             let description = error.description();
             description.contains("budget exhausted")
                 && description.contains("timed out")
                 && !description.contains(REJECTED)
         }
-        ErrorKind::NotFound | ErrorKind::ServerError | ErrorKind::Conflict => false,
+        _ => false,
     }
 }
 
@@ -91,7 +92,7 @@ pub fn is_retryable(error: &Error) -> bool {
 ///
 /// # Errors
 ///
-/// Returns [`Error::BadRequest`] for an absolute path, or a relative path that
+/// Returns [`omnia_sdk::ErrorKind::BadRequest`] for an absolute path, or a relative path that
 /// escapes above the project root.
 pub fn preopen_path(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
     let path = path.as_ref();
@@ -117,13 +118,13 @@ pub fn preopen_path(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::BadRequest`] when the joined path escapes the project root.
+/// Returns [`omnia_sdk::ErrorKind::BadRequest`] when the joined path escapes the project root.
 pub fn preopen_join(base: impl AsRef<Path>, relative: impl AsRef<Path>) -> Result<PathBuf, Error> {
     preopen_path(base.as_ref().join(relative))
 }
 
 // The error with its description rewritten and its class and code kept, so
 // a failure gains where it happened without losing what it was.
-pub(crate) fn describe(error: Error, rewrite: impl FnOnce(String) -> String) -> Error {
-    Error::new(error.kind(), error.code(), rewrite(error.description().into_owned()))
+pub(crate) fn describe(error: &Error, rewrite: impl FnOnce(String) -> String) -> Error {
+    Error::new(error.kind(), error.code(), rewrite(error.description().to_owned()))
 }

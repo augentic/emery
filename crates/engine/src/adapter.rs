@@ -49,7 +49,7 @@ impl Axis {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BadRequest`] when `exports` lacks the axis's
+    /// Returns [`omnia_sdk::ErrorKind::BadRequest`] when `exports` lacks the axis's
     /// [`interface`](Self::interface), naming the reference and the
     /// interface it lacks.
     pub fn require(self, reference: &AdapterRef, exports: &[String]) -> Result<(), Error> {
@@ -71,7 +71,7 @@ impl Axis {
 /// package name, which a run binds a source under when the operator gives
 /// none; [`guest`] is the name the adapter loads and dispatches as, the
 /// reference without its version. A malformed reference parses as
-/// [`Error::BadRequest`] with code `adapter-reference`.
+/// [`omnia_sdk::ErrorKind::BadRequest`] with code `adapter-reference`.
 ///
 /// [`name`]: Self::name
 /// [`guest`]: Self::guest
@@ -204,14 +204,14 @@ pub struct Loaded<M> {
 pub async fn load<'a>(
     adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a str>)>,
 ) -> Result<BTreeMap<AdapterRef, Loaded<SourceMetadata>>, Error> {
-    load_axis(Axis::Source, adapters, |id| source_adapter::metadata(id)).await
+    load_axis(Axis::Source, adapters, source_adapter::metadata).await
 }
 
 pub async fn load_target(
     adapter: &AdapterRef, digest: Option<&str>,
 ) -> Result<Loaded<TargetMetadata>, Error> {
     let loaded =
-        load_axis(Axis::Target, [(adapter, digest)], |id| target_adapter::metadata(id)).await?;
+        load_axis(Axis::Target, [(adapter, digest)], target_adapter::metadata).await?;
     loaded.into_values().next().ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))
 }
 
@@ -253,7 +253,7 @@ async fn load_axis<'a, M: Declared>(
 
     // load all adapters in parallel
     let loaders = pins.iter().map(|(adapter, pin)| async move {
-        acquire(adapter, pin.as_deref()).await.map_err(|error| at_adapter(error, adapter))
+        acquire(adapter, pin.as_deref()).await.map_err(|error| at_adapter(&error, adapter))
     });
     let handles = future::try_join_all(loaders).await?;
 
@@ -264,7 +264,7 @@ async fn load_axis<'a, M: Declared>(
     let mut loaded = BTreeMap::new();
     for (adapter, plugin) in pins.into_keys().zip(handles) {
         axis.require(adapter, &plugin.exports)?;
-        let id = plugin.name.clone();
+        let id = plugin.name;
         let metadata = metadata(&id);
         if let Some(declared) = metadata.emery_version() {
             require_version(&id, declared, &version)?;
@@ -315,7 +315,7 @@ fn distinct<'a>(
 
 // The loader's refusal, as the entry that failed: class and code kept, the
 // adapter named.
-fn at_adapter(error: Error, adapter: &AdapterRef) -> Error {
+fn at_adapter(error: &Error, adapter: &AdapterRef) -> Error {
     crate::describe(error, |description| format!("adapter `{adapter}`: {description}"))
 }
 

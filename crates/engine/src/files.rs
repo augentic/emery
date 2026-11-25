@@ -35,7 +35,7 @@ pub enum EntryKind {
 ///
 /// # Errors
 ///
-/// Returns [`Error::ServerError`] when `path` holds neither, a directory
+/// Returns [`omnia_sdk::ErrorKind::ServerError`] when `path` holds neither, a directory
 /// or nothing at all, or what it holds cannot be read.
 pub async fn read(at: &str, path: &str) -> Result<Vec<u8>, Error> {
     let outcome = carried(&Path::new(at).join(path))
@@ -47,7 +47,7 @@ pub async fn read(at: &str, path: &str) -> Result<Vec<u8>, Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::ServerError`] when `path` is no directory or cannot
+/// Returns [`omnia_sdk::ErrorKind::ServerError`] when `path` is no directory or cannot
 /// be read.
 pub async fn list(at: &str, path: &str) -> Result<Vec<Entry>, Error> {
     let outcome = listed(&Path::new(at).join(path))
@@ -59,7 +59,7 @@ pub async fn list(at: &str, path: &str) -> Result<Vec<Entry>, Error> {
 ///
 /// # Errors
 ///
-/// Returns [`Error::ServerError`] when a link stands at the path or on
+/// Returns [`omnia_sdk::ErrorKind::ServerError`] when a link stands at the path or on
 /// the way to it, a file stands where a directory is needed, or the
 /// file cannot be written.
 pub async fn write(at: &str, path: &str, bytes: &[u8]) -> Result<(), Error> {

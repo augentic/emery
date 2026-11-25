@@ -36,12 +36,12 @@ use crate::vcs::TargetRef;
 ///
 /// # Errors
 ///
-/// - Returns [`Error::NotFound`] with code `spec-not-generated` when the
+/// - Returns [`omnia_sdk::ErrorKind::NotFound`] with code `spec-not-generated` when the
 ///   repository holds no revision, naming a staged candidate where one
 ///   stands, and with code `nothing-staged` when [`ShowInput::staged`] is
 ///   set and no candidate is staged, or the amendment is asked for and none
 ///   is staged.
-/// - Returns [`Error::BadRequest`] with code `build-target-required` when
+/// - Returns [`omnia_sdk::ErrorKind::BadRequest`] with code `build-target-required` when
 ///   no target names the repository and the candidate is not asked for,
 ///   when [`ShowInput::staged`] is set for the
 ///   [`Schedule`](Artifact::Schedule), with code `amendment-pending` when a
@@ -49,7 +49,7 @@ use crate::vcs::TargetRef;
 ///   stands there, with code `spec-outdated` when the document read uses a
 ///   different grammar, and the classes [`apply`](crate::apply::apply)
 ///   reads the repository under otherwise.
-/// - Returns [`Error::ServerError`] when storage, validation, or serialisation
+/// - Returns [`omnia_sdk::ErrorKind::ServerError`] when storage, validation, or serialisation
 ///   fails.
 pub async fn show(input: ShowInput) -> Result<ShowOutput, Error> {
     if input.artifact == Artifact::Amendment {
