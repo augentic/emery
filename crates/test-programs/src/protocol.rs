@@ -53,6 +53,16 @@ pub struct ExtractScenario {
     pub omit_extract_prompt: bool,
 }
 
+/// Dispatch payload for `sdk_survey`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "mode", content = "scenario", rename_all = "snake_case")]
+pub enum SurveyCommand {
+    /// Run `survey::surfaces`.
+    Surfaces(SurveyScenario),
+    /// Run `survey::seams`.
+    Seams(SeamsScenario),
+}
+
 /// A `survey::surfaces` driver scenario.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SurveyScenario {
@@ -67,6 +77,95 @@ pub struct SurveyScenario {
     /// Whether the guest omits `survey.md` from embedded prose.
     #[serde(default)]
     pub omit_survey_prompt: bool,
+}
+
+/// A `survey::seams` driver scenario.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SeamsScenario {
+    /// The adapter id passed to `Context`.
+    pub adapter_id: String,
+    /// The source input passed to `Context`.
+    pub input: InputSpec,
+    /// Which hand-built tree the guest constructs over the mounted root.
+    pub tree: SeamsTree,
+}
+
+/// How a `SeamsTree::Service` bootstrap runs.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BootstrapSpec {
+    /// `Runs::Load`.
+    Load,
+    /// `Runs::Script`.
+    Script {
+        /// Console script name.
+        name: String,
+        /// Entry function name.
+        function: String,
+    },
+    /// `Runs::Guard`.
+    Guard,
+}
+
+/// Named `Tree<Stub>` fixture built inside `sdk_survey`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SeamsTreeKind {
+    /// Two-module `TypeScript` tree with `@Processor("nightly")` on `Nightly`.
+    ClassDecorator,
+    /// Single-module `TypeScript` tree exporting a function, a data class, and a plain class.
+    ExportsDeclared,
+    /// Six-module `TypeScript` tree with an unresolved import and dynamic loads.
+    ByStemLoaded,
+    /// Six-module Python package under `./shop` with barrels and no manifest.
+    ByDirectoryPackage,
+    /// Single 10,000-line `TypeScript` module at `main.ts`.
+    OneModule,
+    /// Two-module Python handler tree exercising bound call steps.
+    Handling,
+}
+
+/// Tree fixture configuration for `SeamsScenario`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "fixture", rename_all = "snake_case")]
+pub enum SeamsTree {
+    /// Six-module `TypeScript` service with manifest, data files, and tests.
+    Service {
+        /// Optional bootstrap entry on `src/main.ts`.
+        #[serde(default)]
+        bootstrap: Option<BootstrapSpec>,
+    },
+    /// One of the fixed tree shapes.
+    Fixed {
+        /// Fixed tree shape selector.
+        kind: SeamsTreeKind,
+    },
+}
+
+/// Serialised `Seam` returned by `sdk_survey` in `seams` mode.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SeamOutcome {
+    /// Brief text leading the seam.
+    pub text: String,
+    /// Workspace-relative file paths in order.
+    pub files: Vec<String>,
+    /// Stems subject claim ids lead with.
+    pub stems: Vec<String>,
+    /// Anchors `requirement` claims overlap.
+    pub anchors: Vec<String>,
+    /// Extra terms held in the seam's `Lexicon`.
+    pub terms: Vec<String>,
+}
+
+/// Successful payload returned by `sdk_survey` in `seams` mode.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SeamsOutcome<C> {
+    /// Cut seams in order.
+    pub seams: Vec<SeamOutcome>,
+    /// Parsed `type` claims in order.
+    pub types: Vec<C>,
+    /// Derived `contract` claims in order.
+    pub contracts: Vec<C>,
 }
 
 /// The source half of a scenario.

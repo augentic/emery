@@ -1,17 +1,17 @@
 //! Runs SDK driver guests under [`Deployment`] and parses their JSON stdout.
 
-use emery_adapter::source::Evidence;
+use emery_adapter::source::{Claim, Evidence};
 use emery_adapter::target::Verdict;
-use emery_sdk::Error;
-use emery_sdk::survey::Inventory;
+use emery_sdk::survey::{Inventory, Survey};
+use emery_sdk::{Error, Lexicon, Seam};
 use omnia::{ExitStatus, Mount};
 use omnia_sdk::ErrorKind;
 use omnia_test::host::{Backends, Deployment, Scratch, precompiled, scratch};
 use omnia_wasi_model::{ModelClient, WasiModel};
 use serde::de::DeserializeOwned;
 use test_programs::protocol::{
-    ExtractScenario, InputSpec, Response, SurveyScenario, VERIFY_WORKSPACE, VerifyOutcome,
-    VerifyScenario, WorkspaceInput,
+    ExtractScenario, InputSpec, Response, SeamsOutcome, SeamsScenario, SurveyCommand,
+    SurveyScenario, VERIFY_WORKSPACE, VerifyOutcome, VerifyScenario, WorkspaceInput,
 };
 
 /// An [`extract`] run: parsed stdout and the model handle for assertions.
@@ -30,6 +30,14 @@ pub struct SurveyRun {
     pub stdout: String,
     /// Captured stdout for turn-shape assertions.
     pub raw_stdout: String,
+}
+
+/// A [`survey::seams`](emery_sdk::survey::seams) run.
+pub struct SeamsRun {
+    /// Parsed driver response.
+    pub response: Response<SeamsOutcome<Claim>>,
+    /// Standard output as UTF-8.
+    pub stdout: String,
 }
 
 /// A [`target::verify`](emery_sdk::target::verify) run.
@@ -73,6 +81,31 @@ pub async fn survey<M: ModelClient + Clone + 'static>(
     }
 }
 
+/// Runs the seams driver over a fresh scratch tree with `scenario` and `model`.
+pub async fn seams<M: ModelClient + Clone + 'static>(
+    scenario: &SeamsScenario, model: M,
+) -> SeamsRun {
+    let project = scratch();
+    seams_in(&project, scenario, model).await
+}
+
+/// Runs the seams driver over `project` with `scenario` and `model`.
+pub async fn seams_in<M: ModelClient + Clone + 'static>(
+    project: &Scratch, scenario: &SeamsScenario, model: M,
+) -> SeamsRun {
+    stage_workspace(project, workspace_of(&scenario.input));
+    let command = SurveyCommand::Seams(scenario.clone());
+    let arg = serde_json::to_string(&command).expect("scenario serialises");
+    let (response, stdout) = drive_mount::<SeamsOutcome<Claim>, _>(
+        test_programs::SDK_SURVEY,
+        project.mount(false),
+        &arg,
+        model,
+    )
+    .await;
+    SeamsRun { response, stdout }
+}
+
 /// Runs the verify driver over writable `project` with `scenario` and `model`.
 pub async fn verify<M: ModelClient + Clone + 'static>(
     project: &Scratch, scenario: &VerifyScenario, model: M,
@@ -113,7 +146,8 @@ pub async fn drive_mount<T: DeserializeOwned, M: ModelClient + Clone + 'static>(
 fn stage_survey(scenario: &SurveyScenario) -> (Scratch, String) {
     let project = scratch();
     stage_workspace(&project, workspace_of(&scenario.input));
-    (project, serde_json::to_string(scenario).expect("scenario serialises"))
+    let command = SurveyCommand::Surfaces(scenario.clone());
+    (project, serde_json::to_string(&command).expect("scenario serialises"))
 }
 
 fn stage_workspace(project: &Scratch, workspace: Option<&WorkspaceInput>) {
@@ -168,6 +202,41 @@ impl SurveyRun {
                 code, description, ..
             } => {
                 panic!("expected inventory, got `{code}`: {description}");
+            }
+        }
+    }
+
+    /// Returns the error on refusal.
+    #[track_caller]
+    pub fn error(self) -> Error {
+        error_from_response(self.response)
+    }
+}
+
+impl SeamsRun {
+    /// Returns the survey on success.
+    #[track_caller]
+    pub fn survey(self) -> Survey {
+        match self.response {
+            Response::Ok { value } => Survey {
+                seams: value
+                    .seams
+                    .into_iter()
+                    .map(|seam| Seam {
+                        text: seam.text,
+                        files: seam.files,
+                        stems: seam.stems,
+                        anchors: seam.anchors,
+                        lexicon: Lexicon::with(seam.terms),
+                    })
+                    .collect(),
+                types: value.types,
+                contracts: value.contracts,
+            },
+            Response::Err {
+                code, description, ..
+            } => {
+                panic!("expected survey, got `{code}`: {description}");
             }
         }
     }

@@ -7,6 +7,8 @@ pub mod protocol;
 
 #[cfg(target_arch = "wasm32")]
 pub mod helpers;
+#[cfg(target_arch = "wasm32")]
+pub mod seams;
 
 #[cfg(not(target_arch = "wasm32"))]
 include!(concat!(env!("OUT_DIR"), "/gen.rs"));

@@ -1,34 +1,25 @@
 //! Tests `survey::seams` surface discovery and seam cutting over hand-built trees.
 
+#![cfg(not(target_arch = "wasm32"))]
+
 mod support;
 
-use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
+use emery_sdk::survey::Survey;
 use emery_sdk::survey::code::{
-    Arg, Assigned, Assignment, Binding, BindingKind, Call, Callee, EnvRead, ExportKind, Init,
-    Listing, Manifest, MemberKind, Parsed, Runs, Scalar, Scope, Tree, Use,
+    Assigned, Assignment, Binding, BindingKind, ExportKind, Init, MemberKind, Scalar, Scope, Use,
 };
-use emery_sdk::survey::resolve::Target;
-use emery_sdk::survey::{Lines, Survey};
-use emery_sdk::{ClaimKind, Context, Doc, Error, Evidence, Lexicon, SourceInput, Trigger};
-use omnia_test::guest::ScriptedModel;
+use emery_sdk::{ClaimKind, Evidence, Lexicon, Trigger};
+use omnia_test::host::{ScriptedModel, scratch};
+use support::harness::{SeamsRun, seams, seams_in};
 use support::{
-    PYTHON, Plain, Stub, TYPESCRIPT, binding, call, callee, class, class_decl, decorated, dynamic,
-    export, from_module, from_package, function, line, literal, member, module, name, named_import,
-    path, reference, span, tree, value, write,
+    PYTHON, TYPESCRIPT, call, callee, class_decl, export, from_module, from_package, function,
+    line, member, module, span, value,
 };
-
-const PROSE: &[Doc] = &[
-    Doc {
-        path: "survey.md",
-        body: "SURVEY",
-    },
-    Doc {
-        path: "extract.md",
-        body: "SYSTEM",
-    },
-];
+use test_programs::protocol::{
+    BootstrapSpec, FileSpec, InputSpec, SeamsScenario, SeamsTree, SeamsTreeKind, WorkspaceInput,
+};
 
 const NO_SURFACE: &str = "No surface was found in this source: its survey named no route, command, \
                           job, consumer, or exported API — no handler registered with a package, \
@@ -47,175 +38,62 @@ fn pad(lines: usize) -> String {
     "// pad..\n".repeat(lines)
 }
 
+fn file(path: &str, body: impl Into<String>) -> FileSpec {
+    FileSpec {
+        path: path.to_owned(),
+        body: body.into(),
+    }
+}
+
 // A service of six modules, a manifest, two data files, and two tests. The
 // registration in `src/routes/orders.ts` and the decorator in `src/ctl.ts`
 // locate a surface each; `src/ctl.ts` imports what no module answers. A
 // large tree pads `src/store.ts` past the inline budget.
-fn service(large: bool, bootstrap: Option<Runs>) -> (tempfile::TempDir, SourceInput, Tree<Stub>) {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    write(root, "package.json", "{\"name\":\"svc\"}\n");
-    write(root, "src/main.ts", &pad(4));
-    write(root, "src/routes/orders.ts", &pad(6));
-    write(root, "src/store.ts", &if large { pad(10_003) } else { pad(3) });
-    write(root, "src/ctl.ts", &pad(8));
-    write(
-        root,
-        "src/config.ts",
-        "const PORT = process.env.PORT;\nexport const config = { PORT };\nexport const LIMITS = \
-         {\n  pageSize: 20,\n};\n",
-    );
-    write(root, "src/data.ts", &pad(2));
-    write(root, "src/jobs/nightly.ts", &pad(2));
-    write(root, "data/small.json", "{\"a\":1}\n");
-    write(root, "data/big.json", &format!("[{}]", "1,".repeat(4_500)));
-    write(root, "tests/orders.test.ts", &pad(2));
-    write(root, "tests/loose.test.ts", &pad(1));
-
-    let listing = Listing {
-        modules: [
-            "src/main.ts",
-            "src/routes/orders.ts",
-            "src/store.ts",
-            "src/ctl.ts",
-            "src/config.ts",
-            "src/data.ts",
-            "src/jobs/nightly.ts",
-        ]
-        .map(str::to_owned)
-        .to_vec(),
-        data: ["data/small.json", "data/big.json"].map(str::to_owned).to_vec(),
-        tests: ["tests/orders.test.ts", "tests/loose.test.ts"].map(str::to_owned).to_vec(),
-    };
-    let parsed = Parsed::read(root, &TYPESCRIPT, listing, |path, text| {
-        let lines = u32::try_from(text.lines().count()).expect("a short file");
-        let mut m = module(path, lines);
-        m.0.text = text;
-        fill(&mut m);
-        m
-    });
-    let stub = Stub {
-        manifest: Manifest {
-            name: Some("svc".to_owned()),
-            says: vec!["names the package `svc`".to_owned(), "`main` is `src/main.ts`".to_owned()],
-            entries: vec!["src/main.ts".to_owned()],
-        },
-        bootstrap: bootstrap.map(|runs| ("src/main.ts".to_owned(), runs)),
-        mounts: BTreeMap::new(),
-    };
-    let tree = parsed.settle(stub);
-    let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
-    (tmp, input, tree)
-}
-
-fn fill(m: &mut Plain) {
-    let module = &mut m.0;
-    match module.path.as_str() {
-        "src/main.ts" => {
-            module.imports = vec![
-                from_module("orders", "src/routes/orders.ts"),
-                from_module("config", "src/config.ts"),
-            ];
-            module.references = vec![reference("orders", 2), reference("config", 3)];
-            module.bindings = vec![function("main", line(4))];
-            module.exports = vec![export("main", ExportKind::Function, line(4))];
-        }
-        "src/routes/orders.ts" => {
-            module.imports =
-                vec![from_package("express", "express"), from_module("Store", "src/store.ts")];
-            module.bindings = vec![
-                value("app", Some(&["express"]), Some(0), None, Init::Construction, line(2)),
-                function("list", span(4, 6)),
-            ];
-            module.calls = vec![
-                call(callee("express", &[]), Vec::new(), Use::Consumed, line(2)),
-                call(
-                    callee("app", &["get"]),
-                    vec![literal("/orders", line(3)), name(&["list"], line(3))],
-                    Use::Discarded,
-                    line(3),
+fn service(large: bool, bootstrap: Option<BootstrapSpec>) -> SeamsScenario {
+    SeamsScenario {
+        adapter_id: "source:probe".to_owned(),
+        input: InputSpec::Workspace(WorkspaceInput {
+            name: "svc".to_owned(),
+            subpath: None,
+            files: vec![
+                file("package.json", "{\"name\":\"svc\"}\n"),
+                file("src/main.ts", pad(4)),
+                file("src/routes/orders.ts", pad(6)),
+                file("src/store.ts", if large { pad(10_003) } else { pad(3) }),
+                file("src/ctl.ts", pad(8)),
+                file(
+                    "src/config.ts",
+                    "const PORT = process.env.PORT;\nexport const config = { PORT };\nexport \
+                     const LIMITS = {\n  pageSize: 20,\n};\n",
                 ),
-            ];
-            module.references =
-                vec![reference("app", 3), reference("list", 3), reference("Store", 5)];
-        }
-        "src/store.ts" => {
-            module.bindings = vec![class("Store", &[], span(1, 3))];
-            module.exports = vec![export("Store", ExportKind::Class, span(1, 3))];
-            module.classes = vec![class_decl(
-                "Store",
-                "export class Store",
-                span(1, 3),
-                vec![member("find", MemberKind::Method, "find(id: string): Order", line(2))],
-            )];
-        }
-        "src/ctl.ts" => {
-            module.imports = vec![
-                from_package("Get", "@nestjs/common"),
-                from_package("UseGuards", "@nestjs/common"),
-                named_import("x", "@alias/x", Target::Unresolved("@alias/x".to_owned())),
-            ];
-            module.bindings = vec![class("Ctl", &[], span(2, 8))];
-            module.exports = vec![export("Ctl", ExportKind::Class, span(2, 8))];
-            module.decorated = vec![
-                decorated(
-                    Some("Ctl"),
-                    Some("list"),
-                    &["Get"],
-                    Some("/items"),
-                    span(3, 4),
-                    span(3, 5),
-                ),
-                decorated(Some("Ctl"), Some("other"), &["UseGuards"], None, line(6), span(6, 7)),
-            ];
-            module.classes = vec![class_decl(
-                "Ctl",
-                "export class Ctl",
-                span(2, 8),
-                vec![
-                    member("list", MemberKind::Method, "list()", span(4, 5)),
-                    member("other", MemberKind::Method, "other()", line(7)),
-                ],
-            )];
-        }
-        "src/config.ts" => {
-            module.env = vec![EnvRead {
-                key: "PORT".to_owned(),
-                lines: line(1),
-            }];
-            module.bindings = vec![value("LIMITS", None, None, None, Init::Literal, span(3, 5))];
-            module.exports = vec![export("config", ExportKind::Value, line(2))];
-        }
-        "src/data.ts" => {
-            module.imports = vec![
-                named_import(
-                    "small",
-                    "./data/small.json",
-                    Target::Data("data/small.json".to_owned()),
-                ),
-                named_import("big", "./data/big.json", Target::Data("data/big.json".to_owned())),
-            ];
-        }
-        "tests/orders.test.ts" => {
-            module.imports = vec![from_module("list", "src/routes/orders.ts")];
-            module.references = vec![reference("lists_orders", 1)];
-        }
-        "tests/loose.test.ts" => {
-            module.references = vec![reference("runs", 1)];
-        }
-        _ => {}
+                file("src/data.ts", pad(2)),
+                file("src/jobs/nightly.ts", pad(2)),
+                file("data/small.json", "{\"a\":1}\n"),
+                file("data/big.json", format!("[{}]", "1,".repeat(4_500))),
+                file("tests/orders.test.ts", pad(2)),
+                file("tests/loose.test.ts", pad(1)),
+            ],
+        }),
+        tree: SeamsTree::Service { bootstrap },
     }
 }
 
-async fn run(
-    model: &ScriptedModel, input: &SourceInput, tree: &Tree<Stub>,
-) -> Result<Survey, Error> {
-    let ctx = Context {
-        adapter_id: "source:probe",
-        input,
-        model,
-    };
-    emery_sdk::survey::seams(&ctx, PROSE, tree).await
+fn fixed_workspace(
+    name: &str, subpath: Option<&str>, files: Vec<FileSpec>, kind: SeamsTreeKind,
+) -> SeamsScenario {
+    SeamsScenario {
+        adapter_id: "source:probe".to_owned(),
+        input: InputSpec::Workspace(WorkspaceInput {
+            name: name.to_owned(),
+            subpath: subpath.map(str::to_owned),
+            files,
+        }),
+        tree: SeamsTree::Fixed { kind },
+    }
+}
+
+async fn run(model: &ScriptedModel, scenario: &SeamsScenario) -> SeamsRun {
+    seams(scenario, model.clone()).await
 }
 
 fn files(survey: &Survey, index: usize) -> Vec<&str> {
@@ -228,10 +106,10 @@ fn files(survey: &Survey, index: usize) -> Vec<&str> {
 // inlines the manifest and the bootstrap first.
 #[tokio::test]
 async fn facts_laid() {
-    let (_tmp, input, tree) = service(false, Some(Runs::Load));
+    let scenario = service(false, Some(BootstrapSpec::Load));
     let model = ScriptedModel::answering([BOTH]);
 
-    run(&model, &input, &tree).await.expect("surveyed");
+    run(&model, &scenario).await.survey();
 
     let user = &model.seen()[0].messages[0];
     for fact in [
@@ -279,10 +157,10 @@ async fn facts_laid() {
 // spell; the `type` claims are the reached modules' exports.
 #[tokio::test]
 async fn whole_tree() {
-    let (_tmp, input, tree) = service(false, Some(Runs::Load));
+    let scenario = service(false, Some(BootstrapSpec::Load));
     let model = ScriptedModel::answering([BOTH]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     assert_eq!(survey.seams.len(), 1);
     let seam = &survey.seams[0];
@@ -369,10 +247,10 @@ async fn whole_tree() {
 // each anchored and spelled under the dialect's class syntax.
 #[tokio::test]
 async fn types_anchored() {
-    let (_tmp, input, tree) = service(false, Some(Runs::Load));
+    let scenario = service(false, Some(BootstrapSpec::Load));
     let model = ScriptedModel::answering([BOTH]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     let types: Vec<(String, String, String)> = survey
         .types
@@ -411,10 +289,10 @@ async fn types_anchored() {
 // none. `join` puts them after the parsed types and drops the model's.
 #[tokio::test]
 async fn contracts_routed() {
-    let (_tmp, input, tree) = service(false, Some(Runs::Load));
+    let scenario = service(false, Some(BootstrapSpec::Load));
     let model = ScriptedModel::answering([BOTH]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     let contracts: Vec<[Option<&str>; 4]> = survey
         .contracts
@@ -477,19 +355,23 @@ async fn contracts_routed() {
 async fn bootstrap_runs() {
     for (runs, said, how) in [
         (
-            Runs::Script {
+            BootstrapSpec::Script {
                 name: "svc".to_owned(),
                 function: "main".to_owned(),
             },
             "the console script `svc` calls its `main()`",
             "run by the console script `svc`, which calls `main()`",
         ),
-        (Runs::Guard, "it runs under its `__main__` guard", "run under its `__main__` guard"),
+        (
+            BootstrapSpec::Guard,
+            "it runs under its `__main__` guard",
+            "run under its `__main__` guard",
+        ),
     ] {
-        let (_tmp, input, tree) = service(false, Some(runs));
+        let scenario = service(false, Some(runs));
         let model = ScriptedModel::answering([BOTH]);
 
-        let survey = run(&model, &input, &tree).await.expect("surveyed");
+        let survey = run(&model, &scenario).await.survey();
 
         let user = &model.seen()[0].messages[0];
         let sentence = format!("is `src/main.ts`: {said}. It is the caller's `start` surface");
@@ -500,12 +382,12 @@ async fn bootstrap_runs() {
         model.assert_exhausted();
     }
 
-    let (_tmp, input, tree) = service(false, None);
+    let scenario = service(false, None);
     let model = ScriptedModel::answering([
         r#"{"surfaces":[],"unreached":["src/main.ts","src/routes/orders.ts","src/ctl.ts"]}"#,
     ]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     let user = &model.seen()[0].messages[0];
     assert!(
@@ -557,13 +439,13 @@ async fn bootstrap_runs() {
 // findings for one correction round; the corrected answer is accepted.
 #[tokio::test]
 async fn check_round() {
-    let (_tmp, input, tree) = service(false, Some(Runs::Load));
+    let scenario = service(false, Some(BootstrapSpec::Load));
     let model = ScriptedModel::answering([
         r#"{"surfaces":[{"name":"orders","anchor":"src/routes/orders.ts#L3","stem":"start"}]}"#,
         BOTH,
     ]);
 
-    let survey = run(&model, &input, &tree).await.expect("corrected");
+    let survey = run(&model, &scenario).await.survey();
 
     let exchanges = model.exchanges();
     assert_eq!(exchanges.len(), 2);
@@ -590,10 +472,10 @@ async fn check_round() {
 // bootstrap's own module, which `start` mines, is asked after by no finding.
 #[tokio::test]
 async fn check_under_bootstrap() {
-    let (_tmp, input, tree) = service(false, Some(Runs::Load));
+    let scenario = service(false, Some(BootstrapSpec::Load));
     let model = ScriptedModel::answering([r#"{"surfaces":[],"unreached":["src/ctl.ts"]}"#, BOTH]);
 
-    let survey = run(&model, &input, &tree).await.expect("corrected");
+    let survey = run(&model, &scenario).await.survey();
 
     let exchanges = model.exchanges();
     assert_eq!(exchanges.len(), 2);
@@ -618,10 +500,10 @@ async fn check_under_bootstrap() {
 #[tokio::test]
 async fn bootstrap_unsurfaced() {
     const NONE: &str = r#"{"surfaces":[],"unreached":["src/routes/orders.ts","src/ctl.ts"]}"#;
-    let (_tmp, input, tree) = service(false, Some(Runs::Load));
+    let scenario = service(false, Some(BootstrapSpec::Load));
     let model = ScriptedModel::answering([NONE]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     assert_eq!(survey.seams.len(), 1);
     assert_eq!(survey.seams[0].stems, ["svc"], "no `start`: the manifest's name is the stem");
@@ -629,10 +511,10 @@ async fn bootstrap_unsurfaced() {
     assert_eq!(survey.seams[0].anchors, [] as [String; 0]);
     model.assert_exhausted();
 
-    let (_tmp, input, tree) = service(true, Some(Runs::Load));
+    let scenario = service(true, Some(BootstrapSpec::Load));
     let model = ScriptedModel::answering([NONE]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     let stems: Vec<&[String]> = survey.seams.iter().map(|seam| seam.stems.as_slice()).collect();
     assert_eq!(stems, [["jobs"], ["routes"]], "by directory, not by `start` alone");
@@ -651,33 +533,18 @@ async fn bootstrap_unsurfaced() {
 // is sent back for it.
 #[tokio::test]
 async fn check_class_decorator() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    write(root, "src/index.ts", &pad(2));
-    write(root, "src/jobs/nightly.ts", &pad(6));
-    let mut index = module("src/index.ts", 2);
-    index.0.bindings = vec![function("run", line(1))];
-    index.0.exports = vec![export("run", ExportKind::Function, line(1))];
-    let mut nightly = module("src/jobs/nightly.ts", 6);
-    nightly.0.imports = vec![from_package("Processor", "@nestjs/bull")];
-    nightly.0.bindings = vec![class("Nightly", &[], span(2, 6))];
-    nightly.0.decorated = vec![decorated(
-        Some("Nightly"),
+    let scenario = fixed_workspace(
+        "svc",
         None,
-        &["Processor"],
-        Some("nightly"),
-        span(2, 3),
-        span(2, 6),
-    )];
-    nightly.0.classes = vec![class_decl("Nightly", "export class Nightly", span(2, 6), Vec::new())];
-    let tree = tree(root, &TYPESCRIPT, vec![index, nightly], Stub::default());
-    let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
+        vec![file("src/index.ts", pad(2)), file("src/jobs/nightly.ts", pad(6))],
+        SeamsTreeKind::ClassDecorator,
+    );
     let model = ScriptedModel::answering([
         r#"{"surfaces":[]}"#,
         r#"{"surfaces":[],"unreached":["src/jobs/nightly.ts"]}"#,
     ]);
 
-    run(&model, &input, &tree).await.expect("corrected");
+    run(&model, &scenario).await.survey();
 
     let user = &model.seen()[0].messages[0];
     assert!(
@@ -706,35 +573,15 @@ async fn check_class_decorator() {
 // from the binding's.
 #[tokio::test]
 async fn exports_declared() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    write(root, "src/index.ts", &pad(5));
-    let mut index = module("src/index.ts", 5);
-    index.0.bindings = vec![
-        function("run", line(1)),
-        class("Dto", &["TypedDict"], span(2, 3)),
-        class("Plain", &[], span(4, 5)),
-    ];
-    index.0.classes = vec![
-        class_decl("Dto", "class Dto extends TypedDict", span(2, 3), Vec::new()),
-        class_decl("Plain", "class Plain", span(4, 5), Vec::new()),
-    ];
-    index.0.exports = vec![
-        export("run", ExportKind::Function, line(1)),
-        emery_sdk::survey::code::Export {
-            local: Some("Dto".to_owned()),
-            ..export("OrderDto", ExportKind::Class, line(5))
-        },
-        emery_sdk::survey::code::Export {
-            local: Some("Plain".to_owned()),
-            ..export("Entity", ExportKind::Class, line(5))
-        },
-    ];
-    let tree = tree(root, &TYPESCRIPT, vec![index], Stub::default());
-    let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
+    let scenario = fixed_workspace(
+        "svc",
+        None,
+        vec![file("src/index.ts", pad(5))],
+        SeamsTreeKind::ExportsDeclared,
+    );
     let model = ScriptedModel::answering([r#"{"surfaces":[]}"#]);
 
-    run(&model, &input, &tree).await.expect("surveyed");
+    run(&model, &scenario).await.survey();
 
     let user = &model.seen()[0].messages[0];
     assert!(
@@ -751,10 +598,10 @@ async fn exports_declared() {
 // each test follows the seams whose files it imports.
 #[tokio::test]
 async fn by_stem_widened() {
-    let (_tmp, input, tree) = service(true, Some(Runs::Load));
+    let scenario = service(true, Some(BootstrapSpec::Load));
     let model = ScriptedModel::answering([BOTH]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     assert_eq!(survey.seams.len(), 3);
     let stems: Vec<&[String]> = survey.seams.iter().map(|seam| seam.stems.as_slice()).collect();
@@ -837,33 +684,28 @@ async fn by_stem_widened() {
 // root's own modules and says so.
 #[tokio::test]
 async fn by_stem_loaded() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    let mut modules = Vec::new();
-    for (path, lines) in [
-        ("main.ts", 10_003),
-        ("index.ts", 2),
-        ("src/api/x.ts", 2),
-        ("src/jobs/loader.ts", 3),
-        ("src/jobs/other.ts", 2),
-        ("src/plugins/p.ts", 2),
-    ] {
-        write(root, path, &pad(lines));
-        let mut m = module(path, u32::try_from(lines).expect("a short file"));
-        m.0.text = pad(lines);
-        modules.push(m);
-    }
-    modules[0].0.imports =
-        vec![named_import("gone", "./gone", Target::Unresolved("./gone".to_owned()))];
-    modules[3].0.dynamic = vec![dynamic(line(2), Some("src/plugins")), dynamic(line(3), None)];
-    let tree = tree(root, &TYPESCRIPT, modules, Stub::default());
-    let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
+    let scenario = fixed_workspace(
+        "svc",
+        None,
+        [
+            ("main.ts", 10_003),
+            ("index.ts", 2),
+            ("src/api/x.ts", 2),
+            ("src/jobs/loader.ts", 3),
+            ("src/jobs/other.ts", 2),
+            ("src/plugins/p.ts", 2),
+        ]
+        .into_iter()
+        .map(|(path, lines)| file(path, pad(lines)))
+        .collect(),
+        SeamsTreeKind::ByStemLoaded,
+    );
     let model = ScriptedModel::answering([r#"{"surfaces":[
         {"name":"run","anchor":"main.ts#L1","stem":"main"},
         {"name":"load","anchor":"src/jobs/loader.ts#L2","stem":"jobs"}
     ]}"#]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     assert_eq!(survey.seams.len(), 2);
     assert_eq!(files(&survey, 0), ["main.ts", "index.ts"], "the root's own modules");
@@ -900,12 +742,12 @@ async fn by_stem_loaded() {
 // each directory's name, the root's own modules joining the first.
 #[tokio::test]
 async fn by_directory() {
-    let (_tmp, input, tree) = service(true, None);
+    let scenario = service(true, None);
     let model = ScriptedModel::answering([
         r#"{"surfaces":[],"unreached":["src/main.ts","src/routes/orders.ts","src/ctl.ts"]}"#,
     ]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     assert_eq!(survey.seams.len(), 2);
     assert_eq!(survey.seams[0].stems, ["jobs"]);
@@ -957,39 +799,22 @@ async fn by_directory() {
 // root directory's name where the manifest names none.
 #[tokio::test]
 async fn by_directory_package() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().join("shop");
-    std::fs::create_dir_all(&root).expect("mkdir");
-    write(&root, "manage.py", &pad(2));
-    write(&root, "shop/__init__.py", &pad(1));
-    write(&root, "shop/__init__.pyi", &pad(1));
-    write(&root, "shop/api/views.py", &pad(10_000).replace("//", "#"));
-    write(&root, "shop/api/serializers.py", &pad(2));
-    write(&root, "shop/jobs/run.py", &pad(2));
-    let listing = Listing {
-        modules: [
-            "manage.py",
-            "shop/__init__.py",
-            "shop/__init__.pyi",
-            "shop/api/views.py",
-            "shop/api/serializers.py",
-            "shop/jobs/run.py",
-        ]
-        .map(str::to_owned)
-        .to_vec(),
-        ..Listing::default()
-    };
-    let tree = Parsed::read(&root, &PYTHON, listing, |path, text| {
-        let lines = u32::try_from(text.lines().count()).expect("a short file");
-        let mut m = module(path, lines);
-        m.0.text = text;
-        m
-    })
-    .settle(Stub::default());
-    let input = SourceInput::workspace("shop", root.to_str().expect("a UTF-8 scratch root"));
+    let scenario = fixed_workspace(
+        "shop",
+        Some("shop"),
+        vec![
+            file("manage.py", pad(2)),
+            file("shop/__init__.py", pad(1)),
+            file("shop/__init__.pyi", pad(1)),
+            file("shop/api/views.py", pad(10_000).replace("//", "#")),
+            file("shop/api/serializers.py", pad(2)),
+            file("shop/jobs/run.py", pad(2)),
+        ],
+        SeamsTreeKind::ByDirectoryPackage,
+    );
     let model = ScriptedModel::answering([r#"{"surfaces":[]}"#]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     let user = &model.seen()[0].messages[0];
     assert!(
@@ -1024,35 +849,29 @@ async fn by_directory_package() {
 // and an inline value is refused before any turn.
 #[tokio::test]
 async fn one_module_fits() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "main.ts", &pad(10_000));
-    let listing = Listing {
-        modules: vec!["main.ts".to_owned()],
-        ..Listing::default()
-    };
-    let tree = Parsed::read(tmp.path(), &TYPESCRIPT, listing, |path, text| {
-        let mut m = module(path, 10_000);
-        m.0.text = text;
-        m.0.bindings = vec![function("run", line(1))];
-        m.0.exports = vec![export("run", ExportKind::Function, line(1))];
-        m
-    })
-    .settle(Stub::default());
-    let input = SourceInput::workspace("one", tmp.path().to_str().expect("a UTF-8 scratch root"));
+    let project = scratch();
+    project.write("main.ts", pad(10_000));
+    let scenario = fixed_workspace("one", None, Vec::new(), SeamsTreeKind::OneModule);
     let model = ScriptedModel::answering([
         r#"{"surfaces":[{"name":"run","anchor":"main.ts#L1","stem":"run"}]}"#,
     ]);
 
-    let survey = run(&model, &input, &tree).await.expect("surveyed");
+    let survey = seams_in(&project, &scenario, model.clone()).await.survey();
     assert_eq!(survey.seams.len(), 1, "one module is one seam past the budget");
     assert_eq!(survey.seams[0].stems, ["run"]);
     assert_eq!(files(&survey, 0), ["main.ts"]);
     assert_eq!(survey.seams[0].anchors[0], "main.ts#L1");
     model.assert_exhausted();
 
-    let value = SourceInput::value("one", "export function run() {}");
+    let inline_scenario = SeamsScenario {
+        input: InputSpec::Value {
+            name: "one".to_owned(),
+            text: "export function run() {}".to_owned(),
+        },
+        ..scenario
+    };
     let model = ScriptedModel::answering([] as [&str; 0]);
-    let error = run(&model, &value, &tree).await.expect_err("no tree to survey");
+    let error = seams_in(&project, &inline_scenario, model.clone()).await.error();
     assert_eq!(error.code(), "server_error", "{error}");
     model.assert_exhausted();
 }
@@ -1341,126 +1160,6 @@ fn types_assigned() {
 const HANDLING_SURVEY: &str =
     r#"{"surfaces":[{"name":"api","anchor":"app/api.py#L1","stem":"api"}]}"#;
 
-// A local of the method's frame, bound to the call at `index`.
-fn local(name: &str, root: &[&str], index: usize, at: Lines) -> Binding {
-    binding(
-        name,
-        Scope::Function(1),
-        BindingKind::Value {
-            root: Some(path(root)),
-            type_path: None,
-            call: Some(index),
-            string: None,
-            init: Init::Construction,
-            head: Some(format!("{name} = ..")),
-            table: None,
-        },
-        at,
-    )
-}
-
-fn param(name: &str, at: Lines) -> Binding {
-    binding(name, Scope::Function(1), BindingKind::Param { type_path: None }, at)
-}
-
-// A call within the method `run` of `Handler`.
-fn within(callee: Callee, args: Vec<Arg>, value: Use, at: Lines) -> Call {
-    Call {
-        frames: vec![1],
-        function: Some("run".to_owned()),
-        class: Some("Handler".to_owned()),
-        ..call(callee, args, value, at)
-    }
-}
-
-// A handler module whose one method binds what each call answers — a call
-// into an imported function, a tree class constructed, a call on what it
-// made, on a member of `self`, on an untyped parameter, through two packages,
-// and on a cursor a `with` bound — beside the services module it imports.
-fn handling() -> Vec<Plain> {
-    let mut api = module("app/api.py", 16);
-    api.0.imports = vec![
-        named_import("user_list", ".services", Target::Module("app/services.py".to_owned())),
-        named_import("OrdersRepository", ".services", Target::Module("app/services.py".to_owned())),
-        from_package("requests", "requests"),
-        from_package("psycopg2", "psycopg2"),
-    ];
-    api.0.bindings = vec![
-        class("Handler", &[], span(4, 15)),
-        param("customers", line(5)),
-        param("limit", line(5)),
-        local("users", &["user_list"], 0, line(6)),
-        local("repo", &["OrdersRepository"], 1, line(7)),
-        local("orders", &["repo", "list"], 2, line(8)),
-        local("report", &["self", "reporter", "build"], 3, line(9)),
-        local("ok", &["customers", "register"], 4, line(10)),
-        local("resp", &["requests", "get"], 6, line(12)),
-        local("conn", &["psycopg2", "connect"], 7, line(13)),
-        local("cur", &["conn", "cursor"], 8, line(14)),
-        value("cache", Some(&["user_list"]), Some(10), None, Init::Construction, line(16)),
-    ];
-    api.0.calls = vec![
-        within(callee("user_list", &[]), vec![name(&["limit"], line(6))], Use::Bound, line(6)),
-        Call {
-            constructs: true,
-            ..within(
-                callee("OrdersRepository", &[]),
-                vec![name(&["users"], line(7))],
-                Use::Bound,
-                line(7),
-            )
-        },
-        within(callee("repo", &["list"]), Vec::new(), Use::Bound, line(8)),
-        within(
-            callee("self", &["reporter", "build"]),
-            vec![name(&["orders"], line(9))],
-            Use::Bound,
-            line(9),
-        ),
-        within(
-            callee("customers", &["register"]),
-            vec![name(&["orders"], line(10))],
-            Use::Bound,
-            line(10),
-        ),
-        within(callee("user_list", &[]), vec![name(&["limit"], line(11))], Use::Consumed, line(11)),
-        within(
-            callee("requests", &["get"]),
-            vec![literal("https://x", line(12))],
-            Use::Bound,
-            line(12),
-        ),
-        within(
-            callee("psycopg2", &["connect"]),
-            vec![name(&["dsn"], line(13))],
-            Use::Bound,
-            line(13),
-        ),
-        within(callee("conn", &["cursor"]), Vec::new(), Use::Bound, line(14)),
-        within(
-            callee("cur", &["execute"]),
-            vec![literal("select 1", line(15))],
-            Use::Discarded,
-            line(15),
-        ),
-        call(callee("user_list", &[]), Vec::new(), Use::Bound, line(16)),
-    ];
-    api.0.classes = vec![class_decl(
-        "Handler",
-        "class Handler:",
-        span(4, 15),
-        vec![member("run", MemberKind::Method, "def run(self, customers, limit)", span(5, 15))],
-    )];
-    let mut services = module("app/services.py", 6);
-    services.0.bindings =
-        vec![function("user_list", span(1, 2)), class("OrdersRepository", &[], span(4, 6))];
-    services.0.exports = vec![
-        export("user_list", ExportKind::Function, span(1, 2)),
-        export("OrdersRepository", ExportKind::Class, span(4, 6)),
-    ];
-    vec![api, services]
-}
-
 // A call into the tree whose result is bound to a name is a step the method
 // takes, as one for its effect alone or awaited is: into an imported
 // function, on a local a tree class constructed, on a member of `self`. The
@@ -1471,22 +1170,15 @@ fn handling() -> Vec<Plain> {
 // a `with` bound among them — and a bare call bound is kept off the list.
 #[tokio::test]
 async fn bound_steps() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path();
-    let modules = handling();
-    for module in &modules {
-        write(root, &module.path, &module.text);
-    }
-    let tree = tree(root, &PYTHON, modules, Stub::default());
-    let input = SourceInput::workspace("svc", root.to_str().expect("a UTF-8 scratch root"));
+    let scenario = fixed_workspace(
+        "svc",
+        None,
+        vec![file("app/api.py", "line\n".repeat(16)), file("app/services.py", "line\n".repeat(6))],
+        SeamsTreeKind::Handling,
+    );
     let model = ScriptedModel::answering([HANDLING_SURVEY]);
-    let ctx = Context {
-        adapter_id: "source:probe",
-        input: &input,
-        model: &model,
-    };
 
-    let survey = emery_sdk::survey::seams(&ctx, PROSE, &tree).await.expect("surveyed");
+    let survey = run(&model, &scenario).await.survey();
 
     assert_eq!(survey.seams.len(), 1);
     let seam = &survey.seams[0];
