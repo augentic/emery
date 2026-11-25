@@ -16,10 +16,10 @@ use emery_adapter::source::{Anchor, Claim, ClaimKind, Evidence, SourceContent, S
 use emery_adapter::{Standing, is_kebab, standing};
 use emery_lexicon::Lexicon;
 use emery_prose::Doc;
+use futures::FutureExt as _;
 use futures::stream::{self, StreamExt as _};
-use futures::{FutureExt as _, TryFutureExt as _};
 use omnia_sdk::model::Question;
-use omnia_sdk::{Error, bad_request, server_error};
+use omnia_sdk::{Error, ErrorKind, bad_request, server_error};
 
 use crate::{CLAIMS, Context, EXTRACT, RUNTIME, beneath, prompt, push_unique, quoted, reference};
 
@@ -77,13 +77,13 @@ const NEAREST: usize = 16;
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when `seams` is empty, a seam's file path
+/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when `seams` is empty, a seam's file path
 ///   is invalid, the model rejects the request, or no valid response is
 ///   produced within the available rounds or the backend's time budget.
-/// - Returns [`Error::ServerError`] when a seam names files or anchors over an
+/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) when a seam names files or anchors over an
 ///   inline value, a stem is not kebab-case, an anchor is outside the `path`
 ///   grammar, or `docs` does not contain `extract.md`.
-/// - Returns [`Error::BadGateway`] when a model tool or transport fails on
+/// - Returns [`ErrorKind::BadGateway`](omnia_sdk::ErrorKind::BadGateway) when a model tool or transport fails on
 ///   the retried request too.
 pub async fn extract(
     ctx: &Context<'_>, docs: &'static [Doc], seams: &[Seam],
@@ -638,8 +638,7 @@ async fn turn(
                     Err(findings)
                 },
             )
-            .await
-            .map_err(Error::from)?
+            .await?
             .map_err(Error::from)
     };
 
@@ -647,7 +646,7 @@ async fn turn(
     tracing::info!(%source, seam = index, label, files = plan.size(), "mining");
 
     let outcome = match ask().await {
-        Err(error @ Error::BadGateway { .. }) => {
+        Err(error) if error.kind() == ErrorKind::BadGateway => {
             tracing::warn!(
                 %source,
                 seam = index,
@@ -833,12 +832,5 @@ fn join(
 
 // `error` with `description` in place of its own; the class and code carry.
 fn described(error: &Error, description: String) -> Error {
-    let mut described = error.clone();
-    match &mut described {
-        Error::BadRequest { description: own, .. }
-        | Error::NotFound { description: own, .. }
-        | Error::ServerError { description: own, .. }
-        | Error::BadGateway { description: own, .. } => *own = description,
-    }
-    described
+    Error::new(error.kind(), error.code(), description)
 }

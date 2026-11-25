@@ -22,7 +22,7 @@
 //! use std::path::Path;
 //!
 //! use emery_sdk::target::{Grant, Metadata, Outcome, TargetAdapter, Task};
-//! use emery_sdk::{Doc, Error, Model, server_error};
+//! use emery_sdk::{Doc, Error, server_error};
 //!
 //! // cargo fetches from crates.io's sparse index and its download host
 //! const CARGO: Grant = Grant {
@@ -51,7 +51,7 @@
 //!         }
 //!     }
 //!
-//!     async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
+//!     async fn run(task: Task<'_>) -> Result<Outcome, Error> {
 //!         match task {
 //!             Task::Init(ctx) => {
 //!                 // a held manifest stands; the tree lacking one gets the layout's
@@ -110,20 +110,18 @@ pub use emery_adapter::target::{
 };
 use emery_prose::Doc;
 use omnia_sdk::model::{Question, WorkerGrant};
-use omnia_sdk::{Error, Model, server_error};
+use omnia_sdk::{Error, server_error};
 
 use self::write::{Writer, Written};
 use crate::{BUILD, VERIFY, prompt, quoted, reference, unique};
 
-/// The engine's side of the contract, for a guest that dispatches to a target adapter.
+/// Host dispatch to a loaded target adapter through [`emery_adapter::target`].
 ///
-/// [`Target`](capability::Target) is the capability the engine puts a
-/// [`Task`](capability::Task) through, `init`, `build(slice)`, or `verify`,
-/// each answered by the [`Outcome`] of its kind. On `wasm32` its methods
-/// dispatch through the component's import, so a guest implements it on a
-/// unit type to call the adapter the host registered under an id.
+/// [`Task`](capability::Task) is the task the engine passes to
+/// [`emery_adapter::target::run`], `init`, `build(slice)`, or `verify`, each
+/// answered by the [`Outcome`] of its kind.
 pub mod capability {
-    pub use emery_adapter::target::{Target, Task};
+    pub use emery_adapter::target::Task;
 }
 
 /// What one program of the worker's toolchain is granted beyond the lent tree.
@@ -169,7 +167,11 @@ impl Grant {
                 grant.env.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
             })),
         };
-        (union != WorkerGrant::default()).then_some(union)
+        if union.egress.is_empty() && union.read.is_empty() && union.env.is_empty() {
+            None
+        } else {
+            Some(union)
+        }
     }
 
     /// Returns the entries of `grants` that violate the grant grammar.
@@ -284,12 +286,12 @@ pub struct InitContext<'a> {
     pub workspace: &'a str,
 }
 
-/// The adapter addressed, the slice it builds, the tree it builds into, and the model.
+/// The adapter addressed, the slice it builds, and the tree it builds into.
 ///
-/// [`build`] takes it, so the one turn of a call is put to the one model the
-/// host bound.
-#[derive(Debug)]
-pub struct BuildContext<'a, P> {
+/// [`build`] takes it; each turn reaches the host model through Omnia's
+/// `model` interface.
+#[derive(Debug, Clone, Copy)]
+pub struct BuildContext<'a> {
     /// The identifier used to address the adapter.
     pub adapter_id: &'a str,
     /// The [`Slice`] to build.
@@ -301,8 +303,6 @@ pub struct BuildContext<'a, P> {
     /// What the model's worker reaches beyond the tree, the adapter's
     /// [`Metadata::grants`].
     pub grants: &'a [Grant],
-    /// The [`Model`] the turn is put to.
-    pub model: &'a P,
     /// What the adapter's own code scaffolded into the workspace for the
     /// slice before the turn, where it scaffolded anything. The host lifts
     /// the context with `None`; an adapter that scaffolds a skeleton sets it
@@ -310,7 +310,7 @@ pub struct BuildContext<'a, P> {
     pub scaffold: Option<Scaffold<'a>>,
 }
 
-impl<'a, P> BuildContext<'a, P> {
+impl<'a> BuildContext<'a> {
     /// Returns the context with [`scaffold`](Self::scaffold) set.
     #[must_use]
     pub const fn with_scaffold(mut self, scaffold: Scaffold<'a>) -> Self {
@@ -318,14 +318,6 @@ impl<'a, P> BuildContext<'a, P> {
         self
     }
 }
-
-impl<P> Clone for BuildContext<'_, P> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<P> Copy for BuildContext<'_, P> {}
 
 /// Files and prompt context an adapter scaffolds into the workspace before a [`build`] turn.
 ///
@@ -433,12 +425,12 @@ impl Marker {
     }
 }
 
-/// The adapter addressed, the integrated tree it verifies, and the model.
+/// The adapter addressed and the integrated tree it verifies.
 ///
-/// [`verify`] takes it, so the one turn of a call is put to the one model
-/// the host bound.
-#[derive(Debug)]
-pub struct VerifyContext<'a, P> {
+/// [`verify`] takes it; each turn reaches the host model through Omnia's
+/// `model` interface.
+#[derive(Debug, Clone, Copy)]
+pub struct VerifyContext<'a> {
     /// The identifier used to address the adapter.
     pub adapter_id: &'a str,
     /// The deployment-local path of the integrated tree's root, which the
@@ -448,17 +440,7 @@ pub struct VerifyContext<'a, P> {
     /// What the model's worker reaches beyond the tree, the adapter's
     /// [`Metadata::grants`].
     pub grants: &'a [Grant],
-    /// The [`Model`] the turn is put to.
-    pub model: &'a P,
 }
-
-impl<P> Clone for VerifyContext<'_, P> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<P> Copy for VerifyContext<'_, P> {}
 
 /// The task a target adapter is asked, each with the context its turn needs.
 ///
@@ -468,7 +450,7 @@ impl<P> Copy for VerifyContext<'_, P> {}
 /// - [`Build`](Self::Build) answers [`Outcome::Built`].
 /// - [`Verify`](Self::Verify) answers [`Outcome::Verified`].
 #[derive(Debug)]
-pub enum Task<'a, P> {
+pub enum Task<'a> {
     /// Scaffold the layout's initial files the tree lacks, a held file left
     /// as it stands. Put once per repository a build lands in, before any
     /// slice; the engine seals what the tree then holds as its
@@ -476,10 +458,10 @@ pub enum Task<'a, P> {
     Init(InitContext<'a>),
     /// Build one slice of the plan into the tree, through
     /// [`build`](fn@build).
-    Build(BuildContext<'a, P>),
+    Build(BuildContext<'a>),
     /// Run the checks over the integrated tree, repair what they find, and
     /// answer a verdict, through [`verify`](fn@verify).
-    Verify(VerifyContext<'a, P>),
+    Verify(VerifyContext<'a>),
 }
 
 /// A target adapter that initialises, builds, and verifies a workspace.
@@ -507,11 +489,11 @@ pub trait TargetAdapter {
     ///
     /// # Errors
     ///
-    /// - Returns [`Error::BadRequest`] when the tree refuses [`Task::Init`], such
+    /// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the tree refuses [`Task::Init`], such
     ///   as when a directory or symlink occupies a layout file's path.
-    /// - Returns [`Error::ServerError`] when [`Task::Init`] cannot write the tree.
+    /// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) when [`Task::Init`] cannot write the tree.
     /// - Returns what [`build`](fn@build) or [`verify`](fn@verify) returns.
-    fn run<P: Model>(task: Task<'_, P>) -> impl Future<Output = Result<Outcome, Error>>;
+    fn run(task: Task<'_>) -> impl Future<Output = Result<Outcome, Error>>;
 }
 
 /// Returns the `metadata` answer for a target adapter merging under `rules`
@@ -574,15 +556,15 @@ pub fn metadata(rules: &[MergeRule], budget: Option<NonZeroU32>) -> TargetMetada
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the model rejects the request or
+/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the model rejects the request or
 ///   produces no valid report within the round limit or time budget.
-/// - Returns [`Error::ServerError`] before any turn when `docs` lacks
+/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) before any turn when `docs` lacks
 ///   `build.md` or `ctx`'s [`grants`](BuildContext::grants) have
 ///   [`findings`](Grant::findings).
-/// - Returns [`Error::BadGateway`] when a model tool or transport fails.
+/// - Returns [`ErrorKind::BadGateway`](omnia_sdk::ErrorKind::BadGateway) when a model tool or transport fails.
 /// - Returns the [`Error`] returned by `check`, ending the turn immediately.
-pub async fn build<P: Model>(
-    ctx: &BuildContext<'_, P>, docs: &'static [Doc],
+pub async fn build(
+    ctx: &BuildContext<'_>, docs: &'static [Doc],
     mut check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
     let slice = ctx.slice;
@@ -620,7 +602,7 @@ pub async fn build<P: Model>(
     let tools = writer.serve(reference::serve(docs, &[], id, None));
     let mut failed = None;
     let report = question
-        .ask(ctx.model, brief.to_string(), Some(tools), |answer| {
+        .ask(brief.to_string(), Some(tools), |answer| {
             let mut findings = answer.findings(slice);
             findings.extend(Written::findings(root, answer));
             match check(answer) {
@@ -636,12 +618,12 @@ pub async fn build<P: Model>(
             tracing::debug!(slice = %id, ?findings, "candidate rejected");
             Err(findings)
         })
-        .await
-        .map_err(Error::from);
+        .await?
+        .map_err(Error::from)?;
     if let Some(error) = failed {
         return Err(error);
     }
-    let mut report = report?;
+    let mut report = report;
     written.fill(root, &mut report);
 
     let uncovered = report.uncovered(slice);
@@ -676,15 +658,15 @@ const VERIFY_TURN: &str = "verify";
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the model rejects the request or
+/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the model rejects the request or
 ///   produces no valid verdict within the round limit or time budget.
-/// - Returns [`Error::ServerError`] before any turn when `docs` lacks
+/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) before any turn when `docs` lacks
 ///   `verify.md` or `ctx`'s [`grants`](VerifyContext::grants) have
 ///   [`findings`](Grant::findings).
-/// - Returns [`Error::BadGateway`] when a model tool or transport fails.
+/// - Returns [`ErrorKind::BadGateway`](omnia_sdk::ErrorKind::BadGateway) when a model tool or transport fails.
 /// - Returns the [`Error`] returned by `check`, ending the turn immediately.
-pub async fn verify<P: Model>(
-    ctx: &VerifyContext<'_, P>, docs: &'static [Doc],
+pub async fn verify(
+    ctx: &VerifyContext<'_>, docs: &'static [Doc],
     mut check: impl FnMut(&Verdict) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Verdict, Error> {
     let writer = Writer::new(ctx.workspace, VERIFY_TURN);
@@ -705,7 +687,7 @@ pub async fn verify<P: Model>(
     let tools = writer.serve(reference::serve(docs, &[], VERIFY_TURN, None));
     let mut failed = None;
     let verdict = question
-        .ask(ctx.model, brief.to_string(), Some(tools), |answer| {
+        .ask(brief.to_string(), Some(tools), |answer| {
             let mut findings = answer.findings();
             match check(answer) {
                 Ok(more) => findings.extend(more),
@@ -720,12 +702,11 @@ pub async fn verify<P: Model>(
             tracing::debug!(?findings, "candidate rejected");
             Err(findings)
         })
-        .await
-        .map_err(Error::from);
+        .await?
+        .map_err(Error::from)?;
     if let Some(error) = failed {
         return Err(error);
     }
-    let verdict = verdict?;
 
     tracing::info!(passed = verdict.passed, failures = verdict.failures.len(), "verified");
     tracing::debug!(failures = ?verdict.failures, "the verdict");
@@ -736,7 +717,7 @@ pub async fn verify<P: Model>(
 /// The `run` arm of [`export_target!`](crate::export_target), reached through the macro alone.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
-#[omnia_wasi_otel::instrument(name = "target_adapter_run")]
+#[omnia_sdk::otel::instrument(name = "target_adapter_run")]
 pub async fn call<A: TargetAdapter>(
     id: export::AdapterId, workspace: String, task: export::Task,
 ) -> Result<export::Outcome, export::Error> {
@@ -752,14 +733,12 @@ pub async fn call<A: TargetAdapter>(
             slice,
             workspace: &workspace,
             grants: metadata.grants,
-            model: &crate::Provider,
             scaffold: None,
         }),
         emery_adapter::target::Task::Verify => Task::Verify(VerifyContext {
             adapter_id: &id,
             workspace: &workspace,
             grants: metadata.grants,
-            model: &crate::Provider,
         }),
     };
     let outcome = A::run(task).await?;

@@ -263,7 +263,7 @@ fn with_data<R: Recogniser>(tree: &Tree<R>, modules: Vec<String>) -> Vec<String>
     let mut files: Vec<String> = Vec::with_capacity(modules.len());
     let mut large: Vec<String> = Vec::new();
     for path in modules {
-        let named = tree.modules.get(&path).map(|module| module.data()).unwrap_or_default();
+        let named = tree.modules.get(&path).map_or_default(|module| module.data());
         files.push(path);
         for data in named {
             if files.iter().chain(&large).any(|file| file == data) {

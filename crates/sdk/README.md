@@ -24,7 +24,7 @@ Implement `SourceAdapter` on a unit struct, embed your prompt files with `prose!
 ```rust
 mod survey;
 
-use emery_sdk::{Context, Doc, Error, Evidence, Metadata, Model, SourceAdapter, SourceKind};
+use emery_sdk::{Context, Doc, Error, Evidence, Metadata, SourceAdapter, SourceKind};
 
 const KIND: SourceKind = SourceKind::Documentation;
 
@@ -35,7 +35,7 @@ impl SourceAdapter for Adapter {
         Metadata { kind: KIND }
     }
 
-    async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+    async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
         let seams = survey::survey(ctx.input)?;
         emery_sdk::extract(ctx, PROSE, &seams).await
     }
@@ -80,7 +80,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 
 use emery_sdk::target::{Grant, MergeRule, Metadata, Outcome, TargetAdapter, Task};
-use emery_sdk::{Doc, Error, Model, server_error};
+use emery_sdk::{Doc, Error, server_error};
 
 const RULES: &[MergeRule] = &[MergeRule::ours("Cargo.lock")];
 
@@ -101,7 +101,7 @@ impl TargetAdapter for Adapter {
         }
     }
 
-    async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
+    async fn run(task: Task<'_>) -> Result<Outcome, Error> {
         match task {
             Task::Init(ctx) => {
                 let manifest = Path::new(ctx.workspace).join("Cargo.toml");

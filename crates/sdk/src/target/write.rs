@@ -12,7 +12,7 @@ use std::{fmt, fs};
 
 use emery_adapter::target::Report;
 use emery_adapter::{Standing, beneath, standing, write_whole};
-use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
+use omnia_sdk::model::{Tool, ToolCall, ToolFuture, Tools};
 use serde::Serialize;
 
 use self::place::{Miss, Placed, nearest, place};
@@ -85,7 +85,7 @@ impl Writer {
              `write_files`."
         );
         vec![
-            Tool::Function(Function::of::<WriteFiles>(
+            Tool::of::<WriteFiles>(
                 WRITE_FILES,
                 "Write one or more files beneath `$WORKSPACE`, each created or replaced whole, \
                  the directories above it created, and remove the files `delete` names. Each \
@@ -96,8 +96,8 @@ impl Writer {
                  one whose entry names a file the brief says was scaffolded before this turn \
                  without every marker and name the skeleton holds, or one deleting such a \
                  file. For a change within a file, use `edit_files`.",
-            )),
-            Tool::Function(Function::of::<EditFiles>(EDIT_FILES, &edit)),
+            ),
+            Tool::of::<EditFiles>(EDIT_FILES, &edit),
         ]
     }
 

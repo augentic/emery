@@ -166,12 +166,12 @@ pub struct Facts<'a> {
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the model rejects the request or no
+/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the model rejects the request or no
 ///   valid answer is produced within the available rounds or the backend's
 ///   time budget.
-/// - Returns [`Error::ServerError`] when `docs` does not contain `survey.md`
+/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) when `docs` does not contain `survey.md`
 ///   or the source is an inline value with no tree to survey.
-/// - Returns [`Error::BadGateway`] when a model tool or transport fails.
+/// - Returns [`ErrorKind::BadGateway`](omnia_sdk::ErrorKind::BadGateway) when a model tool or transport fails.
 pub async fn surfaces(
     ctx: &Context<'_>, docs: &'static [Doc], facts: &Facts<'_>,
     mut check: impl FnMut(&Inventory) -> Vec<String> + Send,
@@ -207,8 +207,7 @@ pub async fn surfaces(
             tracing::debug!(%source, ?findings, "candidate rejected");
             Err(findings)
         })
-        .await
-        .map_err(Error::from)?
+        .await?
         .map_err(Error::from)?
         .normalised();
 
@@ -392,12 +391,12 @@ impl Survey {
 ///
 /// # Errors
 ///
-/// - Returns [`Error::BadRequest`] when the model rejects the request or no
+/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the model rejects the request or no
 ///   valid answer is produced within the available rounds or the backend's
 ///   time budget.
-/// - Returns [`Error::ServerError`] when `docs` does not contain `survey.md`
+/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) when `docs` does not contain `survey.md`
 ///   or the source is an inline value with no tree to survey.
-/// - Returns [`Error::BadGateway`] when a model tool or transport fails.
+/// - Returns [`ErrorKind::BadGateway`](omnia_sdk::ErrorKind::BadGateway) when a model tool or transport fails.
 pub async fn seams<R: Recogniser>(
     ctx: &Context<'_>, docs: &'static [Doc], tree: &Tree<R>,
 ) -> Result<Survey, Error> {

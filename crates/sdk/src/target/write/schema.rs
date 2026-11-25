@@ -371,7 +371,7 @@ fn text<E: de::Error>(value: serde_json::Value, at: &str) -> Result<String, E> {
 // the tools by name alone.
 #[cfg(test)]
 mod tests {
-    use omnia_sdk::model::Function;
+    use omnia_sdk::model::Tool;
     use serde_json::{Value, json};
 
     use super::EditFiles;
@@ -381,8 +381,8 @@ mod tests {
     // sent, since the one argument is required and its shape is the list.
     #[test]
     fn edit_files_schema() {
-        let function = Function::of::<EditFiles>(EDIT_FILES, "");
-        let schema: Value = serde_json::from_str(&function.parameters).expect("the schema is JSON");
+        let tool = Tool::of::<EditFiles>(EDIT_FILES, "");
+        let schema: Value = serde_json::from_str(&tool.input_schema).expect("the schema is JSON");
         assert_eq!(schema["required"], json!(["edits"]), "{schema}");
         assert_eq!(schema["properties"]["edits"]["type"], "array", "{schema}");
         assert_eq!(

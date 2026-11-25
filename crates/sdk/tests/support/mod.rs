@@ -241,16 +241,13 @@ impl Recogniser for Stub {
             .and_then(|arg| arg.root.as_ref()?.last().and_then(|last| kebab(last)));
         let (methods, handed) = match self.class_run_by(tree, module, call) {
             Some((declaring, class)) => {
-                let methods = declaring
-                    .class(&class)
-                    .map(|decl| {
-                        decl.members
-                            .iter()
-                            .filter(|member| !member.private)
-                            .map(|member| (member.name.clone(), member.lines))
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                let methods = declaring.class(&class).map_or_default(|decl| {
+                    decl.members
+                        .iter()
+                        .filter(|member| !member.private)
+                        .map(|member| (member.name.clone(), member.lines))
+                        .collect()
+                });
                 (methods, Some((declaring, class)))
             }
             None => (Vec::new(), None),
@@ -463,8 +460,7 @@ pub fn class_decl(name: &str, header: &str, lines: Lines, members: Vec<Member>) 
             .split_once('(')
             .map(|(_, bases)| bases.trim_end_matches([')', ':']))
             .or_else(|| header.split_once(" extends ").map(|(_, base)| base))
-            .map(|bases| bases.split(',').map(|base| base.trim().to_owned()).collect())
-            .unwrap_or_default(),
+            .map_or_default(|bases| bases.split(',').map(|base| base.trim().to_owned()).collect()),
         members,
     }
 }

@@ -155,8 +155,8 @@ macro_rules! export_source {
 /// component's `metadata` answers [`target::metadata`] over the type's
 /// [`rules`](target::Metadata::rules) and [`budget`](target::Metadata::budget).
 /// Its `run` lifts the imported task into a [`target::Task`] over the
-/// workspace root and the host model, passes it to
-/// [`target::TargetAdapter::run`], verifies that the outcome matches the
+/// workspace root, passes it to [`target::TargetAdapter::run`], verifies that
+/// the outcome matches the
 /// task's kind, and converts the result into the WIT records.
 ///
 /// Invoke this macro under `#[cfg(target_arch = "wasm32")]`, where the export
@@ -325,7 +325,7 @@ pub trait SourceAdapter {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BadRequest`] when the adapter refuses its input, and
+    /// Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the adapter refuses its input, and
     /// what [`extract`](fn@extract) returns otherwise.
     fn extract(ctx: &Context<'_>) -> impl Future<Output = Result<Evidence, Error>>;
 }

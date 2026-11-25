@@ -10,7 +10,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 
 use emery_sdk::target::{InitContext, MergeRule, Metadata, Outcome, TargetAdapter, Task};
-use emery_sdk::{Doc, Error, Model, server_error};
+use emery_sdk::{Doc, Error, server_error};
 
 // two slices that list requirements in one index keep both lists
 const RULES: &[MergeRule] = &[MergeRule::union("build/*/index.md")];
@@ -27,7 +27,7 @@ impl TargetAdapter for Adapter {
         }
     }
 
-    async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
+    async fn run(task: Task<'_>) -> Result<Outcome, Error> {
         match task {
             Task::Init(ctx) => init(&ctx).map(|()| Outcome::Initialised),
             Task::Build(ctx) => {

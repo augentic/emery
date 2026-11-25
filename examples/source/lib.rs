@@ -4,8 +4,8 @@
 //! claims under the embedded `extract.md` prompt.
 
 use emery_sdk::{
-    Context, Doc, Error, Evidence, Metadata, Model, Seam, SourceAdapter, SourceContent,
-    SourceInput, SourceKind, bad_request,
+    Context, Doc, Error, Evidence, Metadata, Seam, SourceAdapter, SourceContent, SourceInput,
+    SourceKind, bad_request,
 };
 
 const KIND: SourceKind = SourceKind::Documentation;
@@ -18,7 +18,7 @@ impl SourceAdapter for Adapter {
         Metadata { kind: KIND }
     }
 
-    async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+    async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
         let seams = survey(ctx.input)?;
         emery_sdk::extract(ctx, PROSE, &seams).await
     }
