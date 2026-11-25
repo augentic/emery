@@ -59,8 +59,7 @@ pub async fn show<P: Target + Plugins + StateStore + BlobStore + Vcs + Files>(
 ) -> Result<ShowOutput, Error> {
     let store = context.provider();
     if input.artifact == Artifact::Amendment {
-        let staged =
-            store::staged_amendment(store).await?.ok_or_else(store::no_amendment_staged)?;
+        let staged = store::staged_amendment().await?.ok_or_else(store::no_amendment_staged)?;
         tracing::debug!(amendment = %staged.id, "amendment read");
         return ShowOutput::new(&staged.amendment, staged.id);
     }
@@ -154,7 +153,7 @@ impl ShowInput {
         &self, store: &P,
     ) -> Result<(String, Revision), Error> {
         let (id, revision) = if self.staged {
-            let candidate = store::staged(store).await?.ok_or_else(store::nothing_staged)?;
+            let candidate = store::staged().await?.ok_or_else(store::nothing_staged)?;
             (candidate.id, candidate.revision)
         } else {
             let target =
@@ -162,7 +161,7 @@ impl ShowInput {
             let repo = target.repo()?;
             let standing = store::current(store, &repo).await?;
             let Some(current) = standing.current else {
-                return Err(store::not_generated(store, &standing).await);
+                return Err(store::not_generated(&standing).await);
             };
             (current.id, current.revision?)
         };

@@ -81,7 +81,7 @@ pub(crate) async fn seal<P: StateStore + BlobStore + Vcs + Files>(
     provider: &P, repo: &BuildRepo, standing: Standing,
 ) -> Result<ApplyOutput, Error> {
     let (kind, amendment, sealing) =
-        match store::staged_item(provider).await?.ok_or_else(store::nothing_staged)? {
+        match store::staged_item().await?.ok_or_else(store::nothing_staged)? {
             StagedItem::Revision(staged) if staged.fresh => {
                 (StagedKind::Revision, None, Sealing::fresh(staged.revision, &standing))
             }

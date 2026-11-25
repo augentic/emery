@@ -102,7 +102,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
     let provider = context.provider();
 
     let bound = Bound::all(&input.sources)?;
-    store::no_amendment(provider).await?;
+    store::no_amendment().await?;
 
     // the repository the specification lives in, read before any load so
     // the diff and the seal land over what it holds
@@ -146,7 +146,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
     // seal would displace; sealed in the same run when asked
     let candidate = Revision { spec, design, plan };
     let diff = standing.as_ref().and_then(|standing| standing.diff(&candidate));
-    let revision = store::stage(provider, &candidate, input.fresh).await?;
+    let revision = store::stage(&candidate, input.fresh).await?;
     tracing::info!(
         candidate = %revision,
         parts = candidate.plan.parts.len(),

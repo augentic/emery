@@ -134,11 +134,11 @@ pub async fn build<P: Model + Target + StateStore + BlobStore + Plugins + Vcs + 
     let repo = BuildRepo::settle(&input.name, input.repository.as_deref())?;
     let mut standing = store::current(provider, &repo).await?;
     let Some(current) = standing.current.take() else {
-        return Err(store::not_generated(provider, &standing).await);
+        return Err(store::not_generated(&standing).await);
     };
     let revision_id = current.id;
     let revision = current.revision?;
-    let candidate = store::staged_record(provider)
+    let candidate = store::staged_record()
         .await?
         .filter(|(id, _)| *id != revision_id)
         .map(|(id, kind)| Candidate { id, kind });

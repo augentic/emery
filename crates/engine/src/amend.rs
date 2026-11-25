@@ -130,10 +130,10 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     let repo = input.target.ok_or_else(|| store::target_required("`emery amend`"))?.repo()?;
     let standing = store::current(provider, &repo).await?;
     let Some(current) = &standing.current else {
-        return Err(store::not_generated(provider, &standing).await);
+        return Err(store::not_generated(&standing).await);
     };
     let revision = current.revision.as_ref().map_err(Clone::clone)?;
-    store::no_candidate(provider).await?;
+    store::no_candidate().await?;
 
     let Extracted {
         extracts,
@@ -238,7 +238,7 @@ async fn stage<P: StateStore + BlobStore + Vcs + Files>(
         }
         return Ok((None, None));
     }
-    let id = store::stage_amendment(provider, amendment).await?;
+    let id = store::stage_amendment(amendment).await?;
     tracing::info!(
         amendment = %id,
         base = %amendment.base.revision,
