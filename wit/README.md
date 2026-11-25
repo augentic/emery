@@ -24,7 +24,7 @@ This directory contains [`emery.wit`](emery.wit), the WebAssembly Interface Type
 Each world (`source-adapter` and `target-adapter`) both imports and exports its axis interface. This allows a single `wit-bindgen` pass per axis in the `emery-adapter` crate to generate:
 
 - The guest export traits (`emery_adapter::source::export` and `emery_adapter::target::export`) implemented by adapters via `emery-sdk`.
-- The host import callers (`bindings::import`) used by the Emery engine guest's `Source` and `Target` capabilities.
+- The host import callers (`emery_adapter::source::{metadata, extract}` and `emery_adapter::target::{metadata, run}`) used by the Emery engine guest.
 
 Because the export types alias the import types, one Rust type represents each WIT record on both sides of the boundary. [augentic/emery-adapters](https://github.com/augentic/emery-adapters) consumes a vendored copy of `emery.wit`.
 

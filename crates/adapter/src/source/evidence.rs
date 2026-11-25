@@ -500,7 +500,7 @@ impl Claim {
             && let Some(Err(bad)) = self.trigger()
         {
             let spelled =
-                |key: &str| self.extras.get(key).map(ToString::to_string).unwrap_or_default();
+                |key: &str| self.extras.get(key).map_or_else(String::new, ToString::to_string);
             findings.push(match &bad {
                 BadTrigger::Route(_) => {
                     format!("- claim {index}: route {} {bad}", spelled(Self::ROUTE))

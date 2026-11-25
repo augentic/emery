@@ -1,103 +1,10 @@
-//! Defines the [`Target`] capability and the records supplied to an adapter.
-//!
-//! The engine uses [`Target`] to query a loaded adapter's metadata and to
-//! run one [`Task`] in a workspace: an init, a slice's build, or a wave's
-//! verify, each answered by its [`Outcome`]. WebAssembly builds dispatch
-//! through the imported adapter interface; native builds require an
-//! implementation.
+//! Records supplied to a target adapter and returned by its metadata export.
 
 use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
-use std::future::Future;
-
-use omnia_sdk::Error;
 
 use crate::Trigger;
 use crate::target::{Report, Verdict};
-
-/// The engine capability for querying and invoking target adapters.
-///
-/// Adapter components implement the guest interface rather than this trait.
-/// The WebAssembly implementation classifies an input refusal as
-/// [`Error::BadRequest`] and any other adapter failure as
-/// [`Error::BadGateway`].
-///
-/// # Examples
-///
-/// A native host can provide adapters directly:
-///
-/// ```
-/// use std::future::{Future, ready};
-///
-/// use emery_adapter::target::{Outcome, Report, Target, TargetMetadata, Task, Verdict};
-/// use omnia_sdk::Error;
-///
-/// struct Host;
-///
-/// impl Target for Host {
-///     fn run(
-///         &self, _id: &str, _workspace: &str, task: &Task,
-///     ) -> impl Future<Output = Result<Outcome, Error>> + Send {
-///         ready(Ok(match task {
-///             Task::Init => Outcome::Initialised,
-///             Task::Build(slice) => Outcome::Built(Report {
-///                 covered: slice
-///                     .requirements
-///                     .iter()
-///                     .map(|requirement| requirement.id.clone())
-///                     .collect(),
-///                 written: vec!["src/lib.rs".to_string()],
-///             }),
-///             Task::Verify => Outcome::Verified(Verdict::passed()),
-///         }))
-///     }
-///
-///     fn metadata(&self, _id: &str) -> TargetMetadata {
-///         TargetMetadata::default()
-///     }
-/// }
-/// ```
-pub trait Target: Send + Sync {
-    /// Runs `task` in the tree at `workspace` using the adapter registered as `id`.
-    ///
-    /// The outcome answers the task, [`Outcome::answers`]; one that does
-    /// not is the adapter's defect, which the caller refuses.
-    ///
-    /// # Errors
-    ///
-    /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
-    /// - Returns [`Error::BadGateway`] for any other adapter failure.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn run(
-        &self, id: &str, workspace: &str, task: &Task,
-    ) -> impl Future<Output = Result<Outcome, Error>> + Send;
-
-    /// Runs `task` in the tree at `workspace` using the adapter registered as `id`.
-    ///
-    /// The outcome answers the task, [`Outcome::answers`]; one that does
-    /// not is the adapter's defect, which the caller refuses.
-    ///
-    /// # Errors
-    ///
-    /// - Returns [`Error::BadRequest`] when the adapter rejects its input.
-    /// - Returns [`Error::BadGateway`] for any other adapter failure.
-    #[cfg(target_arch = "wasm32")]
-    fn run(
-        &self, id: &str, workspace: &str, task: &Task,
-    ) -> impl Future<Output = Result<Outcome, Error>> + Send {
-        crate::target::bindings::run(id, workspace, task)
-    }
-
-    /// Returns the metadata the adapter registered as `id` declares.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn metadata(&self, id: &str) -> TargetMetadata;
-
-    /// Returns the metadata the adapter registered as `id` declares.
-    #[cfg(target_arch = "wasm32")]
-    fn metadata(&self, id: &str) -> TargetMetadata {
-        crate::target::bindings::metadata(id)
-    }
-}
 
 /// What the engine asks a target adapter to do in the lent tree.
 #[derive(Clone, Debug, PartialEq, Eq)]

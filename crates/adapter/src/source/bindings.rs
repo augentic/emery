@@ -27,7 +27,7 @@ mod generated {
 
 // The shared `types` interface, which the target axis binds through this
 // generation rather than its own.
-use omnia_sdk::{Error, bad_gateway, bad_request};
+use omnia_sdk::{Error, ErrorKind, bad_gateway, bad_request};
 
 use self::generated::emery::adapter::source as wit;
 pub use self::generated::emery::adapter::types;
@@ -259,18 +259,16 @@ impl TryFrom<wit::Evidence> for Evidence {
     }
 }
 
-// The WIT variant carries the description alone; the lifts in
-// `Source::extract` and `Target::run` restore the class.
-impl From<omnia_sdk::Error> for types::Error {
-    fn from(error: omnia_sdk::Error) -> Self {
-        let description = error.description();
-        match error {
-            omnia_sdk::Error::BadRequest { .. } | omnia_sdk::Error::NotFound { .. } => {
+// The WIT variant carries the description alone; the lifts in `extract` and
+// `run` restore the class.
+impl From<Error> for types::Error {
+    fn from(error: Error) -> Self {
+        let description = error.description().to_owned();
+        match error.kind() {
+            ErrorKind::BadRequest | ErrorKind::NotFound | ErrorKind::Conflict => {
                 Self::InvalidRequest(description)
             }
-            omnia_sdk::Error::ServerError { .. } | omnia_sdk::Error::BadGateway { .. } => {
-                Self::Internal(description)
-            }
+            _ => Self::Internal(description),
         }
     }
 }
