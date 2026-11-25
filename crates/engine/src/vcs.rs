@@ -1,11 +1,12 @@
 //! Version-control paths, repositories, working copies, and commit trailers.
 //!
-//! Wraps the [`Vcs`] capability over deployment-local paths beneath [`ROOT`]:
-//! [`SourceClone`] manages cached source clones, [`BuildRepo`] resolves the
-//! target repository a specification lives in and a build lands in,
+//! Opens [`omnia_sdk::vcs::Workspace`] handles over deployment-local paths
+//! beneath [`ROOT`]: [`SourceClone`] manages cached source clones, [`BuildRepo`]
+//! resolves the target repository a specification lives in and a build lands in,
 //! [`WorkingCopy`] manages isolated worktrees, and [`Message`] and
 //! [`RevisionMessage`] format and parse the trailers of a slice's commit and
-//! a revision's.
+//! a revision's. Emery's vocabulary stays "label"; at the omnia boundary that
+//! is a bookmark.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -13,8 +14,8 @@ use std::fmt;
 pub use emery_adapter::SPECIFICATION;
 use emery_adapter::target::{MergeRule, MergeStrategy};
 use emery_adapter::{SKIP_DIRS, is_kebab};
-use omnia_sdk::vcs::{self, Change, CloneOptions, Merged, Rule, Strategy};
-use omnia_sdk::{Error, Vcs, bad_gateway, bad_request, server_error};
+use omnia_sdk::vcs::{self, Change, Rule, Strategy, Unmerged, Workspace};
+use omnia_sdk::{Error, ErrorKind, bad_gateway, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
@@ -68,7 +69,7 @@ pub fn rules(declared: &[MergeRule]) -> Vec<Rule> {
     declared
         .iter()
         .map(|rule| Rule {
-            paths: rule.paths.to_string(),
+            pattern: rule.paths.to_string(),
             strategy: match rule.strategy {
                 MergeStrategy::Union => Strategy::Union,
                 MergeStrategy::Ours => Strategy::Ours,
@@ -86,7 +87,24 @@ pub fn rules(declared: &[MergeRule]) -> Vec<Rule> {
 /// other `**` crosses anything. `None` when no rule matches.
 #[must_use]
 pub fn strategy_for(rules: &[Rule], path: &str) -> Option<Strategy> {
-    rules.iter().find(|rule| matches(&rule.paths, path)).map(|rule| rule.strategy)
+    rules.iter().find(|rule| matches(&rule.pattern, path)).map(|rule| rule.strategy)
+}
+
+/// What a merge sealed: the commit it reached, or the paths it left conflicted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Merged {
+    /// The commit the working copy reached when the merge sealed.
+    pub commit: Option<String>,
+    /// Paths the merge left in conflict when [`commit`] is `None`.
+    pub conflicts: Vec<String>,
+}
+
+fn is_not_found(error: &Error) -> bool {
+    matches!(error.kind(), ErrorKind::NotFound) || error.code() == "not-found"
+}
+
+async fn workspace_at(at: &str, subject: Subject<'_>) -> Result<Workspace, Error> {
+    vcs::open(at).await.map_err(|error| subject.refusal(error))
 }
 
 fn matches(pattern: &str, path: &str) -> bool {
@@ -442,8 +460,8 @@ impl SourceClone {
     /// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
     ///   reached, or wants credentials.
     /// - Returns [`Error::ServerError`] when the capability fails otherwise.
-    pub async fn ensure<V: Vcs>(&self, vcs: &V) -> Result<(), Error> {
-        ensure(vcs, &self.url, &self.path()).await.map_err(|error| self.subject().refusal(error))
+    pub async fn ensure(&self) -> Result<(), Error> {
+        ensure(&self.url, &self.path()).await
     }
 
     /// The commit `revision` names in the clone.
@@ -453,8 +471,20 @@ impl SourceClone {
     /// Returns [`Error::NotFound`] with code `revision-not-found` when the
     /// repository holds no such revision, and the classes
     /// [`ensure`](Self::ensure) names otherwise.
-    pub async fn resolve<V: Vcs>(&self, vcs: &V, revision: &str) -> Result<String, Error> {
-        vcs.resolve(&self.path(), revision).await.map_err(|error| self.subject().refusal(error))
+    pub async fn resolve(&self, revision: &str) -> Result<String, Error> {
+        let subject = self.subject();
+        let workspace = workspace_at(&self.path(), subject).await?;
+        match workspace
+            .resolve(revision.to_owned())
+            .await
+            .map_err(|error| subject.refusal(error))?
+        {
+            Some(commit) => Ok(commit),
+            None => Err(Error::not_found(
+                "revision-not-found",
+                format!("{subject} has no `{revision}`"),
+            )),
+        }
     }
 
     fn subject(&self) -> Subject<'_> {
@@ -497,17 +527,18 @@ fn scp_like(url: &str) -> Option<(&str, &str)> {
 // Clones `url` at `at`, or fetches its origin when a run already cloned it:
 // the clone is the one operation that creates its location, so a read or a
 // fetch at a path the run does not hold yet is refused there.
-async fn ensure<V: Vcs>(vcs: &V, url: &str, at: &str) -> Result<(), vcs::Error> {
-    match vcs.clone_repo(url, at, CloneOptions { depth: None }).await {
-        Ok(()) => {
+async fn ensure(url: &str, at: &str) -> Result<(), Error> {
+    let subject = Subject::Repository(url);
+    match vcs::clone(url, at, None).await.map_err(|error| subject.refusal(error))? {
+        Ok(_workspace) => {
             tracing::info!(repository = url, clone = at, "cloned");
             Ok(())
         }
-        Err(vcs::Error::Exists(_)) => {
+        Err(_occupied) => {
             tracing::info!(repository = url, clone = at, "fetching");
-            vcs.fetch(at, ORIGIN).await
+            let workspace = workspace_at(at, subject).await?;
+            workspace.fetch(ORIGIN).await.map_err(|error| subject.refusal(error))
         }
-        Err(error) => Err(error),
     }
 }
 
@@ -522,29 +553,49 @@ enum Subject<'a> {
 }
 
 impl Subject<'_> {
-    fn refusal(self, error: vcs::Error) -> Error {
-        match error {
-            vcs::Error::NotFound(what) => Error::NotFound {
-                code: "revision-not-found".into(),
-                description: format!("{self} has no `{what}`"),
-            },
-            vcs::Error::NotARepository => match self {
-                Self::Project => Error::BadRequest {
-                    code: "repository-required".into(),
-                    description: "the project directory is not a repository".into(),
+    fn refusal(self, error: Error) -> Error {
+        match error.kind() {
+            ErrorKind::NotFound => Error::not_found(
+                "revision-not-found",
+                if error.description().is_empty() {
+                    format!("{self} has no such revision")
+                } else {
+                    format!("{self}: {}", error.description())
                 },
+            ),
+            ErrorKind::BadRequest if error.code() == "repository-required" => error,
+            ErrorKind::BadRequest if error.code() == "base-not-sealed" => error,
+            ErrorKind::Conflict if error.code() == "pending" => Error::bad_request(
+                "base-not-sealed",
+                format!("{self} holds pending changes: {}", error.description()),
+            ),
+            ErrorKind::Conflict if error.code() == "diverged" => {
+                server_error!("{self}: {}", error.description())
+            }
+            ErrorKind::Conflict if error.code() == "occupied" => {
+                server_error!("{self}: {}", error.description())
+            }
+            ErrorKind::BadGateway => bad_gateway!("{self}: {}", error.description()),
+            ErrorKind::ServerError if error.code() == "denied" => match self {
+                Self::Project => Error::bad_request(
+                    "repository-required",
+                    "the project directory is not a repository",
+                ),
                 Self::Repository(_) | Self::Target(_) | Self::WorkingCopy(_) => {
                     server_error!("{self} is not a repository")
                 }
             },
-            vcs::Error::Pending(paths) => Error::BadRequest {
-                code: "base-not-sealed".into(),
-                description: format!("{self} holds pending changes: {}", paths.join(", ")),
+            ErrorKind::ServerError if error.code() == "not-found" => match self {
+                Self::Project => Error::bad_request(
+                    "repository-required",
+                    "the project directory is not a repository",
+                ),
+                _ => Error::not_found(
+                    "revision-not-found",
+                    format!("{self}: {}", error.description()),
+                ),
             },
-            vcs::Error::Access(detail) => bad_gateway!("{self}: {detail}"),
-            vcs::Error::Diverged(what) => server_error!("{self}: `{what}` diverged"),
-            vcs::Error::Exists(what) => server_error!("{self}: `{what}` already exists"),
-            vcs::Error::Other(detail) => server_error!("{self}: {detail}"),
+            _ => server_error!("{self}: {}", error.description()),
         }
     }
 }
@@ -657,27 +708,53 @@ impl BuildRepo {
     /// - Returns [`Error::BadGateway`] when the remote refuses, cannot be
     ///   reached, or wants credentials.
     /// - Returns [`Error::ServerError`] when the capability fails otherwise.
-    pub async fn head<V: Vcs>(&self, vcs: &V) -> Result<Option<String>, Error> {
+    pub async fn head(&self) -> Result<Option<String>, Error> {
         match self {
-            Self::Project => match vcs.head(PROJECT).await {
-                Ok(head) => Ok(Some(head)),
-                Err(vcs::Error::NotFound(_)) => Ok(None),
-                Err(error) => Err(Subject::Project.refusal(error)),
-            },
+            Self::Project => {
+                let workspace = match vcs::open(PROJECT).await {
+                    Ok(workspace) => workspace,
+                    Err(error) if is_not_found(&error) => {
+                        return Err(Subject::Project.refusal(error));
+                    }
+                    Err(error) => return Err(Subject::Project.refusal(error)),
+                };
+                match workspace.head().await.map_err(|error| Subject::Project.refusal(error))? {
+                    Some(head) => Ok(Some(head)),
+                    None => Ok(None),
+                }
+            }
             Self::Target { name, url: Some(url) } => {
                 let at = target_path(name);
                 let subject = Subject::Repository(url);
-                ensure(vcs, url, &at).await.map_err(|error| subject.refusal(error))?;
-                vcs.resolve(&at, DEFAULT_BRANCH)
+                ensure(url, &at).await?;
+                let workspace = workspace_at(&at, subject).await?;
+                match workspace
+                    .resolve(DEFAULT_BRANCH.to_owned())
                     .await
-                    .map(Some)
-                    .map_err(|error| subject.refusal(error))
+                    .map_err(|error| subject.refusal(error))?
+                {
+                    Some(head) => Ok(Some(head)),
+                    None => Err(Error::not_found(
+                        "revision-not-found",
+                        format!("{subject} has no `{DEFAULT_BRANCH}`"),
+                    )),
+                }
             }
-            Self::Target { name, url: None } => match vcs.head(&target_path(name)).await {
-                Ok(head) => Ok(Some(head)),
-                Err(vcs::Error::NotFound(_) | vcs::Error::NotARepository) => Ok(None),
-                Err(error) => Err(self.subject().refusal(error)),
-            },
+            Self::Target { name, url: None } => {
+                let at = target_path(name);
+                match vcs::open(&at).await {
+                    Err(error) if is_not_found(&error) => Ok(None),
+                    Err(error) => Err(self.subject().refusal(error)),
+                    Ok(workspace) => match workspace
+                        .head()
+                        .await
+                        .map_err(|error| self.subject().refusal(error))?
+                    {
+                        Some(head) => Ok(Some(head)),
+                        None => Ok(None),
+                    },
+                }
+            }
         }
     }
 
@@ -693,9 +770,9 @@ impl BuildRepo {
     ///   the project is no repository, and with code `base-not-sealed` when
     ///   its checkout holds pending changes, listed.
     /// - Returns [`Error::ServerError`] when the capability fails otherwise.
-    pub async fn base<V: Vcs>(&self, vcs: &V, head: &str) -> Result<String, Error> {
+    pub async fn base(&self, head: &str) -> Result<String, Error> {
         if matches!(self, Self::Project) {
-            project_clean(vcs).await?;
+            project_clean().await?;
         }
         Ok(head.to_owned())
     }
@@ -708,17 +785,17 @@ impl BuildRepo {
     /// # Errors
     ///
     /// Returns [`Error::ServerError`] when the capability fails.
-    pub async fn init<V: Vcs>(&self, vcs: &V) -> Result<(), Error> {
+    pub async fn init(&self) -> Result<(), Error> {
         let Self::Target { name, url: None } = self else {
             return Ok(());
         };
-        match vcs.init(&target_path(name)).await {
-            Ok(()) => {
-                tracing::info!(repository = %target_path(name), "created the target repository");
+        let at = target_path(name);
+        match vcs::init(&at).await.map_err(|error| self.subject().refusal(error))? {
+            Ok(_workspace) => {
+                tracing::info!(repository = %at, "created the target repository");
                 Ok(())
             }
-            Err(vcs::Error::Exists(_)) => Ok(()),
-            Err(error) => Err(self.subject().refusal(error)),
+            Err(_occupied) => Ok(()),
         }
     }
 
@@ -739,14 +816,13 @@ impl BuildRepo {
     /// Returns [`Error::NotFound`] with code `revision-not-found` when the
     /// repository holds no `base`, and [`Error::ServerError`] when the
     /// capability fails otherwise.
-    pub async fn merged_under<V: Vcs>(
-        &self, vcs: &V, label: &str, base: &str, revision: &str,
+    pub async fn merged_under(
+        &self, label: &str, base: &str, revision: &str,
     ) -> Result<Option<(String, BTreeSet<ReqId>)>, Error> {
-        let repo = self.path();
-        let Some(head) = self.labelled(vcs, label).await? else {
+        let Some(head) = self.labelled(label).await? else {
             return Ok(None);
         };
-        if !self.descends(vcs, base, &head).await? {
+        if !self.descends(base, &head).await? {
             tracing::warn!(
                 label,
                 base,
@@ -755,8 +831,11 @@ impl BuildRepo {
             );
             return Ok(None);
         }
-        let entries =
-            vcs.log(&repo, &head, base).await.map_err(|error| self.subject().refusal(error))?;
+        let workspace = workspace_at(&self.path(), self.subject()).await?;
+        let entries = workspace
+            .log_all(&head, Some(base))
+            .await
+            .map_err(|error| self.subject().refusal(error))?;
         let merged: BTreeSet<ReqId> = entries
             .iter()
             .filter_map(|entry| Message::parse(&entry.message))
@@ -789,28 +868,25 @@ impl BuildRepo {
     /// Returns [`Error::NotFound`] with code `revision-not-found` when the
     /// repository holds no `head`, and [`Error::ServerError`] when the
     /// capability fails otherwise.
-    pub async fn cut_integration<V: Vcs>(
-        &self, vcs: &V, head: &str, revision: &str,
-    ) -> Result<Integration, Error> {
-        let repo = self.path();
+    pub async fn cut_integration(&self, head: &str, revision: &str) -> Result<Integration, Error> {
         let copy = WorkingCopy {
             at: INTEGRATION.to_owned(),
         };
-        match vcs.add(&repo, INTEGRATION, head).await {
-            Ok(()) => {
+        let repo = workspace_at(&self.path(), self.subject()).await?;
+        match repo.add(INTEGRATION, head).await.map_err(|error| copy.subject().refusal(error))? {
+            Ok(_workspace) => {
                 return Ok(Integration {
                     copy,
                     head: head.to_owned(),
                     staged: Vec::new(),
                 });
             }
-            Err(vcs::Error::Exists(_)) => {}
-            Err(error) => return Err(copy.subject().refusal(error)),
+            Err(_occupied) => {}
         }
 
         // what the copy an earlier run left holds over the head, read
         // before the copy goes
-        let (at, staged) = if let Some((at, staged)) = self.staged(vcs, head, revision).await? {
+        let (at, staged) = if let Some((at, staged)) = self.staged(head, revision).await? {
             tracing::info!(
                 head = %at,
                 staged = staged.len(),
@@ -821,8 +897,16 @@ impl BuildRepo {
             tracing::info!(at = INTEGRATION, "removing the working copy an earlier run left");
             (head.to_owned(), Vec::new())
         };
-        vcs.remove(INTEGRATION).await.map_err(|error| copy.subject().refusal(error))?;
-        vcs.add(&repo, INTEGRATION, &at).await.map_err(|error| copy.subject().refusal(error))?;
+        let integration = workspace_at(INTEGRATION, copy.subject()).await?;
+        integration.remove().await.map_err(|error| copy.subject().refusal(error))?;
+        match repo.add(INTEGRATION, &at).await.map_err(|error| copy.subject().refusal(error))? {
+            Ok(_workspace) => {}
+            Err(_occupied) => {
+                return Err(server_error!(
+                    "the integration working copy could not be cut at `{at}`"
+                ));
+            }
+        }
         Ok(Integration {
             copy,
             head: at,
@@ -834,22 +918,26 @@ impl BuildRepo {
     // it merged over `head` for `revision`; `None` when there is nothing
     // to resume from. A head the repository does not know is a copy of
     // another repository, which is nothing to resume from either.
-    async fn staged<V: Vcs>(
-        &self, vcs: &V, head: &str, revision: &str,
+    async fn staged(
+        &self, head: &str, revision: &str,
     ) -> Result<Option<(String, Vec<StagedSlice>)>, Error> {
-        let repo = self.path();
         let subject = Subject::WorkingCopy(INTEGRATION);
-        let staged = match vcs.head(INTEGRATION).await {
-            Ok(staged) => staged,
-            Err(vcs::Error::NotFound(_)) => return Ok(None),
+        let integration = match vcs::open(INTEGRATION).await {
+            Err(error) if is_not_found(&error) => return Ok(None),
             Err(error) => return Err(subject.refusal(error)),
+            Ok(workspace) => workspace,
+        };
+        let staged = match integration.head().await.map_err(|error| subject.refusal(error))? {
+            Some(staged) => staged,
+            None => return Ok(None),
         };
         if staged == head {
             return Ok(None);
         }
-        let descends = match vcs.descends(&repo, head, &staged).await {
+        let repo = workspace_at(&self.path(), self.subject()).await?;
+        let descends = match repo.is_ancestor(head.to_owned(), staged.clone()).await {
             Ok(descends) => descends,
-            Err(vcs::Error::NotFound(_)) => false,
+            Err(error) if is_not_found(&error) => false,
             Err(error) => return Err(self.subject().refusal(error)),
         };
         if !descends {
@@ -863,8 +951,10 @@ impl BuildRepo {
         }
 
         // every slice sealed over the head is this revision's, or none is
-        let entries =
-            vcs.log(&repo, &staged, head).await.map_err(|error| self.subject().refusal(error))?;
+        let entries = repo
+            .log_all(&staged, Some(head))
+            .await
+            .map_err(|error| self.subject().refusal(error))?;
         let mut slices = BTreeMap::new();
         for message in entries.iter().filter_map(|entry| Message::parse(&entry.message)) {
             if message.revision != revision {
@@ -892,11 +982,15 @@ impl BuildRepo {
     /// # Errors
     ///
     /// Returns [`Error::ServerError`] when the capability fails.
-    pub async fn labelled<V: Vcs>(&self, vcs: &V, label: &str) -> Result<Option<String>, Error> {
-        match vcs.labelled(&self.path(), label).await {
-            Ok(commit) => Ok(Some(commit)),
-            Err(vcs::Error::NotFound(_)) => Ok(None),
-            Err(error) => Err(self.subject().refusal(error)),
+    pub async fn labelled(&self, label: &str) -> Result<Option<String>, Error> {
+        let workspace = workspace_at(&self.path(), self.subject()).await?;
+        match workspace
+            .bookmark(label.to_owned())
+            .await
+            .map_err(|error| self.subject().refusal(error))?
+        {
+            Some(commit) => Ok(Some(commit)),
+            None => Ok(None),
         }
     }
 
@@ -907,10 +1001,10 @@ impl BuildRepo {
     /// Returns [`Error::NotFound`] with code `revision-not-found` when the
     /// repository holds neither commit, and [`Error::ServerError`] when the
     /// capability fails otherwise.
-    pub async fn descends<V: Vcs>(
-        &self, vcs: &V, ancestor: &str, descendant: &str,
-    ) -> Result<bool, Error> {
-        vcs.descends(&self.path(), ancestor, descendant)
+    pub async fn descends(&self, ancestor: &str, descendant: &str) -> Result<bool, Error> {
+        let workspace = workspace_at(&self.path(), self.subject()).await?;
+        workspace
+            .is_ancestor(ancestor.to_owned(), descendant.to_owned())
             .await
             .map_err(|error| self.subject().refusal(error))
     }
@@ -922,10 +1016,20 @@ impl BuildRepo {
     /// Returns [`Error::NotFound`] with code `revision-not-found` when the
     /// repository holds no such commit, and [`Error::ServerError`] when the
     /// capability fails otherwise.
-    pub async fn label<V: Vcs>(&self, vcs: &V, label: &str, commit: &str) -> Result<(), Error> {
-        vcs.label(&self.path(), label, commit)
+    pub async fn label(&self, label: &str, commit: &str) -> Result<(), Error> {
+        let workspace = workspace_at(&self.path(), self.subject()).await?;
+        match workspace
+            .set_bookmark(label.to_owned(), commit.to_owned(), None)
             .await
-            .map_err(|error| self.subject().refusal(error))?;
+            .map_err(|error| self.subject().refusal(error))?
+        {
+            Ok(()) => {}
+            Err(_conflict) => {
+                return Err(server_error!(
+                    "the label `{label}` could not be moved to commit `{commit}`"
+                ));
+            }
+        }
         tracing::info!(label, commit, "labelled");
         Ok(())
     }
@@ -941,21 +1045,18 @@ impl BuildRepo {
 
 // Holds the project checkout to nothing pending outside the engine's own
 // directories, so a build starts from a sealed tree.
-async fn project_clean<V: Vcs>(vcs: &V) -> Result<(), Error> {
-    let pending = vcs.pending(PROJECT).await.map_err(|error| Subject::Project.refusal(error))?;
+async fn project_clean() -> Result<(), Error> {
+    let pending = pending(PROJECT).await?;
     let unsealed: Vec<String> = pending
         .into_iter()
         .map(|change| change.path)
         .filter(|path| !path.split('/').next().is_some_and(|first| SKIP_DIRS.contains(&first)))
         .collect();
     if !unsealed.is_empty() {
-        return Err(Error::BadRequest {
-            code: "base-not-sealed".into(),
-            description: format!(
-                "the project checkout holds pending changes: {}",
-                unsealed.join(", ")
-            ),
-        });
+        return Err(Error::bad_request(
+            "base-not-sealed",
+            format!("the project checkout holds pending changes: {}", unsealed.join(", ")),
+        ));
     }
     Ok(())
 }
@@ -1003,17 +1104,30 @@ impl WorkingCopy {
     /// Returns [`Error::NotFound`] with code `revision-not-found` when the
     /// repository holds no such revision, and [`Error::ServerError`] when the
     /// capability fails otherwise.
-    pub async fn cut<V: Vcs>(vcs: &V, repo: &str, at: &str, revision: &str) -> Result<Self, Error> {
+    pub async fn cut(repo: &str, at: &str, revision: &str) -> Result<Self, Error> {
         let copy = Self { at: at.to_owned() };
-        match vcs.add(repo, at, revision).await {
-            Ok(()) => Ok(copy),
-            Err(vcs::Error::Exists(_)) => {
+        let repo_workspace = workspace_at(repo, Subject::WorkingCopy(at)).await?;
+        match repo_workspace
+            .add(at, revision)
+            .await
+            .map_err(|error| copy.subject().refusal(error))?
+        {
+            Ok(_workspace) => Ok(copy),
+            Err(_occupied) => {
                 tracing::info!(at, "removing the working copy an earlier run left");
-                vcs.remove(at).await.map_err(|error| copy.subject().refusal(error))?;
-                vcs.add(repo, at, revision).await.map_err(|error| copy.subject().refusal(error))?;
-                Ok(copy)
+                let existing = workspace_at(at, copy.subject()).await?;
+                existing.remove().await.map_err(|error| copy.subject().refusal(error))?;
+                match repo_workspace
+                    .add(at, revision)
+                    .await
+                    .map_err(|error| copy.subject().refusal(error))?
+                {
+                    Ok(_workspace) => Ok(copy),
+                    Err(_occupied) => {
+                        Err(server_error!("the working copy could not be cut at `{at}`"))
+                    }
+                }
             }
-            Err(error) => Err(copy.subject().refusal(error)),
         }
     }
 
@@ -1034,8 +1148,8 @@ impl WorkingCopy {
     /// # Errors
     ///
     /// Returns [`Error::ServerError`] when the capability fails.
-    pub async fn pending<V: Vcs>(&self, vcs: &V) -> Result<Vec<Change>, Error> {
-        pending(vcs, &self.at).await
+    pub async fn pending(&self) -> Result<Vec<Change>, Error> {
+        pending(&self.at).await
     }
 
     /// Seals every pending change as one commit under `message`; `None` when there is nothing to seal.
@@ -1043,8 +1157,9 @@ impl WorkingCopy {
     /// # Errors
     ///
     /// Returns [`Error::ServerError`] when the capability fails.
-    pub async fn commit<V: Vcs>(&self, vcs: &V, message: &str) -> Result<Option<String>, Error> {
-        vcs.commit(&self.at, message).await.map_err(|error| self.subject().refusal(error))
+    pub async fn commit(&self, message: &str) -> Result<Option<String>, Error> {
+        let workspace = workspace_at(&self.at, self.subject()).await?;
+        workspace.commit(message.to_owned()).await.map_err(|error| self.subject().refusal(error))
     }
 
     /// Merges `revision` into the working copy under `policy` and advances its head.
@@ -1057,12 +1172,28 @@ impl WorkingCopy {
     /// Returns [`Error::NotFound`] with code `revision-not-found` when the
     /// repository holds no such commit, and [`Error::ServerError`] when the
     /// capability fails otherwise.
-    pub async fn merge<V: Vcs>(
-        &self, vcs: &V, revision: &str, message: &str, policy: &[Rule],
+    pub async fn merge(
+        &self, revision: &str, message: &str, policy: &[Rule],
     ) -> Result<Merged, Error> {
-        vcs.merge(&self.at, revision, message, policy)
+        let workspace = workspace_at(&self.at, self.subject()).await?;
+        match workspace
+            .merge(revision.to_owned(), message.to_owned(), policy.to_vec())
             .await
-            .map_err(|error| self.subject().refusal(error))
+            .map_err(|error| self.subject().refusal(error))?
+        {
+            Ok(commit) => Ok(Merged {
+                commit: Some(commit),
+                conflicts: Vec::new(),
+            }),
+            Err(Unmerged::Conflicts(paths)) => Ok(Merged {
+                commit: None,
+                conflicts: paths,
+            }),
+            Err(Unmerged::Pending(paths)) => Err(Error::bad_request(
+                "base-not-sealed",
+                format!("{} holds pending changes: {}", self.subject(), paths.join(", ")),
+            )),
+        }
     }
 
     /// The commit the working copy sits on.
@@ -1070,8 +1201,13 @@ impl WorkingCopy {
     /// # Errors
     ///
     /// Returns [`Error::ServerError`] when the capability fails.
-    pub async fn head<V: Vcs>(&self, vcs: &V) -> Result<String, Error> {
-        vcs.head(&self.at).await.map_err(|error| self.subject().refusal(error))
+    pub async fn head(&self) -> Result<String, Error> {
+        let workspace = workspace_at(&self.at, self.subject()).await?;
+        workspace
+            .head()
+            .await
+            .map_err(|error| self.subject().refusal(error))?
+            .ok_or_else(|| server_error!("{} has no commit yet", self.subject()))
     }
 
     /// Removes the working copy and everything it holds.
@@ -1079,8 +1215,9 @@ impl WorkingCopy {
     /// # Errors
     ///
     /// Returns [`Error::ServerError`] when the capability fails.
-    pub async fn remove<V: Vcs>(self, vcs: &V) -> Result<(), Error> {
-        vcs.remove(&self.at).await.map_err(|error| self.subject().refusal(error))
+    pub async fn remove(self) -> Result<(), Error> {
+        let workspace = workspace_at(&self.at, self.subject()).await?;
+        workspace.remove().await.map_err(|error| self.subject().refusal(error))
     }
 
     fn subject(&self) -> Subject<'_> {
@@ -1093,6 +1230,8 @@ impl WorkingCopy {
 /// # Errors
 ///
 /// Returns [`Error::ServerError`] when the capability fails.
-pub async fn pending<V: Vcs>(vcs: &V, at: &str) -> Result<Vec<Change>, Error> {
-    vcs.pending(at).await.map_err(|error| Subject::WorkingCopy(at).refusal(error))
+pub async fn pending(at: &str) -> Result<Vec<Change>, Error> {
+    let subject = Subject::WorkingCopy(at);
+    let workspace = workspace_at(at, subject).await?;
+    workspace.status_all().await.map_err(|error| subject.refusal(error))
 }

@@ -19,7 +19,7 @@ use anyhow::Context;
 use omnia_sdk::blobstore::{self, Container};
 use omnia_sdk::keyvalue::types::{Precondition, Revision as StoreRevision};
 use omnia_sdk::keyvalue::{self, Bucket};
-use omnia_sdk::{Error, ErrorKind, Vcs, server_error};
+use omnia_sdk::{Error, ErrorKind, server_error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -401,12 +401,12 @@ impl Current {
     // The revision the tree at `commit` holds under `spec/`, with its id;
     // `None` when the tree holds no `spec/`. Held to `expect`, the id the
     // label names, where there is one.
-    async fn read_at<P: Vcs>(
-        vcs: &P, repo: &BuildRepo, commit: &str, expect: Option<&str>,
+    async fn read_at(
+        repo: &BuildRepo, commit: &str, expect: Option<&str>,
     ) -> Result<Option<Self>, Error> {
-        let copy = WorkingCopy::cut(vcs, &repo.path(), REVISION, commit).await?;
+        let copy = WorkingCopy::cut(&repo.path(), REVISION, commit).await?;
         let current = Self::read_tree(copy.path(), commit, expect).await;
-        copy.remove(vcs).await?;
+        copy.remove().await?;
         current
     }
 
@@ -750,12 +750,12 @@ pub async fn clear() -> Result<(), Error> {
 // documents, does not match the id its label names, or at an unlabelled
 // head holds documents that read as no revision or as no one revision's,
 // and `spec-outdated` on one under another grammar.
-pub async fn current<P: Vcs>(vcs: &P, repo: &BuildRepo) -> Result<Standing, Error> {
+pub async fn current(repo: &BuildRepo) -> Result<Standing, Error> {
     let KeyEntry {
         value: pointer,
         revision: pointer_revision,
     } = revision_key().await;
-    let Some(head) = repo.head(vcs).await? else {
+    let Some(head) = repo.head().await? else {
         return Ok(Standing {
             head: None,
             current: None,
@@ -770,9 +770,9 @@ pub async fn current<P: Vcs>(vcs: &P, repo: &BuildRepo) -> Result<Standing, Erro
     let named = pointer.as_deref().and_then(|pointer| str::from_utf8(pointer).ok());
     if let Some(id) = named {
         let label = label(id);
-        match repo.labelled(vcs, &label).await? {
-            Some(commit) if repo.descends(vcs, &head, &commit).await? => {
-                let current = Current::read_at(vcs, repo, &commit, Some(id)).await?;
+        match repo.labelled(&label).await? {
+            Some(commit) if repo.descends(&head, &commit).await? => {
+                let current = Current::read_at(repo, &commit, Some(id)).await?;
                 return Ok(Standing {
                     head: Some(head),
                     current,
@@ -790,7 +790,7 @@ pub async fn current<P: Vcs>(vcs: &P, repo: &BuildRepo) -> Result<Standing, Erro
     }
 
     // the head's tree
-    let current = Current::read_at(vcs, repo, &head, None).await?;
+    let current = Current::read_at(repo, &head, None).await?;
     Ok(Standing {
         head: Some(head),
         current,
@@ -809,8 +809,8 @@ pub async fn current<P: Vcs>(vcs: &P, repo: &BuildRepo) -> Result<Standing, Erro
 // `emery/<id>`; the pointer swapped by compare-and-swap; the staged item
 // cleared; the copy removed. A revision the repository already holds seals
 // nothing and stands labelled as it was.
-pub async fn commit<P: Vcs>(
-    vcs: &P, repo: &BuildRepo, sealing: Sealing, standing: Standing,
+pub async fn commit(
+    repo: &BuildRepo, sealing: Sealing, standing: Standing,
 ) -> Result<Sealed, Error> {
     let (id, documents) = sealing.revision.documents()?;
     let diff = standing.diff(&sealing.revision);
@@ -823,9 +823,9 @@ pub async fn commit<P: Vcs>(
 
     // the tree the seal lands over
     let (copy, cut) = match message.base.as_deref() {
-        Some(at) => (WorkingCopy::cut(vcs, &repo.path(), REVISION, at).await?, true),
+        Some(at) => (WorkingCopy::cut(&repo.path(), REVISION, at).await?, true),
         None if repo.is_created() => {
-            repo.init(vcs).await?;
+            repo.init().await?;
             (WorkingCopy::checkout(&repo.path()), false)
         }
         None => {
@@ -841,9 +841,9 @@ pub async fn commit<P: Vcs>(
         }
     };
 
-    let sealed = seal_copy(vcs, repo, &documents, &message, &copy).await;
+    let sealed = seal_copy(repo, &documents, &message, &copy).await;
     if cut {
-        copy.remove(vcs).await?;
+        copy.remove().await?;
     }
     let commit = sealed?;
 
@@ -873,8 +873,8 @@ pub async fn commit<P: Vcs>(
 
 // Writes `documents` into `copy`, seals them under `message`, and labels
 // the commit; answers the commit `copy` was cut at when nothing changed.
-async fn seal_copy<P: Vcs>(
-    vcs: &P, repo: &BuildRepo, documents: &Documents, message: &RevisionMessage, copy: &WorkingCopy,
+async fn seal_copy(
+    repo: &BuildRepo, documents: &Documents, message: &RevisionMessage, copy: &WorkingCopy,
 ) -> Result<String, Error> {
     let at = copy.path();
     let over = message.base.as_deref();
@@ -890,12 +890,12 @@ async fn seal_copy<P: Vcs>(
     }
 
     // what changed, held to the secret gate and sealed
-    let pending = copy.pending(vcs).await?;
+    let pending = copy.pending().await?;
     let leaks = secrets::findings(at, &pending).await?;
     if !leaks.is_empty() {
         return Err(secrets::refusal("the seal", &leaks));
     }
-    let commit = match (copy.commit(vcs, &message.to_string()).await?, over) {
+    let commit = match (copy.commit(&message.to_string()).await?, over) {
         (Some(commit), _) => commit,
         (None, Some(over)) => {
             tracing::info!(
@@ -909,7 +909,7 @@ async fn seal_copy<P: Vcs>(
             return Err(server_error!("sealing the specification made no root commit"));
         }
     };
-    repo.label(vcs, &label(&message.revision), &commit).await?;
+    repo.label(&label(&message.revision), &commit).await?;
     Ok(commit)
 }
 
