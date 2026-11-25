@@ -434,7 +434,13 @@ impl GroupingBrief {
              outcome changed. Multiple claims of one source under one stem that state facets of \
              one standing requirement join that standing requirement's group in one class — the \
              standing requirement's class when unchanged, or one class of their own when \
-             revised — rather than adding separate groups for already-stated facets. Two \
+             revised — rather than adding separate groups for already-stated facets. When a \
+             standing requirement combines facets across files or steps and a listed claim \
+             states only one facet whose behaviour, values, and outcomes match what that \
+             standing requirement already says for that facet, place the claim in the standing \
+             requirement's agreeing class (when no other claim revises it) or list the standing \
+             requirement in `restated`, rather than placing the partial facet in a separate \
+             class that replaces the standing statement. Two \
              standing requirements never share a group. When one change claim states nothing \
              beyond what one or more standing requirements already state, list `{\"claim\": \
              <claim>, \"standing\": [<standing>, ...]}` in `restated` (omitting the claim from \
@@ -448,6 +454,10 @@ impl GroupingBrief {
              since a withdrawal of a behaviour the specification does not hold is refused after \
              your answer.\n",
         )?;
+        self.write_whole_scope_instructions(f)
+    }
+
+    fn write_whole_scope_instructions(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if !self.whole.is_empty() {
             if let Some(sources) = self.whole.narrowed_sources() {
                 writeln!(

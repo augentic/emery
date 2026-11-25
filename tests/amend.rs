@@ -620,18 +620,56 @@ const CONSUMED: &str = "Cancellations arrive as a message, which REQ-004 consume
 const STORED: &str =
     "Orders are kept in the order store, which REQ-003 writes and REQ-004 updates.";
 
-// A base design over `DESIGN`'s overview and domain model whose
-// `## APIs and integrations` holds the paragraphs `apis`.
+// A base design over `DESIGN`'s domain model with owned overview and
+// `## APIs and integrations` paragraphs.
+struct BaseDesign {
+    overview: String,
+    apis: Vec<String>,
+}
+
+impl BaseDesign {
+    fn new(apis: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            overview: OVERVIEW.to_owned(),
+            apis: apis.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    fn without_apis() -> Self {
+        Self::new(std::iter::empty::<String>())
+    }
+
+    fn with_overview(mut self, overview: impl Into<String>) -> Self {
+        self.overview = overview.into();
+        self
+    }
+}
+
+impl std::fmt::Display for BaseDesign {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let domain_model: Value =
+            serde_json::from_str(DOMAIN_MODEL).expect("DOMAIN_MODEL is valid JSON");
+        let apis: Vec<Value> =
+            self.apis.iter().map(|text| serde_json::json!({ "text": text })).collect();
+        let mut sections = vec![
+            serde_json::json!({ "kind": "overview", "blocks": [{ "text": self.overview }] }),
+            domain_model,
+        ];
+        if !apis.is_empty() {
+            sections.push(serde_json::json!({ "kind": "apis", "blocks": apis }));
+        }
+        let design = serde_json::json!({
+            "emery": 10,
+            "parent": null,
+            "preamble": [],
+            "sections": sections,
+        });
+        f.write_str(&design.to_string())
+    }
+}
+
 fn describing(apis: &[&str]) -> String {
-    let blocks: Vec<String> = apis.iter().map(|text| format!(r#"{{"text": "{text}"}}"#)).collect();
-    format!(
-        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
-            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}]}},
-            {DOMAIN_MODEL},
-            {{"kind": "apis", "blocks": [{}]}}
-        ]}}"#,
-        blocks.join(", ")
-    )
+    BaseDesign::new(apis.iter().copied()).to_string()
 }
 
 // A retirement informs the sections that describe it: where a paragraph of
@@ -782,12 +820,7 @@ async fn amend_retired_section() {
 async fn amend_retired_overview() {
     let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
                  under it.";
-    let base = format!(
-        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
-            {{"kind": "overview", "blocks": [{{"text": "{cited}"}}]}},
-            {DOMAIN_MODEL}
-        ]}}"#
-    );
+    let base = BaseDesign::without_apis().with_overview(cited).to_string();
     // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
     let grouping = r#"{"groups": [
         {"claims": [0, 4], "classes": [[0, 4]]},
@@ -839,13 +872,7 @@ async fn amend_retired_overview() {
 async fn revised_dropped_block() {
     let cited = "Sign-in issues a session; orders are placed (REQ-003) and cancelled (REQ-004) \
                  under it.";
-    let base = format!(
-        r#"{{"emery": 10, "parent": null, "preamble": [], "sections": [
-            {{"kind": "overview", "blocks": [{{"text": "{cited}"}}]}},
-            {DOMAIN_MODEL},
-            {{"kind": "apis", "blocks": [{{"text": "{STORED}"}}]}}
-        ]}}"#
-    );
+    let base = BaseDesign::new([STORED]).with_overview(cited).to_string();
     // indices 0 and 1 are `docs`, 2..=5 the standing requirements in id order
     let grouping = r#"{"groups": [
         {"claims": [0, 4], "classes": [[0, 4]]},
@@ -3890,12 +3917,14 @@ async fn amend_design_decision() {
 }
 
 // Where the change drafts a requirement, a paragraph named `revised` that
-// cites requirements the change leaves unchanged, and no other, is a finding
-// the next answer corrects by keeping it verbatim.
+// cites requirements the change leaves unchanged, and no other, is marked
+// `(keep verbatim — unchanged …)` outside `## Overview` and is a finding the
+// next answer corrects by keeping it verbatim.
 #[tokio::test]
 async fn amend_design_revised() {
+    let overview = "Sign-in issues a session; orders (REQ-003) are placed and cancelled under it.";
     let stored = "Orders are kept in the order store, which REQ-003 writes.";
-    let base = describing(&[stored]);
+    let base = BaseDesign::new([stored]).with_overview(overview).to_string();
     // index 0 is `docs`'s requirement, 1..=4 the standing requirements in id order
     let grouping = r#"{"groups": [
         {"claims": [0, 2], "classes": [[0], [2]]},
@@ -3910,7 +3939,7 @@ async fn amend_design_revised() {
     ]}"#;
     let reworded = format!(
         r#"{{"sections": [
-            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}], "revised": []}},
+            {{"kind": "overview", "blocks": [{{"text": "{overview}"}}], "revised": []}},
             {{"kind": "apis", "blocks": [
                 {{"text": "Orders are kept in a relational order store, which REQ-003 writes."}},
                 {{"text": "The team vault holds the secrets (from docs)."}}
@@ -3919,7 +3948,7 @@ async fn amend_design_revised() {
     );
     let kept = format!(
         r#"{{"sections": [
-            {{"kind": "overview", "blocks": [{{"text": "{OVERVIEW}"}}], "revised": []}},
+            {{"kind": "overview", "blocks": [{{"text": "{overview}"}}], "revised": []}},
             {{"kind": "apis", "blocks": [
                 {{"text": "{stored}"}},
                 {{"text": "The team vault holds the secrets (from docs)."}}
@@ -3939,13 +3968,22 @@ async fn amend_design_revised() {
     cli_ok(&provider, &["emery", "amend", DOCS, "--config", PROJECT_CONFIG]).await;
 
     assert_eq!(provider.model.seen().len(), 4, "the grouping, the draft, the design, corrected");
+    let request = provider.model.seen()[2].messages.join("\n");
+    assert!(request.contains(&format!("### Overview\n\n[1] {overview}\n")), "{request}");
+    assert!(
+        request.contains(&format!(
+            "### APIs and integrations\n\n[1] (keep verbatim — unchanged REQ-003) {stored}\n"
+        )),
+        "{request}"
+    );
     let exchanges = provider.model.exchanges();
     assert!(
         exchanges[2].outcome.as_ref().is_err_and(|finding| {
             finding.contains(
                 "`## APIs and integrations` [1] describes REQ-003, which the change leaves \
                  unchanged; keep it verbatim",
-            )
+            ) && finding
+                .contains("omit [1] from `revised`, and place added detail in a new paragraph")
         }),
         "{exchanges:?}"
     );

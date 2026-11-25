@@ -43,11 +43,23 @@ pub struct DesignAmend {
     // The sections the turn redrafts, in vocabulary order: `## Overview`,
     // which describes the whole, every section a change claim informs, and
     // every section a paragraph of which describes a retired requirement.
-    redrafted: Vec<SectionKind>,
+    redrafted: BTreeSet<SectionKind>,
     // The requirements the change leaves as they stand.
     unchanged: BTreeSet<ReqId>,
     // The requirements the change retires, by id and subject.
     retired: BTreeMap<ReqId, String>,
+}
+
+// How a base paragraph stands against an amendment's requirements.
+enum ParagraphPolicy {
+    // Outside `## Overview`, in a change that drafts requirements and retires
+    // none, cites unchanged requirements alone and must stay verbatim.
+    LockedVerbatim(BTreeSet<ReqId>),
+    // Cites retired requirements alone and may be dropped or reworded unnamed.
+    Withdrawn,
+    // May stay verbatim unnamed, or be named in `revised` while still
+    // describing every `kept` requirement it cited.
+    Revisable { kept: Vec<ReqId> },
 }
 
 impl DesignAmend {
@@ -70,15 +82,15 @@ impl DesignAmend {
             .collect();
         let scoped = ScopedExtracts::new(extracts, drafted, !retired.is_empty(), base);
         let outline = Outline::amend(&scoped.extracts, scoped.types, base);
-        let touches = |kind| outline.informed(kind) || describes(base, kind, &retired);
-        if !SectionKind::VARIANTS.iter().copied().any(touches) {
-            return None;
-        }
-        let redrafted = SectionKind::VARIANTS
+        let mut redrafted: BTreeSet<SectionKind> = SectionKind::VARIANTS
             .iter()
             .copied()
-            .filter(|&kind| kind == SectionKind::Overview || touches(kind))
+            .filter(|&kind| outline.informed(kind) || describes(base, kind, &retired))
             .collect();
+        if redrafted.is_empty() {
+            return None;
+        }
+        redrafted.insert(SectionKind::Overview);
 
         Some(Self {
             extracts: scoped.extracts,
@@ -99,12 +111,21 @@ impl DesignAmend {
         self.redrafted.contains(&kind)
     }
 
-    // Whether `text` describes requirements the change retires, and no
-    // other: such a paragraph describes nothing the specification states any
-    // longer, so the turn may drop or reword it without naming it.
-    fn withdrawn(&self, text: &str) -> bool {
+    fn paragraph_policy(&self, kind: SectionKind, text: &str) -> ParagraphPolicy {
         let cited = cited(text);
-        !cited.is_empty() && cited.iter().all(|id| self.retired.contains_key(id))
+        if !cited.is_empty() && cited.iter().all(|id| self.retired.contains_key(id)) {
+            return ParagraphPolicy::Withdrawn;
+        }
+        if kind != SectionKind::Overview
+            && !self.drafted.is_empty()
+            && self.retired.is_empty()
+            && !cited.is_empty()
+            && cited.is_subset(&self.unchanged)
+        {
+            return ParagraphPolicy::LockedVerbatim(cited);
+        }
+        let kept = cited.into_iter().filter(|id| !self.retired.contains_key(id)).collect();
+        ParagraphPolicy::Revisable { kept }
     }
 
     // Whether the base's `kind` section may leave the design: it stands,
@@ -113,37 +134,21 @@ impl DesignAmend {
     fn withdrawable(&self, kind: SectionKind) -> bool {
         kind != SectionKind::Overview
             && self.base.section(kind).is_some_and(|section| {
-                section.blocks.iter().all(|block| match block {
-                    revision::Block::Text(text) => self.withdrawn(text),
-                    revision::Block::Type { .. } => false,
+                section.blocks.iter().all(|block| {
+                    matches!(
+                        block,
+                        revision::Block::Text(text)
+                            if matches!(
+                                self.paragraph_policy(kind, text),
+                                ParagraphPolicy::Withdrawn
+                            )
+                    )
                 })
             })
     }
 
-    // Whether a paragraph of `kind` citing `cited` describes unchanged
-    // requirements alone and must stay verbatim: outside `## Overview`, in a
-    // change that drafts a requirement and retires none.
-    fn untouched(&self, kind: SectionKind, cited: &BTreeSet<ReqId>) -> bool {
-        kind != SectionKind::Overview
-            && !self.drafted.is_empty()
-            && self.retired.is_empty()
-            && !cited.is_empty()
-            && cited.is_subset(&self.unchanged)
-    }
-
-    // The loss check over one redrafted section against the base's, three
-    // cases over a base paragraph by what it cites:
-    // - it is kept verbatim or named `revised`, and a named one is reworded,
-    //   never dropped: every id it cites that the change keeps is cited by
-    //   some paragraph of the answered section, and, outside `## Overview`
-    //   where the change drafts a requirement and retires none, one citing
-    //   unchanged requirements alone is kept verbatim, since a change that
-    //   drafts none carries technology alone, which lands in the paragraphs
-    //   describing the behaviour it serves;
-    // - citing retired requirements alone, it is withdrawn: dropped or
-    //   reworded, named or not;
-    // - a number naming a verbatim paragraph, a type block, or no block of
-    //   the section is a finding.
+    // Holds one redrafted section against the base's paragraphs and `revised`
+    // indices.
     fn loss(&self, section: &Redraft, label: &str, review: &mut Review) {
         let Some(base) = self.base.section(section.kind) else {
             if !section.revised.is_empty() {
@@ -170,36 +175,33 @@ impl DesignAmend {
                 }
                 continue;
             };
-            let cited = cited(text);
-            let withdrawn =
-                !cited.is_empty() && cited.iter().all(|id| self.retired.contains_key(id));
-            match (present.contains(&verbatim(text)), named) {
-                (true, true) => review.note(format_args!(
+            let policy = self.paragraph_policy(section.kind, text);
+            match (present.contains(&verbatim(text)), named, policy) {
+                (true, true, _) => review.note(format_args!(
                     "{label} [{number}] is named in `revised` but is kept verbatim; drop it from \
                      `revised`"
                 )),
-                (false, _) if self.untouched(section.kind, &cited) => review.note(format_args!(
+                (true, false, _) | (false, _, ParagraphPolicy::Withdrawn) => {}
+                (false, _, ParagraphPolicy::LockedVerbatim(unchanged)) => review.note(format_args!(
                     "{label} [{number}] describes {}, which the change leaves unchanged; keep it \
-                     verbatim",
-                    listed(&cited)
+                     verbatim, omit [{number}] from `revised`, and place added detail in a new \
+                     paragraph",
+                    listed(&unchanged)
                 )),
-                (false, false) if !withdrawn => review.note(format_args!(
+                (false, false, ParagraphPolicy::Revisable { .. }) => review.note(format_args!(
                     "{label} [{number}] is dropped or reworded without being named in `revised`; \
                      keep it verbatim, or name it"
                 )),
-                (_, false) => {}
-                (false, true) => {
-                    let undescribed: Vec<ReqId> = cited
-                        .into_iter()
-                        .filter(|id| !self.retired.contains_key(id) && !described.contains(id))
-                        .collect();
+                (false, true, ParagraphPolicy::Revisable { kept }) => {
+                    let undescribed: Vec<ReqId> =
+                        kept.into_iter().filter(|id| !described.contains(id)).collect();
                     if !undescribed.is_empty() {
+                        let pronoun = if undescribed.len() == 1 { "it" } else { "them" };
                         review.note(format_args!(
                             "{label} [{number}] is revised and describes {}, which the change \
-                             keeps, yet no paragraph of the section describes {} now; reword it \
-                             rather than dropping it",
+                             keeps, yet no paragraph of the section describes {pronoun} now; \
+                             reword it rather than dropping it",
                             listed(&undescribed),
-                            if undescribed.len() == 1 { "it" } else { "them" }
                         ));
                     }
                 }
@@ -213,6 +215,118 @@ impl DesignAmend {
                 base.blocks.len()
             ));
         }
+    }
+
+    fn write_current_design(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            "\n## Current design\n\nEach section to redraft is listed with its blocks numbered. \
+             Keep a paragraph verbatim unless the change touches what it describes, and name \
+             every paragraph you reword or drop in that section's `revised` list by its number: \
+             a paragraph neither kept verbatim nor named is refused, and so is one named but \
+             kept verbatim. Any `[n]` marked `(keep verbatim — unchanged …)` is locked because \
+             it cites unchanged requirements alone: copy its text verbatim without the marker, \
+             omit `n` from `revised`, and put routes, queries, or technical rules for added or \
+             revised requirements in new paragraphs rather than editing a locked summary \
+             paragraph. Name a paragraph `revised` to reword it, never to drop it: every \
+             requirement it describes that the change keeps is still described by a paragraph \
+             of the section, so a paragraph you drop describes retired requirements alone, or \
+             none. A type block is listed as its `Type:` line and is kept or dropped by its key \
+             under `## Type blocks`, never named in `revised`.\n",
+        )?;
+        if !self.retired.is_empty() {
+            f.write_str(
+                "\nA paragraph describing requirements the change retires, and no other, \
+                 describes nothing the specification states any longer: drop it, or reword it \
+                 around what stands, named or not. A section other than `## Overview` whose \
+                 every paragraph describes retired requirements alone may be answered with no \
+                 block, and leaves the design.\n",
+            )?;
+        }
+        for &kind in &self.redrafted {
+            write!(f, "\n### {kind}\n\n")?;
+            let Some(section) = self.base.section(kind) else {
+                f.write_str("The current design has no such section; draft it.\n")?;
+                continue;
+            };
+            for (position, block) in section.blocks.iter().enumerate() {
+                self.write_block(f, kind, position + 1, block)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn write_block(
+        &self, f: &mut Formatter<'_>, kind: SectionKind, number: usize, block: &revision::Block,
+    ) -> fmt::Result {
+        match block {
+            revision::Block::Text(text) => match self.paragraph_policy(kind, text) {
+                ParagraphPolicy::LockedVerbatim(unchanged) => {
+                    let unchanged = listed(&unchanged);
+                    writeln!(f, "[{number}] (keep verbatim — unchanged {unchanged}) {text}")
+                }
+                ParagraphPolicy::Withdrawn | ParagraphPolicy::Revisable { .. } => {
+                    writeln!(f, "[{number}] {text}")
+                }
+            },
+            revision::Block::Type { key, role, .. } => {
+                writeln!(f, "[{number}] {} {key} ({role})", revision::TYPE)
+            }
+        }
+    }
+
+    fn write_type_blocks(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if !self.redrafts(SectionKind::DomainModel) || self.outline.types.is_empty() {
+            return Ok(());
+        }
+        f.write_str(
+            "\n## Type blocks\n\nReference each key exactly once under `domain-model` as a \
+             `{\"type\": {\"key\": \"<key>\", \"role\": \"data\" | \"mechanism\"}}` block; \
+             the engine inserts its signature verbatim. A kept type keeps its role unless \
+             the signature the change redeclares changes what it stands for; a new one is \
+             `data`, a shape the program reads, stores, or produces, or `mechanism`, a class \
+             that is a client, a retriever, a bootstrap, a settings carrier, or an error or \
+             exception class, which a build declares nothing for and no part owns.\n\n",
+        )?;
+        for (key, signature) in &self.outline.types {
+            match self.base.type_block(key) {
+                Some((held, role)) if held == signature => {
+                    writeln!(f, "- `{key}` — kept, {role}")?;
+                }
+                Some((_, role)) => {
+                    writeln!(f, "- `{key}` — kept, {role}; the change redeclares its signature")?;
+                }
+                None => writeln!(f, "- `{key}` — new")?,
+            }
+        }
+        Ok(())
+    }
+
+    fn write_requirements(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("\n## Requirements\n\n")?;
+        if self.drafted.is_empty() {
+            f.write_str(
+                "The change adds or revises no requirement; the specification's stand as they \
+                 are. What it carries lands in the paragraphs that already describe the \
+                 behaviour it serves, each one you revise named in `revised`.\n",
+            )?;
+        } else {
+            write!(
+                f,
+                "The requirements the change adds or revises, drafted beside this \
+                 design:\n\n{bases}",
+                bases = BasesSection(&self.drafted)
+            )?;
+        }
+        if !self.retired.is_empty() {
+            f.write_str(
+                "\nThe requirements the change retires, which nothing of the design describes \
+                 any longer:\n\n",
+            )?;
+            for (id, subject) in &self.retired {
+                writeln!(f, "- {id} `{subject}`")?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -286,7 +400,7 @@ impl Brief for DesignAmend {
             self.loss(section, &label, review);
         }
 
-        for kind in self.redrafted.iter().filter(|kind| !seen.contains(kind)) {
+        for kind in self.redrafted.difference(&seen) {
             review.note(format_args!("`## {kind}` is required but absent"));
         }
 
@@ -356,94 +470,9 @@ impl Display for DesignAmend {
              sections alone.\n\n{claims}",
             claims = ClaimsSection(&self.extracts)
         )?;
-
-        f.write_str(
-            "\n## Current design\n\nEach section to redraft is listed with its blocks numbered. \
-             Keep a paragraph verbatim unless the change touches what it describes, and name \
-             every paragraph you reword or drop in that section's `revised` list by its number: \
-             a paragraph neither kept verbatim nor named is refused, and so is one named but \
-             kept verbatim. Name a paragraph `revised` to reword it, never to drop it: every \
-             requirement it describes that the change keeps is still described by a paragraph \
-             of the section, so a paragraph you drop describes retired requirements alone, or \
-             none. A type block is \
-             listed as its `Type:` line and is kept or dropped by its key under `## Type \
-             blocks`, never named in `revised`.\n",
-        )?;
-        if !self.retired.is_empty() {
-            f.write_str(
-                "\nA paragraph describing requirements the change retires, and no other, \
-                 describes nothing the specification states any longer: drop it, or reword it \
-                 around what stands, named or not. A section other than `## Overview` whose \
-                 every paragraph describes retired requirements alone may be answered with no \
-                 block, and leaves the design.\n",
-            )?;
-        }
-        for kind in &self.redrafted {
-            write!(f, "\n### {kind}\n\n")?;
-            let Some(section) = self.base.section(*kind) else {
-                f.write_str("The current design has no such section; draft it.\n")?;
-                continue;
-            };
-            for (position, block) in section.blocks.iter().enumerate() {
-                let number = position + 1;
-                match block {
-                    revision::Block::Text(text) => writeln!(f, "[{number}] {text}")?,
-                    revision::Block::Type { key, role, .. } => {
-                        writeln!(f, "[{number}] {} {key} ({role})", revision::TYPE)?;
-                    }
-                }
-            }
-        }
-
-        if self.redrafts(SectionKind::DomainModel) && !self.outline.types.is_empty() {
-            f.write_str(
-                "\n## Type blocks\n\nReference each key exactly once under `domain-model` as a \
-                 `{\"type\": {\"key\": \"<key>\", \"role\": \"data\" | \"mechanism\"}}` block; \
-                 the engine inserts its signature verbatim. A kept type keeps its role unless \
-                 the signature the change redeclares changes what it stands for; a new one is \
-                 `data`, a shape the program reads, stores, or produces, or `mechanism`, a class \
-                 that is a client, a retriever, a bootstrap, a settings carrier, or an error or \
-                 exception class, which a build declares nothing for and no part owns.\n\n",
-            )?;
-            for (key, signature) in &self.outline.types {
-                match self.base.type_block(key) {
-                    Some((held, role)) if held == signature => {
-                        writeln!(f, "- `{key}` — kept, {role}")?;
-                    }
-                    Some((_, role)) => writeln!(
-                        f,
-                        "- `{key}` — kept, {role}; the change redeclares its signature"
-                    )?,
-                    None => writeln!(f, "- `{key}` — new")?,
-                }
-            }
-        }
-
-        f.write_str("\n## Requirements\n\n")?;
-        if self.drafted.is_empty() {
-            f.write_str(
-                "The change adds or revises no requirement; the specification's stand as they \
-                 are. What it carries lands in the paragraphs that already describe the \
-                 behaviour it serves, each one you revise named in `revised`.\n",
-            )?;
-        } else {
-            write!(
-                f,
-                "The requirements the change adds or revises, drafted beside this \
-                 design:\n\n{bases}",
-                bases = BasesSection(&self.drafted)
-            )?;
-        }
-        if !self.retired.is_empty() {
-            f.write_str(
-                "\nThe requirements the change retires, which nothing of the design describes \
-                 any longer:\n\n",
-            )?;
-            for (id, subject) in &self.retired {
-                writeln!(f, "- {id} `{subject}`")?;
-            }
-        }
-        Ok(())
+        self.write_current_design(f)?;
+        self.write_type_blocks(f)?;
+        self.write_requirements(f)
     }
 }
 
