@@ -28,9 +28,6 @@ url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/
 [policy.omnia]
 audit-as-crates-io = false
 
-[policy.omnia-backend]
-audit-as-crates-io = false
-
 [policy.omnia-cli]
 audit-as-crates-io = false
 
@@ -95,6 +92,9 @@ audit-as-crates-io = false
 audit-as-crates-io = false
 
 [policy.omnia-wasi-otel]
+audit-as-crates-io = false
+
+[policy.omnia-wasi-types]
 audit-as-crates-io = false
 
 [policy.omnia-wasi-sql]

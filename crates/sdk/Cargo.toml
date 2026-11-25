@@ -39,5 +39,5 @@ omnia-wasi-otel.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-omnia-test = { workspace = true, features = ["guest"] }
+omnia-test = { workspace = true, features = ["host"] }
 tempfile.workspace = true
