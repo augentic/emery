@@ -19,7 +19,7 @@ pub use capability::{
     DesignType, MergeRule, MergeStrategy, Outcome, Requirement, Scenario, Slice, TargetMetadata,
     Task,
 };
-use omnia_sdk::{Error, ErrorKind};
+use omnia_sdk::Error;
 pub use report::Report;
 pub use verdict::Verdict;
 
@@ -43,8 +43,8 @@ pub fn metadata(id: &str) -> TargetMetadata {
 
 /// Runs `task` in the tree at `workspace` using the adapter registered as `id`.
 ///
-/// An input refusal is [`ErrorKind::BadRequest`]; any other adapter failure is
-/// [`ErrorKind::BadGateway`]. The outcome must answer `task`, or the caller
+/// An input refusal is [`omnia_sdk::ErrorKind::BadRequest`]; any other adapter failure is
+/// [`omnia_sdk::ErrorKind::BadGateway`]. The outcome must answer `task`, or the caller
 /// refuses it.
 ///
 /// # Errors
@@ -56,7 +56,10 @@ pub fn metadata(id: &str) -> TargetMetadata {
 /// Panics when called off `wasm32`, where the host import is not linked.
 #[cfg_attr(
     not(target_arch = "wasm32"),
-    expect(clippy::unused_async, reason = "native builds keep the wasm32 signature until the host links the import")
+    expect(
+        clippy::unused_async,
+        reason = "native builds keep the wasm32 signature until the host links the import"
+    )
 )]
 pub async fn run(id: &str, workspace: &str, task: &Task) -> Result<Outcome, Error> {
     #[cfg(target_arch = "wasm32")]

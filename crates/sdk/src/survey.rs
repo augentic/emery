@@ -14,7 +14,7 @@ use emery_adapter::source::{Anchor, BadAnchor, Claim, ClaimKind, Evidence, Sourc
 use emery_lexicon::Lexicon;
 use emery_prose::Doc;
 use omnia_sdk::model::Question;
-use omnia_sdk::{Error, Model, server_error};
+use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -172,8 +172,8 @@ pub struct Facts<'a> {
 /// - Returns [`Error::ServerError`] when `docs` does not contain `survey.md`
 ///   or the source is an inline value with no tree to survey.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
-pub async fn surfaces<P: Model>(
-    ctx: &Context<'_, P>, docs: &'static [Doc], facts: &Facts<'_>,
+pub async fn surfaces(
+    ctx: &Context<'_>, docs: &'static [Doc], facts: &Facts<'_>,
     mut check: impl FnMut(&Inventory) -> Vec<String> + Send,
 ) -> Result<Inventory, Error> {
     let source = &ctx.input.name;
@@ -196,23 +196,19 @@ pub async fn surfaces<P: Model>(
 
     tracing::info!(%source, modules = facts.modules.len(), "surveying by model");
     let inventory = question
-        .ask(
-            ctx.model,
-            brief.to_string(),
-            Some(reference::serve(docs, RUNTIME, source, None)),
-            |answer| {
-                // the gate and the adapter's check read one spelling of every path
-                let answer = answer.normalised();
-                let mut findings = answer.findings(root, facts.modules);
-                findings.extend(check(&answer));
-                if findings.is_empty() {
-                    return Ok(());
-                }
-                tracing::debug!(%source, ?findings, "candidate rejected");
-                Err(findings)
-            },
-        )
+        .ask(brief.to_string(), Some(reference::serve(docs, RUNTIME, source, None)), |answer| {
+            // the gate and the adapter's check read one spelling of every path
+            let answer = answer.normalised();
+            let mut findings = answer.findings(root, facts.modules);
+            findings.extend(check(&answer));
+            if findings.is_empty() {
+                return Ok(());
+            }
+            tracing::debug!(%source, ?findings, "candidate rejected");
+            Err(findings)
+        })
         .await
+        .map_err(Error::from)?
         .map_err(Error::from)?
         .normalised();
 
@@ -402,8 +398,8 @@ impl Survey {
 /// - Returns [`Error::ServerError`] when `docs` does not contain `survey.md`
 ///   or the source is an inline value with no tree to survey.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails.
-pub async fn seams<P: Model, R: Recogniser>(
-    ctx: &Context<'_, P>, docs: &'static [Doc], tree: &Tree<R>,
+pub async fn seams<R: Recogniser>(
+    ctx: &Context<'_>, docs: &'static [Doc], tree: &Tree<R>,
 ) -> Result<Survey, Error> {
     let source = &ctx.input.name;
     let locator = SurfaceLocator::new(tree);

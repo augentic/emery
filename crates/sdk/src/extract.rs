@@ -19,7 +19,7 @@ use emery_prose::Doc;
 use futures::stream::{self, StreamExt as _};
 use futures::{FutureExt as _, TryFutureExt as _};
 use omnia_sdk::model::Question;
-use omnia_sdk::{Error, Model, bad_request, server_error};
+use omnia_sdk::{Error, bad_request, server_error};
 
 use crate::{CLAIMS, Context, EXTRACT, RUNTIME, beneath, prompt, push_unique, quoted, reference};
 
@@ -85,8 +85,8 @@ const NEAREST: usize = 16;
 ///   grammar, or `docs` does not contain `extract.md`.
 /// - Returns [`Error::BadGateway`] when a model tool or transport fails on
 ///   the retried request too.
-pub async fn extract<P: Model>(
-    ctx: &Context<'_, P>, docs: &'static [Doc], seams: &[Seam],
+pub async fn extract(
+    ctx: &Context<'_>, docs: &'static [Doc], seams: &[Seam],
 ) -> Result<Evidence, Error> {
     let source = &ctx.input.name;
     if seams.is_empty() {
@@ -606,8 +606,8 @@ fn longest_run(body: &str) -> usize {
 // per-completion telemetry. A failure's description is `join`'s to report
 // once, so the event carries the class alone.
 #[tracing::instrument(skip_all, fields(source = %ctx.input.name, seam = index))]
-async fn turn<P: Model>(
-    system: &str, ctx: &Context<'_, P>, docs: &'static [Doc], index: usize, plan: &Plan<'_>,
+async fn turn(
+    system: &str, ctx: &Context<'_>, docs: &'static [Doc], index: usize, plan: &Plan<'_>,
 ) -> Result<Evidence, Error> {
     let source = &ctx.input.name;
     let mut question = Question::<Evidence>::new(&format!("evidence-{source}-{index}"))
@@ -623,10 +623,9 @@ async fn turn<P: Model>(
         plan,
     };
 
-    let ask = || {
+    let ask = || async {
         question
             .ask(
-                ctx.model,
                 brief.to_string(),
                 Some(reference::serve(docs, RUNTIME, source, Some(index))),
                 |answer| {
@@ -639,6 +638,8 @@ async fn turn<P: Model>(
                     Err(findings)
                 },
             )
+            .await
+            .map_err(Error::from)?
             .map_err(Error::from)
     };
 

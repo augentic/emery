@@ -8,7 +8,7 @@
 use std::future::ready;
 
 use emery_prose::Doc;
-use omnia_sdk::model::{Function, Tool, ToolCall, ToolFuture, Tools};
+use omnia_sdk::model::{Tool, ToolCall, ToolFuture, Tools};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -26,14 +26,11 @@ const SYSTEM: &[&str] = &[EXTRACT, CLAIMS, SURVEY, BUILD, VERIFY];
 #[must_use]
 pub fn tools() -> Vec<Tool> {
     vec![
-        Tool::Function(Function::of::<ListDocs>(
+        Tool::of::<ListDocs>(
             LIST_DOCS,
             "List the further reference documents this call can read, by path.",
-        )),
-        Tool::Function(Function::of::<ReadDoc>(
-            READ_DOC,
-            "Read one embedded reference document in full by its path.",
-        )),
+        ),
+        Tool::of::<ReadDoc>(READ_DOC, "Read one embedded reference document in full by its path."),
     ]
 }
 

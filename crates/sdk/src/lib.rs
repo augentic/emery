@@ -19,8 +19,7 @@
 //!
 //! ```
 //! use emery_sdk::{
-//!     Context, Doc, Error, Evidence, Metadata, Model, Seam, SourceAdapter, SourceInput,
-//!     SourceKind,
+//!     Context, Doc, Error, Evidence, Metadata, Seam, SourceAdapter, SourceInput, SourceKind,
 //! };
 //!
 //! const KIND: SourceKind = SourceKind::Intent;
@@ -32,7 +31,7 @@
 //!         Metadata { kind: KIND }
 //!     }
 //!
-//!     async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+//!     async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
 //!         let seams = survey(ctx.input)?;
 //!         emery_sdk::extract(ctx, PROSE, &seams).await
 //!     }
@@ -75,8 +74,8 @@ pub mod workspace;
 #[doc(inline)]
 pub use emery_adapter::source::export;
 pub use emery_adapter::source::{
-    Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, Source, SourceContent, SourceInput,
-    SourceKind, SourceMetadata,
+    Anchor, Backing, BadAnchor, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceKind,
+    SourceMetadata,
 };
 pub use emery_adapter::{
     BadMessage, BadPath, BadRoute, BadTrigger, METHODS, NoFollow, Route, Standing, Trigger,
@@ -84,7 +83,7 @@ pub use emery_adapter::{
 };
 pub use emery_lexicon::{Lexicon, words};
 pub use emery_prose::{Doc, body, check, find, prose};
-pub use omnia_sdk::{Error, Model, bad_gateway, bad_request, not_found, server_error};
+pub use omnia_sdk::{Error, bad_gateway, bad_request, not_found, server_error};
 pub use serde_json;
 pub use tracing;
 
@@ -195,18 +194,10 @@ macro_rules! export_target {
     };
 }
 
-/// The host model a turn is put to on WebAssembly.
-///
-/// [`export_source!`] and [`export_target!`] bind it into every context
-/// they build; [`WasiProvider`](omnia_sdk::WasiProvider) delegates each
-/// request through Omnia's WASI interface.
-#[cfg(target_arch = "wasm32")]
-pub use omnia_sdk::WasiProvider as Provider;
-
 /// The `extract` arm of [`export_source!`], reached through the macro alone.
 #[cfg(target_arch = "wasm32")]
 #[doc(hidden)]
-#[omnia_wasi_otel::instrument(name = "source_adapter_extract")]
+#[omnia_sdk::otel::instrument(name = "source_adapter_extract")]
 pub async fn call<A: SourceAdapter>(
     id: export::AdapterId, input: export::Input,
 ) -> Result<export::Evidence, export::Error> {
@@ -214,7 +205,6 @@ pub async fn call<A: SourceAdapter>(
     let ctx = Context {
         adapter_id: &id,
         input: &input,
-        model: &Provider,
     };
     Ok(A::extract(&ctx).await?.into())
 }
@@ -291,27 +281,17 @@ pub fn unique<T: Ord>(items: impl IntoIterator<Item = T>) -> Vec<T> {
     items.into_iter().zip(kept).filter_map(|(item, kept)| kept.then_some(item)).collect()
 }
 
-/// The adapter addressed, its input, and the model available to one extraction call.
+/// The adapter addressed and the source input of one extraction call.
 ///
-/// [`extract`](fn@extract) takes it, so every turn of a call is put to the
-/// one model the host bound.
-#[derive(Debug)]
-pub struct Context<'a, P> {
+/// [`extract`](fn@extract) takes it; each turn reaches the host model through
+/// Omnia's `model` interface.
+#[derive(Clone, Copy, Debug)]
+pub struct Context<'a> {
     /// The identifier used to address the adapter.
     pub adapter_id: &'a str,
     /// The [`SourceInput`] identifying the source and its content.
     pub input: &'a SourceInput,
-    /// The [`Model`] used for extraction requests.
-    pub model: &'a P,
 }
-
-impl<P> Clone for Context<'_, P> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<P> Copy for Context<'_, P> {}
 
 /// What a source adapter declares about itself: the kind of source it reads.
 ///
@@ -347,7 +327,7 @@ pub trait SourceAdapter {
     ///
     /// Returns [`Error::BadRequest`] when the adapter refuses its input, and
     /// what [`extract`](fn@extract) returns otherwise.
-    fn extract<P: Model>(ctx: &Context<'_, P>) -> impl Future<Output = Result<Evidence, Error>>;
+    fn extract(ctx: &Context<'_>) -> impl Future<Output = Result<Evidence, Error>>;
 }
 
 // Each item in backticks, comma-separated.

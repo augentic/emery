@@ -19,7 +19,7 @@ pub use capability::{SourceContent, SourceInput, SourceMetadata};
 pub use evidence::{
     Anchor, Backing, BadAnchor, CLAIM_ID_REGEX, Claim, ClaimKind, Evidence, SourceKind,
 };
-use omnia_sdk::{Error, ErrorKind};
+use omnia_sdk::Error;
 
 /// Returns the metadata the adapter registered as `id` declares.
 ///
@@ -41,8 +41,8 @@ pub fn metadata(id: &str) -> SourceMetadata {
 
 /// Extracts evidence from `input` using the adapter registered as `id`.
 ///
-/// An input refusal is [`ErrorKind::BadRequest`]; any other adapter failure is
-/// [`ErrorKind::BadGateway`].
+/// An input refusal is [`omnia_sdk::ErrorKind::BadRequest`]; any other adapter failure is
+/// [`omnia_sdk::ErrorKind::BadGateway`].
 ///
 /// # Errors
 ///
@@ -54,7 +54,10 @@ pub fn metadata(id: &str) -> SourceMetadata {
 /// Panics when called off `wasm32`, where the host import is not linked.
 #[cfg_attr(
     not(target_arch = "wasm32"),
-    expect(clippy::unused_async, reason = "native builds keep the wasm32 signature until the host links the import")
+    expect(
+        clippy::unused_async,
+        reason = "native builds keep the wasm32 signature until the host links the import"
+    )
 )]
 pub async fn extract(id: &str, input: &SourceInput) -> Result<Evidence, Error> {
     #[cfg(target_arch = "wasm32")]
