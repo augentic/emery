@@ -17,11 +17,11 @@ use std::path::Path;
 
 use emery_adapter::is_kebab;
 pub use emery_adapter::source::SourceContent;
-use emery_adapter::source::{Evidence, Source, SourceInput, SourceKind, SourceMetadata};
+use emery_adapter::source::{
+    self as source_adapter, Evidence, SourceInput, SourceKind, SourceMetadata,
+};
 use futures::future;
-use omnia_sdk::api::Context;
-use omnia_sdk::plugins::Digest;
-use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request, server_error};
+use omnia_sdk::{Error, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
 pub(crate) use self::basis::{BASELINE, Basis, Contributor, GroupingBrief};
@@ -38,7 +38,7 @@ pub use crate::revision::{
     SectionKind, SpecDiff, Waves,
 };
 use crate::vcs::{SourceClone, TargetRef, WorkingCopy};
-use crate::{Files, Rank, apply, preopen_path, store, vcs};
+use crate::{Rank, apply, preopen_path, store, vcs};
 
 /// Generates and stages a specification candidate from `input`, sealing it when asked.
 ///
@@ -96,11 +96,7 @@ use crate::{Files, Rank, apply, preopen_path, store, vcs};
 ///   candidate under [`SpecifyInput::apply`], the candidate left staged.
 ///
 /// A loader's or a source's error keeps its own class and code.
-pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + Files>(
-    context: Context<P>, input: SpecifyInput,
-) -> Result<SpecifyOutput, Error> {
-    let provider = context.provider();
-
+pub async fn specify(input: SpecifyInput) -> Result<SpecifyOutput, Error> {
     let bound = Bound::all(&input.sources)?;
     store::no_amendment().await?;
 
@@ -112,7 +108,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
         None => None,
     };
     let standing = match &repo {
-        Some(repo) => Some(store::current(provider, repo).await?),
+        Some(repo) => Some(store::current(repo).await?),
         None => None,
     };
     if !input.fresh
@@ -124,17 +120,17 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
     let Extracted {
         extracts,
         repositories,
-    } = Bound::extract_all(provider, &bound).await?;
+    } = Bound::extract_all(&bound).await?;
 
-    let bases = GroupingBrief::new(&extracts).derive(provider).await?;
+    let bases = GroupingBrief::new(&extracts).derive().await?;
     let chunks = SpecBrief::chunked(&extracts, &bases);
 
     // the slicing owns the design's data types alone, so it follows the design
     let (drafts, (design, plan)) = future::try_join(
-        future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge(provider))),
+        future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge())),
         async {
-            let design = DesignBrief::new(&extracts, &bases).judge(provider).await?;
-            let plan = PartBrief::new(&bases, Types::of(&design)).derive(provider).await?;
+            let design = DesignBrief::new(&extracts, &bases).judge().await?;
+            let plan = PartBrief::new(&bases, Types::of(&design)).derive().await?;
             Ok::<_, Error>((design, plan))
         },
     )
@@ -154,7 +150,7 @@ pub async fn specify<P: Model + Source + StateStore + BlobStore + Plugins + Vcs 
         "staged"
     );
     let applied = match (input.apply, repo, standing) {
-        (true, Some(repo), Some(standing)) => Some(apply::seal(provider, &repo, standing).await?),
+        (true, Some(repo), Some(standing)) => Some(apply::seal(&repo, standing).await?),
         _ => None,
     };
 
@@ -225,7 +221,7 @@ pub struct SourceConfig {
     /// bytes to it, stored or fetched. `None` trusts whatever the load
     /// resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub digest: Option<Digest>,
+    pub digest: Option<String>,
     /// The authority rank the source is reconciled under.
     ///
     /// `None` ranks the source by its adapter's kind ([`Rank::from`]): intent
@@ -357,7 +353,7 @@ pub struct RepositorySource {
 // extract once its adapter is loaded.
 pub(crate) struct Bound<'a> {
     adapter: &'a AdapterRef,
-    digest: Option<&'a Digest>,
+    digest: Option<&'a str>,
     repository: Option<&'a SourceRepository>,
     rank: Option<Rank>,
     scope: Scope,
@@ -367,10 +363,7 @@ pub(crate) struct Bound<'a> {
 impl<'a> Bound<'a> {
     pub(crate) fn all(sources: &'a [SourceConfig]) -> Result<Vec<Self>, Error> {
         if sources.is_empty() {
-            return Err(Error::BadRequest {
-                code: "specify-source-required".into(),
-                description: "no sources".into(),
-            });
+            return Err(Error::bad_request("specify-source-required", "no sources"));
         }
 
         let mut names = BTreeSet::new();
@@ -402,16 +395,13 @@ impl<'a> Bound<'a> {
     // working copy that lasts the extraction, and extracts every source at
     // once; the first failure ends the run and the copies go whether or not
     // extraction succeeded.
-    pub(crate) async fn extract_all<P: Source + Plugins + Vcs>(
-        provider: &P, bound: &[Self],
-    ) -> Result<Extracted, Error> {
+    pub(crate) async fn extract_all(bound: &[Self]) -> Result<Extracted, Error> {
         let loaded =
-            &adapter::load(provider, bound.iter().map(|source| (source.adapter, source.digest)))
-                .await?;
-        let checkouts = Checkouts::prepare(provider, bound).await?;
+            &adapter::load(bound.iter().map(|source| (source.adapter, source.digest))).await?;
+        let checkouts = Checkouts::prepare(bound).await?;
         let extracted =
-            future::try_join_all(bound.iter().map(|source| source.extract(provider, loaded))).await;
-        let removed = checkouts.remove(provider).await;
+            future::try_join_all(bound.iter().map(|source| source.extract(loaded))).await;
+        let removed = checkouts.remove().await;
         Ok(Extracted {
             extracts: extracted?,
             repositories: removed?,
@@ -419,8 +409,8 @@ impl<'a> Bound<'a> {
     }
 
     #[tracing::instrument(skip_all, fields(source = %self.input.name, adapter = %self.adapter))]
-    async fn extract<S: Source>(
-        &self, provider: &S, loaded: &BTreeMap<AdapterRef, Loaded<SourceMetadata>>,
+    async fn extract(
+        &self, loaded: &BTreeMap<AdapterRef, Loaded<SourceMetadata>>,
     ) -> Result<Extract, Error> {
         let source = &self.input.name;
         let adapter = self.adapter;
@@ -431,7 +421,7 @@ impl<'a> Bound<'a> {
         let kind = metadata.kind;
         let rank = self.rank.unwrap_or_else(|| Rank::from(kind));
         tracing::info!(%source, adapter = %id, %kind, %rank, "extracting");
-        let evidence = Source::extract(provider, id, &self.input).await?;
+        let evidence = source_adapter::extract(id, &self.input).await?;
 
         let findings = evidence.findings();
         if !findings.is_empty() {
@@ -484,7 +474,7 @@ struct Checkouts {
 }
 
 impl Checkouts {
-    async fn prepare<V: Vcs>(vcs: &V, bound: &[Bound<'_>]) -> Result<Self, Error> {
+    async fn prepare(bound: &[Bound<'_>]) -> Result<Self, Error> {
         let mut ensured = BTreeSet::new();
         let mut copies = Vec::new();
         let mut read = Vec::new();
@@ -493,11 +483,11 @@ impl Checkouts {
             let name = &source.input.name;
             let repo = SourceClone::new(&repository.url);
             if ensured.insert(repo.path()) {
-                repo.ensure(vcs).await?;
+                repo.ensure().await?;
             }
-            let commit = repo.resolve(vcs, &repository.revision).await?;
+            let commit = repo.resolve(&repository.revision).await?;
             let at = vcs::source_checkout(name);
-            copies.push(WorkingCopy::cut(vcs, &repo.path(), &at, &commit).await?);
+            copies.push(WorkingCopy::cut(&repo.path(), &at, &commit).await?);
             tracing::info!(
                 source = %name,
                 repository = %repo.url(),
@@ -515,9 +505,9 @@ impl Checkouts {
         Ok(Self { copies, read })
     }
 
-    async fn remove<V: Vcs>(self, vcs: &V) -> Result<Vec<RepositorySource>, Error> {
+    async fn remove(self) -> Result<Vec<RepositorySource>, Error> {
         for copy in self.copies {
-            copy.remove(vcs).await?;
+            copy.remove().await?;
         }
         Ok(self.read)
     }

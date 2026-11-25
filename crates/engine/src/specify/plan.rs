@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::{Trigger, is_kebab};
-use omnia_sdk::{Error, Model};
+use omnia_sdk::Error;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -56,11 +56,11 @@ impl<'a> PartBrief<'a> {
     // - Returns `Error::ServerError` when required prose is missing or a
     //   plan cannot be reconciled with the specification.
     // - Returns `Error::BadGateway` when the model operation fails.
-    pub async fn derive<M: Model>(self, model: &M) -> Result<Plan, Error> {
+    pub async fn derive(self) -> Result<Plan, Error> {
         if self.floors.len() < 2 {
             return Ok(self.whole());
         }
-        self.judge(model).await
+        self.judge().await
     }
 
     // The one stem as the one part, named for it and owning every type.

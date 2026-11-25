@@ -9,10 +9,7 @@ use std::fmt::{self, Display, Formatter};
 use std::num::NonZeroUsize;
 
 use anyhow::Context as _;
-use emery_adapter::target::Target;
-use omnia_sdk::api::Context;
-use omnia_sdk::plugins::Digest;
-use omnia_sdk::{BlobStore, Error, Plugins, StateStore, Vcs, bad_request};
+use omnia_sdk::{Error, bad_request};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use strum::{AsRefStr, EnumString, VariantArray};
@@ -24,8 +21,8 @@ pub use crate::revision::{
     Amendment, AmendmentBase, BriefState, Change, ChangeClass, DesignDiff, PartChange, PartClass,
     SliceId, Waves,
 };
+use crate::store;
 use crate::vcs::TargetRef;
-use crate::{Files, store};
 
 /// Returns one document from the current revision, the staged candidate, or the staged amendment.
 ///
@@ -54,10 +51,7 @@ use crate::{Files, store};
 ///   reads the repository under otherwise.
 /// - Returns [`Error::ServerError`] when storage, validation, or serialisation
 ///   fails.
-pub async fn show<P: Target + Plugins + StateStore + BlobStore + Vcs + Files>(
-    context: Context<P>, input: ShowInput,
-) -> Result<ShowOutput, Error> {
-    let store = context.provider();
+pub async fn show(input: ShowInput) -> Result<ShowOutput, Error> {
     if input.artifact == Artifact::Amendment {
         let staged = store::staged_amendment().await?.ok_or_else(store::no_amendment_staged)?;
         tracing::debug!(amendment = %staged.id, "amendment read");
@@ -70,18 +64,17 @@ pub async fn show<P: Target + Plugins + StateStore + BlobStore + Vcs + Files>(
         ));
     }
 
-    let (id, revision) = input.revision(store).await?;
+    let (id, revision) = input.revision().await?;
     match input.artifact {
         Artifact::Spec => ShowOutput::new(&revision.spec, id),
         Artifact::Design => ShowOutput::new(&revision.design, id),
         Artifact::Plan => ShowOutput::new(&revision.plan, id),
         Artifact::Schedule => {
             let (budget, source) = BudgetSource::resolve_with(
-                store,
                 input.budget,
                 input.budget_source,
                 input.adapter.as_ref(),
-                input.digest.as_ref(),
+                input.digest.as_deref(),
             )
             .await?;
             let schedule = Schedule::new(&revision, budget, source);
@@ -128,7 +121,7 @@ pub struct ShowInput {
     pub adapter: Option<AdapterRef>,
     /// The `sha256:` digest the target adapter's component must resolve to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub digest: Option<Digest>,
+    pub digest: Option<String>,
 }
 
 impl ShowInput {
@@ -149,9 +142,7 @@ impl ShowInput {
     // The revision a document of `self.artifact` is read from, with its id:
     // the staged candidate, or the current revision of `self.target`'s
     // repository.
-    async fn revision<P: StateStore + BlobStore + Vcs + Files>(
-        &self, store: &P,
-    ) -> Result<(String, Revision), Error> {
+    async fn revision(&self) -> Result<(String, Revision), Error> {
         let (id, revision) = if self.staged {
             let candidate = store::staged().await?.ok_or_else(store::nothing_staged)?;
             (candidate.id, candidate.revision)
@@ -159,7 +150,7 @@ impl ShowInput {
             let target =
                 self.target.as_ref().ok_or_else(|| store::target_required("`emery show`"))?;
             let repo = target.repo()?;
-            let standing = store::current(store, &repo).await?;
+            let standing = store::current(&repo).await?;
             let Some(current) = standing.current else {
                 return Err(store::not_generated(&standing).await);
             };

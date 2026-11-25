@@ -10,11 +10,11 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use emery_adapter::is_kebab;
-use emery_adapter::source::{Source, SourceMetadata};
-use emery_adapter::target::{Target, TargetMetadata};
+use emery_adapter::source::{self as source_adapter, SourceMetadata};
+use emery_adapter::target::{self as target_adapter, TargetMetadata};
 use futures::future;
-use omnia_sdk::plugins::{Digest, Location};
-use omnia_sdk::{Error, Plugins, bad_request, server_error};
+use omnia_sdk::plugins::{self, Conflict, Release, Source};
+use omnia_sdk::{Error, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
 /// The two kinds of adapter a run loads, each by the interface it exports.
@@ -105,7 +105,7 @@ pub struct AdapterRef {
 
 impl AdapterRef {
     /// Returns the package name, which a run binds a source under when the
-    /// operator gives no `name` of their own.
+    /// operator gives none.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -118,17 +118,18 @@ impl AdapterRef {
         format!("{}:{}", self.namespace, self.name)
     }
 
-    /// Returns the loader location this reference loads at.
+    /// Returns the loader source this reference loads at.
     ///
-    /// The location names no registry: the deployment's store answers a
+    /// The source names no registry: the deployment's store answers a
     /// release it holds, its routing of the namespace one it lacks, or the
     /// load is refused.
     #[must_use]
-    pub fn location(&self) -> Location {
-        Location::Registry {
-            package: self.to_string(),
-            endpoint: None,
-        }
+    pub fn source(&self, pin: Option<String>) -> Source {
+        Source::Release(Release {
+            reference: self.to_string(),
+            registry: None,
+            pin,
+        })
     }
 }
 
@@ -172,10 +173,7 @@ impl FromStr for AdapterRef {
 
 // Every malformed reference shares one recovery: spell an exact package.
 fn malformed(description: String) -> Error {
-    Error::BadRequest {
-        code: "adapter-reference".into(),
-        description,
-    }
+    Error::bad_request("adapter-reference", description)
 }
 
 // A decoder reports the refusal at the offending field, where the error's
@@ -184,7 +182,7 @@ impl TryFrom<String> for AdapterRef {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, String> {
-        value.parse().map_err(|err: Error| err.description())
+        value.parse().map_err(|err: Error| err.description().to_owned())
     }
 }
 
@@ -203,18 +201,17 @@ pub struct Loaded<M> {
 
 // Duplicate references are loaded once, under one pin, and all load before
 // any is held to its axis or asked for metadata.
-pub async fn load<'a, P: Source + Plugins>(
-    provider: &P, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
+pub async fn load<'a>(
+    adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a str>)>,
 ) -> Result<BTreeMap<AdapterRef, Loaded<SourceMetadata>>, Error> {
-    load_axis(provider, Axis::Source, adapters, |id| Source::metadata(provider, id)).await
+    load_axis(Axis::Source, adapters, |id| source_adapter::metadata(id)).await
 }
 
-pub async fn load_target<P: Target + Plugins>(
-    provider: &P, adapter: &AdapterRef, digest: Option<&Digest>,
+pub async fn load_target(
+    adapter: &AdapterRef, digest: Option<&str>,
 ) -> Result<Loaded<TargetMetadata>, Error> {
     let loaded =
-        load_axis(provider, Axis::Target, [(adapter, digest)], |id| Target::metadata(provider, id))
-            .await?;
+        load_axis(Axis::Target, [(adapter, digest)], |id| target_adapter::metadata(id)).await?;
     loaded.into_values().next().ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))
 }
 
@@ -236,9 +233,8 @@ impl Declared for TargetMetadata {
     }
 }
 
-async fn load_axis<'a, P: Plugins, M: Declared>(
-    provider: &P, axis: Axis,
-    adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
+async fn load_axis<'a, M: Declared>(
+    axis: Axis, adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a str>)>,
     metadata: impl Fn(&str) -> M,
 ) -> Result<BTreeMap<AdapterRef, Loaded<M>>, Error> {
     let pins = distinct(adapters)?;
@@ -257,9 +253,7 @@ async fn load_axis<'a, P: Plugins, M: Declared>(
 
     // load all adapters in parallel
     let loaders = pins.iter().map(|(adapter, pin)| async move {
-        Plugins::load(provider, &adapter.location(), pin.as_ref())
-            .await
-            .map_err(|error| at_adapter(error.into(), adapter))
+        acquire(adapter, pin.as_deref()).await.map_err(|error| at_adapter(error, adapter))
     });
     let handles = future::try_join_all(loaders).await?;
 
@@ -269,40 +263,46 @@ async fn load_axis<'a, P: Plugins, M: Declared>(
     // hold each adapter to its axis, gate its version, and record what it loaded as
     let mut loaded = BTreeMap::new();
     for (adapter, plugin) in pins.into_keys().zip(handles) {
-        axis.require(adapter, plugin.exports())?;
-        let id = plugin.id();
-        let metadata = metadata(id);
+        axis.require(adapter, &plugin.exports)?;
+        let id = plugin.name.clone();
+        let metadata = metadata(&id);
         if let Some(declared) = metadata.emery_version() {
-            require_version(id, declared, &version)?;
+            require_version(&id, declared, &version)?;
         }
 
         tracing::debug!(%adapter, %id, "adapter loaded");
 
-        loaded.insert(
-            adapter.clone(),
-            Loaded {
-                id: id.to_owned(),
-                metadata,
-            },
-        );
+        loaded.insert(adapter.clone(), Loaded { id, metadata });
     }
 
     Ok(loaded)
 }
 
+async fn acquire(adapter: &AdapterRef, pin: Option<&str>) -> Result<plugins::Plugin, Error> {
+    let source = adapter.source(pin.map(str::to_owned));
+    match plugins::load(source).await? {
+        Ok(plugin) => Ok(plugin),
+        Err(conflict) => Err(refused(adapter, &conflict)),
+    }
+}
+
+fn refused(adapter: &AdapterRef, conflict: &Conflict) -> Error {
+    Error::bad_request("refused", format!("adapter `{adapter}`: {conflict}"))
+}
+
 // One load per distinct reference, under one pin, every entry checked.
 fn distinct<'a>(
-    adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a Digest>)>,
-) -> Result<BTreeMap<&'a AdapterRef, Option<Digest>>, Error> {
-    let mut pins: BTreeMap<&AdapterRef, Option<Digest>> = BTreeMap::new();
+    adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a str>)>,
+) -> Result<BTreeMap<&'a AdapterRef, Option<String>>, Error> {
+    let mut pins: BTreeMap<&AdapterRef, Option<String>> = BTreeMap::new();
     for (adapter, digest) in adapters {
         match pins.entry(adapter) {
             Entry::Vacant(slot) => {
-                slot.insert(digest.cloned());
+                slot.insert(digest.map(str::to_owned));
             }
             Entry::Occupied(mut slot) => {
                 if let Some(again) = digest {
-                    let first = slot.get_mut().get_or_insert_with(|| again.clone());
+                    let first = slot.get_mut().get_or_insert_with(|| again.to_owned());
                     if first != again {
                         return Err(bad_request!("adapter `{adapter}` is pinned to two digests"));
                     }
@@ -325,10 +325,10 @@ fn require_version(id: &str, declared: &str, running: &semver::Version) -> Resul
     })?;
 
     if *running < minimum {
-        return Err(Error::BadRequest {
-            code: "unsupported-version".into(),
-            description: format!("adapter `{id}` requires emery {minimum} or newer"),
-        });
+        return Err(Error::bad_request(
+            "unsupported-version",
+            format!("adapter `{id}` requires emery {minimum} or newer"),
+        ));
     }
 
     Ok(())

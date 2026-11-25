@@ -13,10 +13,8 @@ mod baseline;
 mod change;
 mod plan;
 
-use emery_adapter::source::Source;
 use futures::future;
-use omnia_sdk::api::Context;
-use omnia_sdk::{BlobStore, Error, Model, Plugins, StateStore, Vcs, bad_request};
+use omnia_sdk::{Error, bad_request};
 use serde::{Deserialize, Serialize};
 
 use self::baseline::Baseline;
@@ -34,7 +32,7 @@ use crate::specify::{
     SpecBrief, Types,
 };
 use crate::vcs::{BuildRepo, TargetRef};
-use crate::{Files, apply, store};
+use crate::{apply, store};
 
 /// Prepares and stages an amendment against the current revision from `input`.
 ///
@@ -113,11 +111,7 @@ use crate::{Files, apply, store};
 ///   breaks the plan's rules.
 /// - Returns what [`apply`](crate::apply::apply) fails with sealing the
 ///   amendment under [`AmendInput::apply`], the amendment left staged.
-pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + Files>(
-    context: Context<P>, input: AmendInput,
-) -> Result<AmendOutput, Error> {
-    let provider = context.provider();
-
+pub async fn amend(input: AmendInput) -> Result<AmendOutput, Error> {
     // the sources, the revision they amend, and the slot the amendment goes to,
     // each refused before any load
     let bound = Bound::all(&input.sources)?;
@@ -128,7 +122,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
         ));
     }
     let repo = input.target.ok_or_else(|| store::target_required("`emery amend`"))?.repo()?;
-    let standing = store::current(provider, &repo).await?;
+    let standing = store::current(&repo).await?;
     let Some(current) = &standing.current else {
         return Err(store::not_generated(&standing).await);
     };
@@ -138,7 +132,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     let Extracted {
         extracts,
         repositories,
-    } = Bound::extract_all(provider, &bound).await?;
+    } = Bound::extract_all(&bound).await?;
 
     // the change matched against the base, and what it did to each
     // requirement; a change stating none leaves every requirement as it is
@@ -148,7 +142,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     let mut change_set = if ChangeSet::states(&extracts) {
         let bases =
             GroupingBrief::with_standing(&extracts, baseline.contributors(), baseline.criteria())
-                .derive(provider)
+                .derive()
                 .await?;
         ChangeSet::derive(&baseline, bases)?
     } else {
@@ -173,9 +167,9 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     // sections redrafted over the pruned base where any claim informs one
     // and the pruned base itself otherwise
     let chunks = SpecBrief::amending(&extracts, &drafted);
-    let drafting = future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge(provider)));
+    let drafting = future::try_join_all(chunks.into_iter().map(|chunk| chunk.judge()));
     let (drafts, design) = match DesignAmend::new(&extracts, &drafted, &changes, &base_design) {
-        Some(brief) => future::try_join(drafting, brief.judge(provider)).await?,
+        Some(brief) => future::try_join(drafting, brief.judge()).await?,
         None => (drafting.await?, base_design),
     };
     let spec = SpecBrief::amend(&revision.spec, current.id.clone(), &changes, drafts);
@@ -186,7 +180,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     let types = Types::of(&design);
     let plan = match pruned.assemble(&spec, &types, &drafted)? {
         Assembled::Settled(plan) => plan,
-        Assembled::Open(brief) => brief.judge(provider).await?,
+        Assembled::Open(brief) => brief.judge().await?,
     };
     let sections = DesignDiff::between(&revision.design, &design);
     let parts = PartChange::of(&PlanDiff::between(&revision.plan, &plan));
@@ -208,7 +202,7 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
     let tally = Tally::of(&amendment);
     let conflicts = amendment.conflicts().map(str::to_owned).collect();
     let stems = amendment.stems().into_iter().map(str::to_owned).collect();
-    let (id, applied) = stage(provider, &repo, standing, &amendment, tally, input.apply).await?;
+    let (id, applied) = stage(&repo, standing, &amendment, tally, input.apply).await?;
 
     Ok(AmendOutput {
         staged: id.is_some() && applied.is_none(),
@@ -227,9 +221,8 @@ pub async fn amend<P: Model + Source + StateStore + BlobStore + Plugins + Vcs + 
 // Stages `amendment` where it is a change, and seals it under `apply` once
 // the stage has landed, so a refused seal leaves it staged; a run staging
 // nothing seals nothing. Answers the staged id and what was sealed.
-async fn stage<P: StateStore + BlobStore + Vcs + Files>(
-    provider: &P, repo: &BuildRepo, standing: store::Standing, amendment: &Amendment, tally: Tally,
-    apply: bool,
+async fn stage(
+    repo: &BuildRepo, standing: store::Standing, amendment: &Amendment, tally: Tally, apply: bool,
 ) -> Result<(Option<String>, Option<ApplyOutput>), Error> {
     if !amendment.is_change() {
         tracing::info!(base = %amendment.base.revision, "no change against the revision");
@@ -247,7 +240,7 @@ async fn stage<P: StateStore + BlobStore + Vcs + Files>(
         parts = amendment.parts.len(),
         "staged"
     );
-    let applied = if apply { Some(apply::seal(provider, repo, standing).await?) } else { None };
+    let applied = if apply { Some(apply::seal(repo, standing).await?) } else { None };
     Ok((Some(id), applied))
 }
 

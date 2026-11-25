@@ -9,7 +9,7 @@ use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::Trigger;
 use emery_adapter::source::{ClaimKind, SourceKind};
-use omnia_sdk::{Error, Model, bad_request, server_error};
+use omnia_sdk::{Error, bad_request, server_error};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -185,7 +185,7 @@ impl<'a> GroupingBrief<'a> {
     // - Returns `Error::ServerError` when required prose is missing or a
     //   grouping cannot be reconciled with the claims.
     // - Returns `Error::BadGateway` when the model operation fails.
-    pub async fn derive<M: Model>(self, model: &M) -> Result<Vec<Basis<'a>>, Error> {
+    pub async fn derive(self) -> Result<Vec<Basis<'a>>, Error> {
         if self.claims().is_empty() {
             return Err(bad_request!("no source contributed a requirement claim"));
         }
@@ -193,7 +193,7 @@ impl<'a> GroupingBrief<'a> {
         if self.sources < 2 && self.stems() < 2 {
             self.baseline.bases(self.contributors, &self.criteria, &self.contracts)
         } else {
-            self.judge(model).await
+            self.judge().await
         }
     }
 

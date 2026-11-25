@@ -7,11 +7,9 @@
 //! `emery/<id>`, and clears the slot, so `show` and `build` read it from
 //! then on.
 
-use omnia_sdk::api::Context;
-use omnia_sdk::{BlobStore, Error, StateStore, Vcs};
+use omnia_sdk::Error;
 use serde::{Deserialize, Serialize};
 
-use crate::Files;
 use crate::revision::Diff;
 pub use crate::store::StagedKind;
 use crate::store::{self, Sealing, StagedItem, Standing};
@@ -66,20 +64,15 @@ use crate::vcs::{BuildRepo, TargetRef};
 ///   reached, or wants credentials.
 /// - Returns [`Error::ServerError`] when storage or version control fails,
 ///   or the candidate no longer matches its identifier.
-pub async fn apply<P: StateStore + BlobStore + Vcs + Files>(
-    context: Context<P>, input: ApplyInput,
-) -> Result<ApplyOutput, Error> {
-    let provider = context.provider();
+pub async fn apply(input: ApplyInput) -> Result<ApplyOutput, Error> {
     let repo = input.target.repo()?;
-    let standing = store::current(provider, &repo).await?;
-    seal(provider, &repo, standing).await
+    let standing = store::current(&repo).await?;
+    seal(&repo, standing).await
 }
 
 // Seals whatever is staged over what `standing` read of `repo`; the one
 // sealing step `apply`, `specify --apply`, and `amend --apply` share.
-pub(crate) async fn seal<P: StateStore + BlobStore + Vcs + Files>(
-    provider: &P, repo: &BuildRepo, standing: Standing,
-) -> Result<ApplyOutput, Error> {
+pub(crate) async fn seal(repo: &BuildRepo, standing: Standing) -> Result<ApplyOutput, Error> {
     let (kind, amendment, sealing) =
         match store::staged_item().await?.ok_or_else(store::nothing_staged)? {
             StagedItem::Revision(staged) if staged.fresh => {
@@ -94,7 +87,7 @@ pub(crate) async fn seal<P: StateStore + BlobStore + Vcs + Files>(
                 Sealing::amendment(staged.amendment, &standing)?,
             ),
         };
-    let sealed = store::commit(provider, repo, sealing, standing).await?;
+    let sealed = store::commit(repo, sealing, standing).await?;
     tracing::info!(
         revision = %sealed.id,
         parent = sealed.parent.as_deref().unwrap_or("none"),
