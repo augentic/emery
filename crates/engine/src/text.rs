@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use omnia_sdk::api::command::Render;
+use omnia_sdk::command::Render;
 
 use crate::amend::{AmendOutput, PartChange, PartClass};
 use crate::apply::ApplyOutput;

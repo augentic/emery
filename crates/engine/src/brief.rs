@@ -8,7 +8,7 @@ use std::fmt::Display;
 
 use emery_lexicon::Lexicon;
 use omnia_sdk::model::{Findings, Question};
-use omnia_sdk::{Error, Model, server_error};
+use omnia_sdk::{Error, server_error};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
@@ -49,7 +49,7 @@ pub trait Brief: Display + Sync + Sized {
     fn into_output(self, answer: Self::Answer) -> Result<Self::Output, Error>;
 
     #[tracing::instrument(skip_all, fields(question = %self.label()))]
-    async fn judge<M: Model>(self, model: &M) -> Result<Self::Output, Error> {
+    async fn judge(self) -> Result<Self::Output, Error> {
         tracing::info!("asking the model");
         let mut system = Vec::with_capacity(Self::PROSE.len());
         for path in Self::PROSE {
@@ -74,10 +74,21 @@ pub trait Brief: Display + Sync + Sized {
         let mut attempt = 0;
         let answer = loop {
             attempt += 1;
-            match question.ask(model, &turn, None, check).await {
-                Ok(answer) => break answer,
-                Err(failure) => {
-                    let error = Error::from(failure);
+            match question.ask(turn.clone(), None, check).await {
+                Ok(Ok(answer)) => break answer,
+                Ok(Err(exhausted)) => {
+                    let error = Error::from(exhausted);
+                    if attempt < RETRIES && is_retryable(&error) {
+                        tracing::warn!(
+                            attempt,
+                            description = %error.description(),
+                            "the model failed upstream or timed out; asking once more"
+                        );
+                        continue;
+                    }
+                    return Err(error);
+                }
+                Err(error) => {
                     if attempt < RETRIES && is_retryable(&error) {
                         tracing::warn!(
                             attempt,

@@ -62,13 +62,13 @@ pub trait Document: Serialize + DeserializeOwned + Display {
         // check the grammar stamp before the shape
         let stamp = &value["emery"];
         if *stamp != EMERY {
-            return Err(Error::BadRequest {
-                code: "spec-outdated".into(),
-                description: format!(
+            return Err(Error::bad_request(
+                "spec-outdated",
+                format!(
                     "`{}` was written under emery grammar {stamp}; this engine reads {EMERY}",
                     Self::NAME
                 ),
-            });
+            ));
         }
 
         Ok(serde_json::from_value(value)
