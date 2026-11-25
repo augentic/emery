@@ -35,5 +35,10 @@ tracing.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+omnia = { workspace = true, default-features = false, features = ["jit", "link", "loader"] }
+omnia-sdk.workspace = true
+omnia-wasi-model.workspace = true
 omnia-test = { workspace = true, features = ["host"] }
+serde_json.workspace = true
+test-programs.workspace = true
 tempfile.workspace = true

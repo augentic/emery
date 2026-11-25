@@ -134,6 +134,7 @@ emery-engine = { path = "crates/engine" }
 emery-lexicon = { path = "crates/lexicon" }
 emery-prose = { path = "crates/prose" }
 emery-sdk = { path = "crates/sdk" }
+test-programs = { path = "crates/test-programs" }
 
 omnia = { version = "0.38.1", default-features = false, features = ["jit", "link", "loader"] }
 omnia-compile = "0.38.1"
