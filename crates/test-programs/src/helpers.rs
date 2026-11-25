@@ -4,11 +4,12 @@ use std::path::Path;
 
 use emery_adapter::source::SourceInput;
 use emery_prose::Doc;
-use emery_sdk::Seam;
+use emery_sdk::target::Grant;
+use emery_sdk::{Lexicon, Seam};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::protocol::{FileSpec, InputSpec, Response, SeamSpec, SurveyCheck, WORKSPACE};
+use crate::protocol::{FileSpec, GrantSpec, InputSpec, Response, SeamSpec, SurveyCheck, WORKSPACE};
 
 /// Parses the JSON scenario from argv past the program name.
 ///
@@ -43,7 +44,11 @@ pub async fn emit<T: Serialize>(response: Response<T>) {
 pub fn source_input(spec: &InputSpec) -> SourceInput {
     match spec {
         InputSpec::Workspace(workspace) => {
-            SourceInput::workspace(workspace.name.as_str(), WORKSPACE)
+            let root = workspace
+                .subpath
+                .as_deref()
+                .map_or_else(|| WORKSPACE.to_owned(), |subpath| format!("{WORKSPACE}/{subpath}"));
+            SourceInput::workspace(workspace.name.as_str(), &root)
         }
         InputSpec::Value { name, text } => SourceInput::value(name, text),
     }
@@ -71,7 +76,52 @@ pub fn seam(spec: &SeamSpec) -> Seam {
         SeamSpec::Whole => Seam::whole(),
         SeamSpec::Files { files } => Seam::files(files.clone()),
         SeamSpec::Note { text } => Seam::note(text.clone()),
+        SeamSpec::Custom {
+            text,
+            files,
+            stems,
+            anchors,
+            packages,
+        } => Seam {
+            text: text.clone(),
+            files: files.clone(),
+            stems: stems.clone(),
+            anchors: anchors.clone(),
+            lexicon: if packages.is_empty() {
+                Lexicon::default()
+            } else {
+                Lexicon::from_packages(packages)
+            },
+        },
     }
+}
+
+/// Leaks `specs` into a `'static` slice of [`Grant`]s for a one-shot driver run.
+#[must_use]
+pub fn leak_grants(specs: &[GrantSpec]) -> &'static [Grant] {
+    if specs.is_empty() {
+        return &[];
+    }
+    let grants: Vec<Grant> = specs
+        .iter()
+        .map(|spec| {
+            let egress: Vec<&'static str> =
+                spec.egress.iter().map(|host| &*host.clone().leak()).collect();
+            let read: Vec<&'static str> =
+                spec.read.iter().map(|root| &*root.clone().leak()).collect();
+            let env: Vec<(&'static str, &'static str)> = spec
+                .env
+                .iter()
+                .map(|(name, value)| (&*name.clone().leak(), &*value.clone().leak()))
+                .collect();
+            Grant {
+                egress: egress.leak(),
+                read: read.leak(),
+                env: env.leak(),
+            }
+        })
+        .collect();
+    grants.leak()
 }
 
 /// The survey check callback named by the scenario.
@@ -96,11 +146,20 @@ pub fn survey_check(
     }
 }
 
-/// Embedded prose for [`extract`] drivers.
-pub const EXTRACT_PROSE: &[Doc] = &[Doc {
-    path: "extract.md",
-    body: "SYSTEM",
-}];
+/// Embedded prose for [`extract`](emery_sdk::extract) drivers.
+pub const EXTRACT_PROSE: &[Doc] = &[
+    Doc {
+        path: "extract.md",
+        body: "SYSTEM",
+    },
+    Doc {
+        path: "references/greeting.md",
+        body: "Greet warmly.",
+    },
+];
+
+/// Empty prose table for missing-prompt refusal scenarios.
+pub const EXTRACT_PROSE_OMIT_PROMPT: &[Doc] = &[];
 
 /// Embedded prose for survey drivers.
 pub const SURVEY_PROSE: &[Doc] = &[
@@ -130,9 +189,31 @@ pub const SURVEY_PROSE_OMIT_PROMPT: &[Doc] = &[
     },
 ];
 
+/// Embedded prose for [`target::verify`](emery_sdk::target::verify) drivers.
+pub const VERIFY_PROSE: &[Doc] = &[
+    Doc {
+        path: "build.md",
+        body: "BUILD",
+    },
+    Doc {
+        path: "verify.md",
+        body: "VERIFY",
+    },
+    Doc {
+        path: "references/checks.md",
+        body: "Run `cargo test`.",
+    },
+];
+
+/// Prose without `verify.md` for refusal scenarios.
+pub const VERIFY_PROSE_OMIT_PROMPT: &[Doc] = &[Doc {
+    path: "build.md",
+    body: "BUILD",
+}];
+
 /// Maps an SDK error to the wire [`Response::Err`].
 #[must_use]
-pub fn err(error: &emery_sdk::Error) -> Response<()> {
+pub fn err<T>(error: &emery_sdk::Error) -> Response<T> {
     Response::Err {
         kind: format!("{:?}", error.kind()).to_lowercase(),
         code: error.code().to_owned(),

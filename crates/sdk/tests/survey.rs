@@ -22,6 +22,7 @@ fn tree() -> SurveyScenario {
         adapter_id: "source:probe".to_owned(),
         input: InputSpec::Workspace(WorkspaceInput {
             name: "svc".to_owned(),
+            subpath: None,
             files: vec![
                 FileSpec {
                     path: "package.json".to_owned(),

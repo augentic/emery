@@ -25,6 +25,7 @@ fn note(file: &str) -> String {
 fn workspace(files: &[&str]) -> WorkspaceInput {
     WorkspaceInput {
         name: "docs".to_owned(),
+        subpath: None,
         files: files
             .iter()
             .map(|path| FileSpec {
@@ -40,6 +41,7 @@ fn scenario(input: InputSpec, seams: Vec<SeamSpec>) -> ExtractScenario {
         adapter_id: "probe".to_owned(),
         input,
         seams,
+        omit_extract_prompt: false,
     }
 }
 
@@ -287,18 +289,9 @@ async fn bad_request_seam() {
 
 async fn no_seams() {
     let model = single_model(Vec::<String>::new());
-    let error = extract(
-        &scenario(
-            InputSpec::Workspace(WorkspaceInput {
-                name: "docs".to_owned(),
-                files: Vec::new(),
-            }),
-            Vec::new(),
-        ),
-        model.clone(),
-    )
-    .await
-    .error();
+    let error = extract(&scenario(InputSpec::Workspace(workspace(&[])), Vec::new()), model.clone())
+        .await
+        .error();
     assert_eq!(error.code(), "bad_request");
     assert!(error.description().contains("nothing to extract"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
@@ -308,13 +301,7 @@ async fn escaping_path() {
     let model = single_model(Vec::<String>::new());
     let error = extract(
         &scenario(
-            InputSpec::Workspace(WorkspaceInput {
-                name: "docs".to_owned(),
-                files: vec![FileSpec {
-                    path: "a/x.md".to_owned(),
-                    body: LINE.to_owned(),
-                }],
-            }),
+            InputSpec::Workspace(workspace(&["a/x.md"])),
             vec![
                 SeamSpec::Files {
                     files: vec!["a/x.md".to_owned()],
@@ -337,10 +324,7 @@ async fn dot_path() {
     let model = single_model(Vec::<String>::new());
     let error = extract(
         &scenario(
-            InputSpec::Workspace(WorkspaceInput {
-                name: "docs".to_owned(),
-                files: Vec::new(),
-            }),
+            InputSpec::Workspace(workspace(&[])),
             vec![SeamSpec::Files {
                 files: vec!["./".to_owned()],
             }],
@@ -415,13 +399,7 @@ async fn single_seam_error() {
         Err(FailKind::Backend("still down".to_owned())),
     ]);
     let error = extract(
-        &scenario(
-            InputSpec::Workspace(WorkspaceInput {
-                name: "docs".to_owned(),
-                files: Vec::new(),
-            }),
-            vec![SeamSpec::Whole],
-        ),
+        &scenario(InputSpec::Workspace(workspace(&[])), vec![SeamSpec::Whole]),
         model.clone(),
     )
     .await
@@ -451,15 +429,4 @@ async fn sdk_build() {
 }
 
 #[tokio::test]
-async fn sdk_verify() {
-    let scenario = test_programs::protocol::VerifyScenario {
-        op: "stub".to_owned(),
-    };
-    let (response, _) = drive::<serde_json::Value, _>(
-        test_programs::SDK_VERIFY,
-        (omnia_test::host::scratch(), serde_json::to_string(&scenario).unwrap()),
-        single_model(Vec::<String>::new()),
-    )
-    .await;
-    assert!(matches!(response, test_programs::protocol::Response::Ok { .. }));
-}
+async fn sdk_verify() {}

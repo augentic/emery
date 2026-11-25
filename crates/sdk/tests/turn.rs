@@ -1,49 +1,89 @@
 //! Tests single-seam extraction turns, tool calls, and claim validation.
 
-use emery_sdk::{Backing, Context, Doc, Error, Evidence, Lexicon, Seam, SourceInput, words};
-use omnia_sdk::model::{Error as ModelError, ToolCall};
-use omnia_test::SeenFormat;
-use omnia_test::guest::ScriptedModel;
+#![cfg(not(target_arch = "wasm32"))]
 
-const PROSE: &[Doc] = &[
-    Doc {
-        path: "extract.md",
-        body: "SYSTEM",
-    },
-    Doc {
-        path: "references/greeting.md",
-        body: "Greet warmly.",
-    },
-];
+mod support;
+
+use emery_sdk::{Backing, Evidence, Lexicon, words};
+use omnia_sdk::ErrorKind;
+use omnia_test::SeenFormat;
+use omnia_test::host::{ScriptedModel, scratch};
+use omnia_wasi_model::ModelClient;
+use support::by_file::{FailKind, ScriptFailures};
+use support::harness::{ExtractRun, extract, extract_in};
+use test_programs::protocol::{ExtractScenario, InputSpec, SeamSpec, WorkspaceInput};
 
 const VALID: &str = r#"{"claims":[
     {"kind":"requirement","id":"password-reset.request","statement":"Users reset by email."},
     {"kind":"decision"}
 ]}"#;
 
-fn stemmed<const N: usize>(text: &str, stems: [&str; N]) -> Seam {
-    Seam {
-        stems: stems.into_iter().map(str::to_string).collect(),
-        ..Seam::note(text)
+fn workspace(name: &str) -> InputSpec {
+    InputSpec::Workspace(WorkspaceInput {
+        name: name.to_owned(),
+        subpath: None,
+        files: Vec::new(),
+    })
+}
+
+fn subpath_workspace(name: &str, subpath: &str) -> InputSpec {
+    InputSpec::Workspace(WorkspaceInput {
+        name: name.to_owned(),
+        subpath: Some(subpath.to_owned()),
+        files: Vec::new(),
+    })
+}
+
+fn value(name: &str, text: &str) -> InputSpec {
+    InputSpec::Value {
+        name: name.to_owned(),
+        text: text.to_owned(),
     }
 }
 
-async fn ask(model: &ScriptedModel, input: &SourceInput, seam: Seam) -> Result<Evidence, Error> {
-    let ctx = Context {
-        adapter_id: "source:probe",
+fn stemmed<const N: usize>(text: &str, stems: [&str; N]) -> SeamSpec {
+    SeamSpec::Custom {
+        text: text.to_owned(),
+        files: Vec::new(),
+        stems: stems.into_iter().map(str::to_owned).collect(),
+        anchors: Vec::new(),
+        packages: Vec::new(),
+    }
+}
+
+fn files_seam<const N: usize>(files: [&str; N]) -> SeamSpec {
+    SeamSpec::Files {
+        files: files.into_iter().map(str::to_owned).collect(),
+    }
+}
+
+fn scenario(input: InputSpec, seam: SeamSpec) -> ExtractScenario {
+    ExtractScenario {
+        adapter_id: "source:probe".to_owned(),
         input,
-        model,
-    };
-    emery_sdk::extract(&ctx, PROSE, &[seam]).await
+        seams: vec![seam],
+        omit_extract_prompt: false,
+    }
+}
+
+async fn ask<M: ModelClient + Clone + 'static>(
+    model: M, input: InputSpec, seam: SeamSpec,
+) -> ExtractRun {
+    extract(&scenario(input, seam), model).await
 }
 
 #[tokio::test]
 async fn request_shape() {
+    let project = scratch();
     let model = ScriptedModel::answering([VALID]);
 
-    let accepted = ask(&model, &SourceInput::workspace("docs", "/lend/docs"), Seam::whole())
-        .await
-        .expect("a valid answer is accepted first time");
+    let accepted = extract_in(
+        &project,
+        &scenario(subpath_workspace("docs", "docs"), SeamSpec::Whole),
+        model.clone(),
+    )
+    .await
+    .evidence();
     assert_eq!(accepted.claims.len(), 2);
 
     let seen = model.seen();
@@ -52,8 +92,9 @@ async fn request_shape() {
     let claims = emery_sdk::body(emery_sdk::RUNTIME, "claims.md").expect("embedded");
     let system = format!("SYSTEM\n\n---\n\n{claims}");
     assert_eq!(request.system.as_deref(), Some(system.as_str()));
+    let host_root = project.path().to_str().expect("UTF-8 scratch root");
     assert!(
-        !request.messages[0].contains("/lend/docs"),
+        !request.messages[0].contains("./docs") && !request.messages[0].contains(host_root),
         "the lend carries the root, not the brief: {}",
         request.messages[0]
     );
@@ -75,7 +116,8 @@ async fn request_shape() {
     );
     assert!(request.check, "acceptance is the check, not the reply text");
     assert_eq!(request.tools, ["list_docs", "read_doc"], "the corpus is offered through tools");
-    assert_eq!(request.workspace.as_deref(), Some("/lend/docs"), "the lend follows the input");
+    assert_eq!(request.workspace.as_deref(), Some("docs"), "the lend follows the input");
+    assert_eq!(model.lent(), [Some(project.path().join("docs"))], "the subpath is lent");
 
     let SeenFormat::Schema { name, schema } = &request.format else {
         panic!("evidence is steered by schema");
@@ -101,15 +143,14 @@ async fn request_shape() {
 #[tokio::test]
 async fn missing_prompt() {
     let model = ScriptedModel::default();
-    let input = SourceInput::workspace("docs", ".");
-    let ctx = Context {
-        adapter_id: "source:mute",
-        input: &input,
-        model: &model,
+    let scenario = ExtractScenario {
+        adapter_id: "source:mute".to_owned(),
+        input: workspace("docs"),
+        seams: vec![SeamSpec::Whole],
+        omit_extract_prompt: true,
     };
 
-    let error =
-        emery_sdk::extract(&ctx, &[], &[Seam::whole()]).await.expect_err("no prompt to ask with");
+    let error = extract(&scenario, model.clone()).await.error();
 
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`extract.md` is not embedded"), "{error}");
@@ -120,12 +161,14 @@ async fn missing_prompt() {
 async fn inline_value() {
     let model = ScriptedModel::answering([VALID]);
 
-    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole()).await.expect("accepted");
+    ask(model.clone(), value("brief", "Ship it."), SeamSpec::Whole).await.evidence();
     let request = &model.seen()[0];
     assert!(request.workspace.is_none(), "no lend for an inline value");
+    assert_eq!(model.lent(), [None], "no directory lent for an inline value");
     let user = &request.messages[0];
     assert!(user.contains("the source `brief` bound to"), "{user}");
     assert!(user.contains("no `$SOURCE_DIR` is lent:\n\nShip it.\n\n"), "{user}");
+    model.assert_exhausted();
 }
 
 // A seam's text leads the turn and the input follows it; with no stems,
@@ -134,9 +177,15 @@ async fn inline_value() {
 async fn prepared_turn() {
     let model = ScriptedModel::answering([VALID]);
 
-    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::note("THE NOTE"))
-        .await
-        .expect("accepted");
+    ask(
+        model.clone(),
+        value("brief", "Ship it."),
+        SeamSpec::Note {
+            text: "THE NOTE".to_owned(),
+        },
+    )
+    .await
+    .evidence();
     let user = &model.seen()[0].messages[0];
     assert!(
         user.contains(
@@ -146,20 +195,24 @@ async fn prepared_turn() {
         ),
         "{user}"
     );
+    model.assert_exhausted();
 }
 
 // The files are listed in the seam's order, once each, `.` segments dropped,
-// so every anchor the model answers is already root-relative; with no tree at
+// so every anchor the model answers is already root-relative; with no files at
 // the root there is nothing to lay out, so they are listed.
 #[tokio::test]
 async fn files_turn() {
+    let project = scratch();
     let model = ScriptedModel::answering([VALID]);
-    let seam = Seam::files(["guide/setup.md", "./guide/intro.md", "guide/intro.md", "api.md"]);
+    let seam = files_seam(["guide/setup.md", "./guide/intro.md", "guide/intro.md", "api.md"]);
 
-    ask(&model, &SourceInput::workspace("docs", "/lend/docs"), seam).await.expect("accepted");
+    extract_in(&project, &scenario(subpath_workspace("docs", "docs"), seam), model.clone())
+        .await
+        .evidence();
 
     let request = &model.seen()[0];
-    assert_eq!(request.workspace.as_deref(), Some("/lend/docs"), "the root is lent");
+    assert_eq!(request.workspace.as_deref(), Some("docs"), "the root is lent");
     let user = &request.messages[0];
     assert!(
         user.contains(
@@ -170,7 +223,11 @@ async fn files_turn() {
         ),
         "{user}"
     );
-    assert!(!user.contains("/lend/docs"), "the lend carries the root, not the brief: {user}");
+    let host_root = project.path().to_str().expect("UTF-8 scratch root");
+    assert!(
+        !user.contains("./docs") && !user.contains(host_root),
+        "the lend carries the root, not the brief: {user}"
+    );
     model.assert_exhausted();
 }
 
@@ -179,14 +236,17 @@ async fn files_turn() {
 #[tokio::test]
 async fn files_laid() {
     let model = ScriptedModel::answering([VALID]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "api.md", "# API\n\n```ts\nexport const x = 1;\n```\n");
-    write(tmp.path(), "guide/intro.md", "# Intro\nOne line, no trailing newline");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
+    project.write("api.md", "# API\n\n```ts\nexport const x = 1;\n```\n");
+    project.write("guide/intro.md", "# Intro\nOne line, no trailing newline");
 
-    ask(&model, &SourceInput::workspace("docs", root), Seam::files(["api.md", "guide/intro.md"]))
-        .await
-        .expect("accepted");
+    extract_in(
+        &project,
+        &scenario(workspace("docs"), files_seam(["api.md", "guide/intro.md"])),
+        model.clone(),
+    )
+    .await
+    .evidence();
 
     let user = &model.seen()[0].messages[0];
     assert!(
@@ -203,30 +263,25 @@ async fn files_laid() {
     model.assert_exhausted();
 }
 
-fn write(root: &std::path::Path, rel: &str, body: &str) {
-    let path = root.join(rel);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).expect("mkdir");
-    }
-    std::fs::write(path, body).expect("write");
-}
-
 // The leading files are inlined for as long as they fit within INLINE_BYTES
 // together; the first past it, or one that is not text, and every file after
 // it are listed. A first file that does not fit leaves every file listed.
 #[tokio::test]
 async fn files_listed() {
     let budget = usize::try_from(emery_sdk::INLINE_BYTES).expect("fits");
-    let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "a.md", &"x".repeat(budget));
-    write(tmp.path(), "b.md", "one byte over");
-    write(tmp.path(), "c.md", "after");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
+    project.write("a.md", "x".repeat(budget));
+    project.write("b.md", "one byte over");
+    project.write("c.md", "after");
 
     let model = ScriptedModel::answering([VALID]);
-    ask(&model, &SourceInput::workspace("docs", root), Seam::files(["a.md", "b.md", "c.md"]))
-        .await
-        .expect("accepted");
+    extract_in(
+        &project,
+        &scenario(workspace("docs"), files_seam(["a.md", "b.md", "c.md"])),
+        model.clone(),
+    )
+    .await
+    .evidence();
     let user = &model.seen()[0].messages[0];
     assert!(
         user.contains(
@@ -243,27 +298,37 @@ async fn files_listed() {
         ),
         "{user}"
     );
+    model.assert_exhausted();
 
     let model = ScriptedModel::answering([VALID]);
-    ask(&model, &SourceInput::workspace("docs", root), Seam::files(["b.md", "a.md", "c.md"]))
-        .await
-        .expect("accepted");
+    extract_in(
+        &project,
+        &scenario(workspace("docs"), files_seam(["b.md", "a.md", "c.md"])),
+        model.clone(),
+    )
+    .await
+    .evidence();
     let user = &model.seen()[0].messages[0];
     assert!(user.contains("The first is laid out"), "{user}");
     assert!(user.contains("### `b.md` (1 line)"), "{user}");
     assert!(user.contains("The rest of this seam's files:\n\n- `a.md`\n- `c.md`\n\n"), "{user}");
+    model.assert_exhausted();
 
-    let binary = tempfile::tempdir().expect("tempdir");
-    std::fs::write(binary.path().join("blob.bin"), [0xff, 0xfe, 0x00]).expect("write");
-    write(binary.path(), "a.md", "text");
-    let root = binary.path().to_str().expect("a UTF-8 scratch root");
+    let binary = scratch();
+    binary.write("blob.bin", [0xff, 0xfe, 0x00]);
+    binary.write("a.md", "text");
     let model = ScriptedModel::answering([VALID]);
-    ask(&model, &SourceInput::workspace("docs", root), Seam::files(["blob.bin", "a.md"]))
-        .await
-        .expect("accepted");
+    extract_in(
+        &binary,
+        &scenario(workspace("docs"), files_seam(["blob.bin", "a.md"])),
+        model.clone(),
+    )
+    .await
+    .evidence();
     let user = &model.seen()[0].messages[0];
     assert!(user.contains("nothing else:\n\n- `blob.bin`\n- `a.md`\n\n"), "{user}");
     assert!(!user.contains("laid out"), "{user}");
+    model.assert_exhausted();
 }
 
 // The turn reads text, lend, stems, anchor rule: one stem appends the stem
@@ -277,8 +342,8 @@ async fn note_stems() {
     );
     let several = stemmed("Mine the tree.", ["reset", "password-reset", "reset"]);
 
-    ask(&model, &SourceInput::workspace("code", "/lend/code"), one).await.expect("accepted");
-    ask(&model, &SourceInput::workspace("code", "/lend/code"), several).await.expect("accepted");
+    ask(model.clone(), workspace("code"), one).await.evidence();
+    ask(model.clone(), workspace("code"), several).await.evidence();
 
     let seen = model.seen();
     assert!(
@@ -309,18 +374,17 @@ async fn note_stems() {
 #[tokio::test]
 async fn files_stems() {
     let model = ScriptedModel::answering([VALID]);
-    let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "src/routes.ts", "export const x = 1;\n");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    let seam = Seam {
-        text: "Surface `POST /password-reset` — entry `src/routes.ts`.".to_string(),
-        files: vec!["src/routes.ts".to_string()],
-        stems: vec!["password-reset".to_string()],
+    let project = scratch();
+    project.write("src/routes.ts", "export const x = 1;\n");
+    let seam = SeamSpec::Custom {
+        text: "Surface `POST /password-reset` — entry `src/routes.ts`.".to_owned(),
+        files: vec!["src/routes.ts".to_owned()],
+        stems: vec!["password-reset".to_owned()],
         anchors: Vec::new(),
-        lexicon: Lexicon::default(),
+        packages: Vec::new(),
     };
 
-    ask(&model, &SourceInput::workspace("code", root), seam).await.expect("accepted");
+    extract_in(&project, &scenario(workspace("code"), seam), model.clone()).await.evidence();
 
     let user = &model.seen()[0].messages[0];
     assert!(
@@ -346,9 +410,8 @@ async fn files_stems() {
 #[tokio::test]
 async fn note_defects() {
     let model = ScriptedModel::default();
-    let error = ask(&model, &SourceInput::value("brief", "Ship it."), stemmed("Mine.", ["Orders"]))
-        .await
-        .expect_err("a stem outside the grammar");
+    let error =
+        ask(model.clone(), value("brief", "Ship it."), stemmed("Mine.", ["Orders"])).await.error();
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("stem `Orders` is not lowercase kebab-case"), "{error}");
     assert!(model.seen().is_empty(), "no turn was spent");
@@ -369,8 +432,7 @@ async fn stem_findings() {
     ]);
     let seam = stemmed("Mine.", ["orders", "invoices"]);
 
-    let accepted =
-        ask(&model, &SourceInput::value("brief", "Ship it."), seam).await.expect("corrected");
+    let accepted = ask(model.clone(), value("brief", "Ship it."), seam).await.evidence();
     assert_eq!(accepted.claims.len(), 1);
 
     let exchanges = model.exchanges();
@@ -448,13 +510,15 @@ async fn technology_findings() {
             {"kind":"requirement","id":"secrets.refuse-empty","statement":"Refuses to start when the secret is empty."}
         ]}"#,
     ]);
-    let seam = Seam {
-        lexicon: Lexicon::from_packages(["@azure/keyvault-secrets"]),
-        ..Seam::note("Mine.")
+    let seam = SeamSpec::Custom {
+        text: "Mine.".to_owned(),
+        files: Vec::new(),
+        stems: Vec::new(),
+        anchors: Vec::new(),
+        packages: vec!["@azure/keyvault-secrets".to_owned()],
     };
 
-    let accepted =
-        ask(&model, &SourceInput::value("brief", "Ship it."), seam).await.expect("corrected");
+    let accepted = ask(model.clone(), value("brief", "Ship it."), seam).await.evidence();
     assert_eq!(accepted.claims.len(), 2);
 
     let exchanges = model.exchanges();
@@ -474,7 +538,7 @@ async fn technology_findings() {
     for held in ["claim 4:", "claim 5:", "claim 6:"] {
         assert!(!correction.contains(held), "{held} is no finding: {correction}");
     }
-    assert!(exchanges[1].outcome.is_ok(), "the corrected answer is accepted");
+    assert_eq!(exchanges[1].outcome, Ok(String::new()), "the corrected answer is accepted");
     model.assert_exhausted();
 }
 
@@ -518,8 +582,7 @@ async fn retire_findings() {
     ]);
     let seam = stemmed("Mine.", ["orders"]);
 
-    let accepted =
-        ask(&model, &SourceInput::value("brief", "Ship it."), seam).await.expect("corrected");
+    let accepted = ask(model.clone(), value("brief", "Ship it."), seam).await.evidence();
     assert_eq!(accepted.claims.len(), 3);
 
     let user = &model.seen()[0].messages[0];
@@ -538,7 +601,7 @@ async fn retire_findings() {
         assert!(correction.contains(finding), "{finding}: {correction}");
     }
     assert!(!correction.contains("claim 0:"), "{correction}");
-    assert!(exchanges[1].outcome.is_ok(), "the corrected answer is accepted");
+    assert_eq!(exchanges[1].outcome, Ok(String::new()), "the corrected answer is accepted");
     model.assert_exhausted();
 }
 
@@ -546,12 +609,11 @@ async fn retire_findings() {
 // and holds the cited lines.
 #[tokio::test]
 async fn path_findings() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "api.md", "one\ntwo\nthree\n");
-    write(tmp.path(), "guide/intro.md", "intro");
-    write(tmp.path(), "notes/todo.md", "todo");
-    std::fs::create_dir_all(tmp.path().join("dir.md")).expect("a directory named like a file");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
+    project.write("api.md", "one\ntwo\nthree\n");
+    project.write("guide/intro.md", "intro");
+    project.write("notes/todo.md", "todo");
+    std::fs::create_dir_all(project.path().join("dir.md")).expect("a directory named like a file");
     let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"a.one","statement":"x","path":"api.md#L1-L3"},
@@ -564,10 +626,10 @@ async fn path_findings() {
         ]}"#,
         r#"{"claims":[{"kind":"requirement","id":"a.one","statement":"x","path":"api.md#L3"}]}"#,
     ]);
-    let seam = Seam::files(["api.md", "guide/intro.md", "guide/missing.md", "dir.md"]);
+    let seam = files_seam(["api.md", "guide/intro.md", "guide/missing.md", "dir.md"]);
 
     let accepted =
-        ask(&model, &SourceInput::workspace("docs", root), seam).await.expect("corrected");
+        extract_in(&project, &scenario(workspace("docs"), seam), model.clone()).await.evidence();
     assert_eq!(accepted.claims[0].path.as_deref(), Some("api.md#L3"));
 
     let exchanges = model.exchanges();
@@ -595,9 +657,8 @@ async fn path_findings() {
 // inline value cites nothing.
 #[tokio::test]
 async fn path_whole() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "api.md", "one\n");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
+    project.write("api.md", "one\n");
     let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"a.one","statement":"x","path":"api.md#L1"},
@@ -605,17 +666,20 @@ async fn path_whole() {
         ]}"#,
         r#"{"claims":[{"kind":"requirement","id":"a.one","statement":"x","path":"api.md"}]}"#,
     ]);
-    ask(&model, &SourceInput::workspace("docs", root), Seam::whole()).await.expect("corrected");
+    extract_in(&project, &scenario(workspace("docs"), SeamSpec::Whole), model.clone())
+        .await
+        .evidence();
     let exchanges = model.exchanges();
     let correction = exchanges[0].outcome.as_ref().expect_err("the ghost is refused");
     assert!(correction.contains("claim 1: path `nope.md` names no regular file"), "{correction}");
     assert!(!correction.contains("claim 0:"), "{correction}");
+    model.assert_exhausted();
 
     let model = ScriptedModel::answering([
         r#"{"claims":[{"kind":"requirement","id":"a.one","statement":"x","path":"brief.md"}]}"#,
         VALID,
     ]);
-    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole()).await.expect("corrected");
+    ask(model.clone(), value("brief", "Ship it."), SeamSpec::Whole).await.evidence();
     let exchanges = model.exchanges();
     let correction = exchanges[0].outcome.as_ref().expect_err("a path on a value");
     assert!(
@@ -625,6 +689,7 @@ async fn path_whole() {
         ),
         "{correction}"
     );
+    model.assert_exhausted();
 }
 
 // A `requirement` is held to the seam's anchors: one sharing a line with a
@@ -635,12 +700,11 @@ async fn path_whole() {
 // not held. The brief says so.
 #[tokio::test]
 async fn anchor_findings() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    write(tmp.path(), "src/orders.ts", "one\ntwo\nthree\nfour\nfive\nsix\n");
-    write(tmp.path(), "src/config.ts", "export const LIMIT = 3;\n");
-    write(tmp.path(), "src/lib/util.ts", "one\ntwo\n");
-    write(tmp.path(), "src/long.ts", &"line\n".repeat(60));
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
+    project.write("src/orders.ts", "one\ntwo\nthree\nfour\nfive\nsix\n");
+    project.write("src/config.ts", "export const LIMIT = 3;\n");
+    project.write("src/lib/util.ts", "one\ntwo\n");
+    project.write("src/long.ts", "line\n".repeat(60));
     let model = ScriptedModel::answering([
         r#"{"claims":[
             {"kind":"requirement","id":"orders.create","statement":"x","path":"src/orders.ts#L3-L5"},
@@ -660,13 +724,21 @@ async fn anchor_findings() {
         "./src/config.ts".to_owned(),
     ];
     anchors.extend((1..=60).step_by(3).map(|line| format!("src/long.ts#L{line}")));
-    let seam = Seam {
+    let seam = SeamSpec::Custom {
+        text: String::new(),
+        files: vec![
+            "src/orders.ts".to_owned(),
+            "src/config.ts".to_owned(),
+            "src/lib/util.ts".to_owned(),
+            "src/long.ts".to_owned(),
+        ],
+        stems: Vec::new(),
         anchors,
-        ..Seam::files(["src/orders.ts", "src/config.ts", "src/lib/util.ts", "src/long.ts"])
+        packages: Vec::new(),
     };
 
     let accepted =
-        ask(&model, &SourceInput::workspace("code", root), seam).await.expect("corrected");
+        extract_in(&project, &scenario(workspace("code"), seam), model.clone()).await.evidence();
     assert_eq!(accepted.claims[0].path.as_deref(), Some("src/orders.ts#L3"));
 
     let user = &model.seen()[0].messages[0];
@@ -712,13 +784,14 @@ async fn anchor_findings() {
 #[tokio::test]
 async fn anchor_defects() {
     let model = ScriptedModel::default();
-    let seam = Seam {
+    let seam = SeamSpec::Custom {
+        text: String::new(),
+        files: vec!["src/orders.ts".to_owned()],
+        stems: Vec::new(),
         anchors: vec!["src/orders.ts#4".to_owned()],
-        ..Seam::files(["src/orders.ts"])
+        packages: Vec::new(),
     };
-    let error = ask(&model, &SourceInput::workspace("code", "/lend/code"), seam)
-        .await
-        .expect_err("an anchor outside the grammar");
+    let error = ask(model.clone(), workspace("code"), seam).await.error();
     assert_eq!(error.code(), "server_error");
     assert!(
         error.description().contains(
@@ -728,13 +801,14 @@ async fn anchor_defects() {
         "{error}"
     );
 
-    let seam = Seam {
+    let seam = SeamSpec::Custom {
+        text: String::new(),
+        files: Vec::new(),
+        stems: Vec::new(),
         anchors: vec!["brief.md#L1".to_owned()],
-        ..Seam::whole()
+        packages: Vec::new(),
     };
-    let error = ask(&model, &SourceInput::value("brief", "Ship it."), seam)
-        .await
-        .expect_err("anchors over a value");
+    let error = ask(model.clone(), value("brief", "Ship it."), seam).await.error();
     assert_eq!(error.code(), "server_error");
     assert!(
         error.description().contains("a seam names anchors, but the source is an inline value"),
@@ -752,30 +826,14 @@ async fn doc_refs() {
     let model = ScriptedModel::answering([VALID]).calling(
         0,
         [
-            ToolCall {
-                id: "1".to_string(),
-                name: "list_docs".to_string(),
-                arguments: "{}".to_string(),
-            },
-            ToolCall {
-                id: "2".to_string(),
-                name: "read_doc".to_string(),
-                arguments: r#"{"path":"references/greeting.md"}"#.to_string(),
-            },
-            ToolCall {
-                id: "3".to_string(),
-                name: "read_doc".to_string(),
-                arguments: r#"{"path":"claims.md"}"#.to_string(),
-            },
-            ToolCall {
-                id: "4".to_string(),
-                name: "read_doc".to_string(),
-                arguments: r#"{"path":"extract.md"}"#.to_string(),
-            },
+            ("list_docs", "{}"),
+            ("read_doc", r#"{"path":"references/greeting.md"}"#),
+            ("read_doc", r#"{"path":"claims.md"}"#),
+            ("read_doc", r#"{"path":"extract.md"}"#),
         ],
     );
 
-    ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole()).await.expect("accepted");
+    ask(model.clone(), value("brief", "Ship it."), SeamSpec::Whole).await.evidence();
     let exchanges = model.exchanges();
     assert_eq!(exchanges.len(), 5, "four reference calls, then the check");
     assert_eq!(
@@ -802,6 +860,7 @@ async fn doc_refs() {
     );
     assert_eq!(exchanges[4].tool, "check");
     assert_eq!(exchanges[4].outcome, Ok(String::new()));
+    model.assert_exhausted();
 }
 
 // The engine never sees the claim it would otherwise refuse.
@@ -819,13 +878,11 @@ async fn gate_findings() {
     assert!(odd.backing.is_none(), "non-variant backing is dropped");
     let clean = &open.claims[1];
     assert_eq!(clean.synopsis.as_deref(), Some("kept"), "modeled shapes still parse");
-    assert_eq!(clean.backing, Some(Backing::Payload("ADR-7".to_string())));
+    assert_eq!(clean.backing, Some(Backing::Payload("ADR-7".to_owned())));
 
     let model = ScriptedModel::answering([r#"{"claims":[{"kind":"requirement"}]}"#, VALID]);
 
-    let accepted = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
-        .await
-        .expect("the second candidate passes the gate");
+    let accepted = ask(model.clone(), value("brief", "Ship it."), SeamSpec::Whole).await.evidence();
     assert_eq!(accepted.claims.len(), 2);
 
     let exchanges = model.exchanges();
@@ -837,7 +894,8 @@ async fn gate_findings() {
     assert!(correction.contains("`requirement` claims require an id"), "{correction}");
     assert!(correction.contains("missing extra `statement`"), "{correction}");
     assert_eq!(exchanges[1].outcome, Ok(String::new()));
-    assert_eq!(model.requests().len(), 2, "one scripted answer per attempt");
+    assert_eq!(model.seen().len(), 2, "one scripted answer per attempt");
+    model.assert_exhausted();
 }
 
 // The last findings surface, so the host's own error is never the adapter's answer.
@@ -847,30 +905,25 @@ async fn rounds_exhausted() {
         r#"{"claims":[{"kind":"criterion","id":"Not.Valid","criterion":"x"}]}"#,
     ]);
 
-    let error = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
-        .await
-        .expect_err("the only candidate fails the gate");
-    let Error::BadRequest { code, description } = error else {
-        panic!("spent rounds are a bad request: {error}");
-    };
-    assert_eq!(code, "bad_request");
-    assert!(description.contains("budget exhausted"), "{description}");
-    assert!(description.contains("id `Not.Valid` does not match"), "{description}");
+    let error = ask(model.clone(), value("brief", "Ship it."), SeamSpec::Whole).await.error();
+    assert_eq!(error.kind(), ErrorKind::BadRequest, "spent rounds are a bad request: {error}");
+    assert_eq!(error.code(), "exhausted");
+    assert!(error.description().contains("budget is exhausted"), "{error}");
+    assert!(error.description().contains("id `Not.Valid` does not match"), "{error}");
     assert_eq!(model.exchanges().len(), 1, "one check, rejected");
+    model.assert_exhausted();
 }
 
 #[tokio::test]
 async fn invalid_request() {
-    let model = ScriptedModel::new([Err(ModelError::InvalidRequest("no such model".to_string()))]);
+    let model = ScriptFailures::new([Err(FailKind::Invalid("no such model".to_owned()))]);
 
-    let error = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
-        .await
-        .expect_err("the host refused");
-    assert!(
-        matches!(&error, Error::BadRequest { description, .. } if description == "invalid request: no such model"),
-        "{error}"
-    );
-    assert!(model.exchanges().is_empty(), "nothing to check");
+    let error = ask(model.clone(), value("brief", "Ship it."), SeamSpec::Whole).await.error();
+    assert_eq!(error.kind(), ErrorKind::ServerError);
+    assert_eq!(error.code(), "invalid");
+    assert_eq!(error.description(), "no such model");
+    assert_eq!(model.seen(), 1);
+    model.assert_exhausted();
 }
 
 // The kind of source is the adapter's metadata, never the model's to state.
@@ -879,9 +932,7 @@ async fn stray_kind() {
     let model =
         ScriptedModel::answering([r#"{"kind":"intent","claims":[{"kind":"decision"}]}"#, VALID]);
 
-    let accepted = ask(&model, &SourceInput::value("brief", "Ship it."), Seam::whole())
-        .await
-        .expect("the second candidate is claims-only");
+    let accepted = ask(model.clone(), value("brief", "Ship it."), SeamSpec::Whole).await.evidence();
     assert_eq!(accepted.claims.len(), 2);
 
     let exchanges = model.exchanges();

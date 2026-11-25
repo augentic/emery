@@ -1,49 +1,42 @@
 //! Tests `target::verify` verdict gating and workspace repairs.
 
-use emery_sdk::target::{Grant, Verdict, VerifyContext};
-use emery_sdk::{Doc, Error};
-use omnia_sdk::model::ToolCall;
-use omnia_test::guest::ScriptedModel;
-use omnia_test::{Seen, SeenFormat, SeenWorker};
+#![cfg(not(target_arch = "wasm32"))]
 
-const PROSE: &[Doc] = &[
-    Doc {
-        path: "build.md",
-        body: "BUILD",
-    },
-    Doc {
-        path: "verify.md",
-        body: "VERIFY",
-    },
-    Doc {
-        path: "references/checks.md",
-        body: "Run `cargo test`.",
-    },
-];
+mod support;
+
+use omnia_test::host::{Scratch, ScriptedModel, scratch};
+use omnia_test::{Seen, SeenFormat, SeenWorker};
+use support::harness::{VerifyRun, verify};
+use test_programs::protocol::{GrantSpec, VERIFY_WORKSPACE, VerifyCheck, VerifyScenario};
 
 const PASSED: &str = r#"{"passed":true,"failures":[]}"#;
 
-async fn ask(model: &ScriptedModel, workspace: &str) -> Result<Verdict, Error> {
-    ask_as(model, workspace, &[]).await
+async fn ask(model: &ScriptedModel, project: &Scratch) -> VerifyRun {
+    verify(project, &VerifyScenario::default(), model.clone()).await
 }
 
-async fn ask_as(
-    model: &ScriptedModel, workspace: &str, grants: &[Grant],
-) -> Result<Verdict, Error> {
-    ask_checked(model, workspace, grants, |_| Ok(Vec::new())).await
+async fn ask_as(model: &ScriptedModel, project: &Scratch, grants: Vec<GrantSpec>) -> VerifyRun {
+    verify(
+        project,
+        &VerifyScenario {
+            grants,
+            ..VerifyScenario::default()
+        },
+        model.clone(),
+    )
+    .await
 }
 
-async fn ask_checked(
-    model: &ScriptedModel, workspace: &str, grants: &[Grant],
-    check: impl FnMut(&Verdict) -> Result<Vec<String>, Error> + Send,
-) -> Result<Verdict, Error> {
-    let ctx = VerifyContext {
-        adapter_id: "target:probe",
-        workspace,
-        grants,
-        model,
-    };
-    emery_sdk::target::verify(&ctx, PROSE, check).await
+async fn ask_checked(model: &ScriptedModel, project: &Scratch, check: VerifyCheck) -> VerifyRun {
+    verify(
+        project,
+        &VerifyScenario {
+            check,
+            ..VerifyScenario::default()
+        },
+        model.clone(),
+    )
+    .await
 }
 
 // The turn carries the verify prompt as its system, lends the integrated
@@ -51,11 +44,10 @@ async fn ask_checked(
 // steered by the verdict schema.
 #[tokio::test]
 async fn request_shape() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
     let model = ScriptedModel::answering([PASSED]);
 
-    let verdict = ask(&model, root).await.expect("accepted");
+    let verdict = ask(&model, &project).await.verdict();
     assert!(verdict.passed);
     assert_eq!(verdict.failures, Vec::<String>::new());
 
@@ -63,7 +55,8 @@ async fn request_shape() {
     assert_eq!(seen.len(), 1);
     let request = &seen[0];
     assert_eq!(request.system.as_deref(), Some("VERIFY"));
-    assert_eq!(request.workspace.as_deref(), Some(root), "the integrated tree is lent");
+    assert_eq!(request.workspace.as_deref(), Some(""), "the integrated tree is lent");
+    assert_eq!(model.lent(), [Some(project.path().to_path_buf())], "the integrated tree is lent");
     assert_eq!(request.worker, None, "no grants put no worker grant");
     assert_eq!(
         request.tools,
@@ -101,7 +94,11 @@ async fn request_shape() {
         user.contains("`failures` names each check that still failed, with the tail of its output"),
         "{user}"
     );
-    assert!(!user.contains(root), "the lend carries the root, not the brief: {user}");
+    let host_root = project.path().to_str().expect("UTF-8 scratch root");
+    assert!(
+        !user.contains(VERIFY_WORKSPACE) && !user.contains(host_root),
+        "the lend carries the root, not the brief: {user}"
+    );
     assert!(user.ends_with("rather than what the tree should hold."), "{user}");
     model.assert_exhausted();
 }
@@ -111,24 +108,20 @@ async fn request_shape() {
 // the tree is the caller's to seal.
 #[tokio::test]
 async fn repair_by_write() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    std::fs::create_dir_all(tmp.path().join("src")).expect("src dir");
-    std::fs::write(tmp.path().join("src/orders.rs"), "pub struct Order\n").expect("seed");
+    let project = scratch();
+    project.write("src/orders.rs", "pub struct Order\n");
     let model = ScriptedModel::answering([PASSED]).calling(
         0,
-        [ToolCall {
-            id: "1".to_owned(),
-            name: "write_files".to_owned(),
-            arguments: r#"{"files":[{"path":"src/orders.rs","content":"pub struct Order;\n"}]}"#
-                .to_owned(),
-        }],
+        [(
+            "write_files",
+            r#"{"files":[{"path":"src/orders.rs","content":"pub struct Order;\n"}]}"#,
+        )],
     );
 
-    let verdict = ask(&model, root).await.expect("accepted");
+    let verdict = ask(&model, &project).await.verdict();
     assert!(verdict.passed);
     assert_eq!(
-        std::fs::read_to_string(tmp.path().join("src/orders.rs")).expect("repaired"),
+        std::fs::read_to_string(project.path().join("src/orders.rs")).expect("repaired"),
         "pub struct Order;\n"
     );
 
@@ -148,35 +141,27 @@ async fn repair_by_write() {
 // the file is refused as a build's is.
 #[tokio::test]
 async fn repair_by_edit() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    std::fs::create_dir_all(tmp.path().join("src")).expect("src dir");
+    let project = scratch();
     let before = "pub struct Order;\npub fn total(&token: &str) {}\npub struct Line;\n";
-    std::fs::write(tmp.path().join("src/orders.rs"), before).expect("seed");
+    project.write("src/orders.rs", before);
     let model = ScriptedModel::answering([PASSED]).calling(
         0,
         [
-            ToolCall {
-                id: "1".to_owned(),
-                name: "write_files".to_owned(),
-                arguments:
-                    r#"{"files":[{"path":"src/orders.rs","content":"pub struct Order;\n"}]}"#
-                        .to_owned(),
-            },
-            ToolCall {
-                id: "2".to_owned(),
-                name: "edit_files".to_owned(),
-                arguments:
-                    r#"{"edits":[{"path":"src/orders.rs","find":"&token","replace":"token"}]}"#
-                        .to_owned(),
-            },
+            (
+                "write_files",
+                r#"{"files":[{"path":"src/orders.rs","content":"pub struct Order;\n"}]}"#,
+            ),
+            (
+                "edit_files",
+                r#"{"edits":[{"path":"src/orders.rs","find":"&token","replace":"token"}]}"#,
+            ),
         ],
     );
 
-    let verdict = ask(&model, root).await.expect("accepted");
+    let verdict = ask(&model, &project).await.verdict();
     assert!(verdict.passed);
     assert_eq!(
-        std::fs::read_to_string(tmp.path().join("src/orders.rs")).expect("repaired"),
+        std::fs::read_to_string(project.path().join("src/orders.rs")).expect("repaired"),
         "pub struct Order;\npub fn total(token: &str) {}\npub struct Line;\n"
     );
 
@@ -201,12 +186,11 @@ async fn repair_by_edit() {
 // with its failures; what a failed wave means is the caller's.
 #[tokio::test]
 async fn failed_verdict() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
     let model =
         ScriptedModel::answering([r#"{"passed":false,"failures":["cargo test: 2 failed"]}"#]);
 
-    let verdict = ask(&model, root).await.expect("a failed verdict is an answer");
+    let verdict = ask(&model, &project).await.verdict();
     assert!(!verdict.passed);
     assert_eq!(verdict.failures, ["cargo test: 2 failed"]);
     model.assert_exhausted();
@@ -216,15 +200,14 @@ async fn failed_verdict() {
 // correction, and the corrected verdict is accepted.
 #[tokio::test]
 async fn gate_findings() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
     let model = ScriptedModel::answering([
         r#"{"passed":true,"failures":["cargo test: 1 failed"]}"#,
         r#"{"passed":false,"failures":[]}"#,
         r#"{"passed":false,"failures":["cargo test: 1 failed"]}"#,
     ]);
 
-    let verdict = ask(&model, root).await.expect("corrected");
+    let verdict = ask(&model, &project).await.verdict();
     assert!(!verdict.passed);
 
     let exchanges = model.exchanges();
@@ -243,30 +226,17 @@ async fn gate_findings() {
 // read.
 #[tokio::test]
 async fn doc_refs() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
     let model = ScriptedModel::answering([PASSED]).calling(
         0,
         [
-            ToolCall {
-                id: "1".to_string(),
-                name: "list_docs".to_string(),
-                arguments: "{}".to_string(),
-            },
-            ToolCall {
-                id: "2".to_string(),
-                name: "read_doc".to_string(),
-                arguments: r#"{"path":"verify.md"}"#.to_string(),
-            },
-            ToolCall {
-                id: "3".to_string(),
-                name: "read_doc".to_string(),
-                arguments: r#"{"path":"claims.md"}"#.to_string(),
-            },
+            ("list_docs", "{}"),
+            ("read_doc", r#"{"path":"verify.md"}"#),
+            ("read_doc", r#"{"path":"claims.md"}"#),
         ],
     );
 
-    ask(&model, root).await.expect("accepted");
+    ask(&model, &project).await.verdict();
     let exchanges = model.exchanges();
     assert_eq!(exchanges.len(), 4, "three reference calls, then the check");
     assert_eq!(
@@ -292,26 +262,27 @@ async fn doc_refs() {
 // checks run the same toolchain over the integrated tree.
 #[tokio::test]
 async fn worker_grant() {
-    const NPM: Grant = Grant {
-        egress: &["registry.npmjs.org"],
-        read: &[],
-        env: &[],
-    };
-    const NVM: Grant = Grant {
-        egress: &[],
-        read: &["~/.nvm/versions/node"],
-        env: &[],
-    };
-    const GRANTS: &[Grant] = &[NPM, NVM];
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let grants = vec![
+        GrantSpec {
+            egress: vec!["registry.npmjs.org".to_owned()],
+            read: Vec::new(),
+            env: Vec::new(),
+        },
+        GrantSpec {
+            egress: Vec::new(),
+            read: vec!["~/.nvm/versions/node".to_owned()],
+            env: Vec::new(),
+        },
+    ];
+    let project = scratch();
     let model = ScriptedModel::answering([PASSED]);
 
-    ask_as(&model, root, GRANTS).await.expect("accepted");
+    ask_as(&model, &project, grants).await.verdict();
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0].workspace.as_deref(), Some(root));
+    assert_eq!(seen[0].workspace.as_deref(), Some(""));
+    assert_eq!(model.lent(), [Some(project.path().to_path_buf())]);
     assert_eq!(
         seen[0].worker,
         Some(SeenWorker {
@@ -327,19 +298,15 @@ async fn worker_grant() {
 // before a turn is spent.
 #[tokio::test]
 async fn missing_prompt() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
     let model = ScriptedModel::default();
-    let ctx = VerifyContext {
-        adapter_id: "target:mute",
-        workspace: root,
-        grants: &[],
-        model: &model,
+    let scenario = VerifyScenario {
+        adapter_id: "target:mute".to_owned(),
+        omit_verify_prompt: true,
+        ..VerifyScenario::default()
     };
 
-    let error = emery_sdk::target::verify(&ctx, &PROSE[..1], |_| Ok(Vec::new()))
-        .await
-        .expect_err("no prompt");
+    let error = verify(&project, &scenario, model.clone()).await.error();
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`verify.md` is not embedded"), "{error}");
     assert_eq!(model.seen(), [] as [Seen; 0]);
@@ -350,22 +317,30 @@ async fn missing_prompt() {
 // the host would refuse never reaches it.
 #[tokio::test]
 async fn invalid_worker_grant() {
-    const BROKEN: Grant = Grant {
-        egress: &["https://registry.npmjs.org", "registry.npmjs.org"],
-        read: &["/opt/node", "~/", "~/a/../b", "~/.volta"],
-        env: &[("VOLTA-HOME", "~/.volta"), ("NODE_ENV", "test")],
-    };
-    const OTHER: Grant = Grant {
-        egress: &[],
-        read: &[],
-        env: &[("NODE_ENV", "production")],
-    };
-    const GRANTS: &[Grant] = &[BROKEN, OTHER];
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let grants = vec![
+        GrantSpec {
+            egress: vec!["https://registry.npmjs.org".to_owned(), "registry.npmjs.org".to_owned()],
+            read: vec![
+                "/opt/node".to_owned(),
+                "~/".to_owned(),
+                "~/a/../b".to_owned(),
+                "~/.volta".to_owned(),
+            ],
+            env: vec![
+                ("VOLTA-HOME".to_owned(), "~/.volta".to_owned()),
+                ("NODE_ENV".to_owned(), "test".to_owned()),
+            ],
+        },
+        GrantSpec {
+            egress: Vec::new(),
+            read: Vec::new(),
+            env: vec![("NODE_ENV".to_owned(), "production".to_owned())],
+        },
+    ];
+    let project = scratch();
     let model = ScriptedModel::default();
 
-    let error = ask_as(&model, root, GRANTS).await.expect_err("refused");
+    let error = ask_as(&model, &project, grants).await.error();
 
     assert_eq!(error.code(), "server_error");
     let description = error.description();
@@ -388,16 +363,11 @@ async fn invalid_worker_grant() {
 // grant, as no grants put none.
 #[tokio::test]
 async fn empty_worker_grant() {
-    const GRANTS: &[Grant] = &[Grant {
-        egress: &[],
-        read: &[],
-        env: &[],
-    }];
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let grants = vec![GrantSpec::default()];
+    let project = scratch();
     let model = ScriptedModel::answering([PASSED]);
 
-    ask_as(&model, root, GRANTS).await.expect("accepted");
+    ask_as(&model, &project, grants).await.verdict();
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -410,35 +380,20 @@ async fn empty_worker_grant() {
 // finding, and the candidate after the repair is accepted.
 #[tokio::test]
 async fn check_findings() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
-    std::fs::write(tmp.path().join("Cargo.toml"), "[workspace]\nmembers = []\n").expect("seed");
+    let project = scratch();
+    project.write("Cargo.toml", "[workspace]\nmembers = []\n");
     let model = ScriptedModel::answering([PASSED, PASSED]).calling(
         1,
-        [ToolCall {
-            id: "1".to_owned(),
-            name: "edit_files".to_owned(),
-            arguments: r#"{"edits":[{"path":"Cargo.toml","find":"members = []","replace":"members = [\"crates/*\"]"}]}"#
-                .to_owned(),
-        }],
+        [(
+            "edit_files",
+            r#"{"edits":[{"path":"Cargo.toml","find":"members = []","replace":"members = [\"crates/*\"]"}]}"#,
+        )],
     );
-    let mut seen = 0;
 
-    let verdict = ask_checked(&model, root, &[], |verdict| {
-        seen += 1;
-        let manifest = std::fs::read_to_string(tmp.path().join("Cargo.toml"))
-            .map_err(|err| omnia_sdk::server_error!("reading `Cargo.toml`: {err}"))?;
-        let drifted = verdict.passed && !manifest.contains("crates/*");
-        Ok(drifted
-            .then(|| "- `Cargo.toml` lacks the members list; put it back".to_owned())
-            .into_iter()
-            .collect())
-    })
-    .await
-    .expect("corrected");
+    let outcome = ask_checked(&model, &project, VerifyCheck::MembersList).await.outcome();
 
-    assert!(verdict.passed);
-    assert_eq!(seen, 2, "the check saw each candidate");
+    assert!(outcome.verdict.passed);
+    assert_eq!(outcome.checks, 2, "the check saw each candidate");
     let exchanges = model.exchanges();
     let correction = exchanges[0].outcome.as_ref().expect_err("the first verdict is refused");
     assert!(
@@ -454,20 +409,15 @@ async fn check_findings() {
 // seen and no correction put.
 #[tokio::test]
 async fn check_error() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let root = tmp.path().to_str().expect("a UTF-8 scratch root");
+    let project = scratch();
     let model = ScriptedModel::answering([PASSED]);
 
-    let error = ask_checked(&model, root, &[], |_| {
-        Err(omnia_sdk::bad_request!("a directory stands at `Cargo.toml`"))
-    })
-    .await
-    .expect_err("the check's error is the call's");
+    let error = ask_checked(&model, &project, VerifyCheck::DirectoryAtManifest).await.error();
 
     assert_eq!(error.code(), "bad_request", "{error}");
     assert!(error.to_string().contains("a directory stands at"), "{error}");
     let exchanges = model.exchanges();
     assert_eq!(exchanges.len(), 1, "one candidate, no correction: {exchanges:?}");
-    assert!(exchanges[0].outcome.is_ok(), "the candidate ends the turn: {exchanges:?}");
+    assert_eq!(exchanges[0].outcome, Ok(String::new()), "the candidate ends the turn");
     model.assert_exhausted();
 }
