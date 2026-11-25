@@ -3,6 +3,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 #![allow(dead_code, reason = "each integration test binary uses a different subset")]
 
+pub mod build_fixtures;
 pub mod by_file;
 pub mod harness;
 pub mod stub;

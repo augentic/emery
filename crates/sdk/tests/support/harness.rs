@@ -1,7 +1,7 @@
 //! Runs SDK driver guests under [`Deployment`] and parses their JSON stdout.
 
 use emery_adapter::source::{Claim, Evidence};
-use emery_adapter::target::Verdict;
+use emery_adapter::target::{Report, Verdict};
 use emery_sdk::survey::{Inventory, Survey};
 use emery_sdk::{Error, Lexicon, Seam};
 use omnia::{ExitStatus, Mount};
@@ -10,8 +10,8 @@ use omnia_test::host::{Backends, Deployment, Scratch, precompiled, scratch};
 use omnia_wasi_model::{ModelClient, WasiModel};
 use serde::de::DeserializeOwned;
 use test_programs::protocol::{
-    ExtractScenario, InputSpec, Response, SeamsOutcome, SeamsScenario, SurveyCommand,
-    SurveyScenario, VERIFY_WORKSPACE, VerifyOutcome, VerifyScenario, WorkspaceInput,
+    BuildOutcome, BuildScenario, ExtractScenario, InputSpec, Response, SeamsOutcome, SeamsScenario,
+    SurveyCommand, SurveyScenario, VERIFY_WORKSPACE, VerifyOutcome, VerifyScenario, WorkspaceInput,
 };
 
 /// An [`extract`] run: parsed stdout and the model handle for assertions.
@@ -36,6 +36,14 @@ pub struct SurveyRun {
 pub struct SeamsRun {
     /// Parsed driver response.
     pub response: Response<SeamsOutcome<Claim>>,
+    /// Standard output as UTF-8.
+    pub stdout: String,
+}
+
+/// A [`target::build`](emery_sdk::target::build) run.
+pub struct BuildRun {
+    /// Parsed driver response.
+    pub response: Response<BuildOutcome<Report>>,
     /// Standard output as UTF-8.
     pub stdout: String,
 }
@@ -104,6 +112,17 @@ pub async fn seams_in<M: ModelClient + Clone + 'static>(
     )
     .await;
     SeamsRun { response, stdout }
+}
+
+/// Runs the build driver over writable `project` with `scenario` and `model`.
+pub async fn build<M: ModelClient + Clone + 'static>(
+    project: &Scratch, scenario: &BuildScenario, model: M,
+) -> BuildRun {
+    let arg = serde_json::to_string(scenario).expect("scenario serialises");
+    let mount = project.mount(true);
+    let (response, stdout) =
+        drive_mount::<BuildOutcome<Report>, _>(test_programs::SDK_BUILD, mount, &arg, model).await;
+    BuildRun { response, stdout }
 }
 
 /// Runs the verify driver over writable `project` with `scenario` and `model`.
@@ -237,6 +256,33 @@ impl SeamsRun {
                 code, description, ..
             } => {
                 panic!("expected survey, got `{code}`: {description}");
+            }
+        }
+    }
+
+    /// Returns the error on refusal.
+    #[track_caller]
+    pub fn error(self) -> Error {
+        error_from_response(self.response)
+    }
+}
+
+impl BuildRun {
+    /// Returns the report on success.
+    #[track_caller]
+    pub fn report(self) -> Report {
+        self.outcome().report
+    }
+
+    /// Returns `(report, checks)` on success.
+    #[track_caller]
+    pub fn outcome(self) -> BuildOutcome<Report> {
+        match self.response {
+            Response::Ok { value } => value,
+            Response::Err {
+                code, description, ..
+            } => {
+                panic!("expected report, got `{code}`: {description}");
             }
         }
     }

@@ -8,7 +8,7 @@ use emery_adapter::source::Backing;
 use support::by_file::{
     ByFile, FailKind, ScriptFailures, file_answers, file_invalid, file_retries, single_model,
 };
-use support::harness::{drive, extract};
+use support::harness::extract;
 use test_programs::protocol::{ExtractScenario, FileSpec, InputSpec, SeamSpec, WorkspaceInput};
 
 // Every SDK driver guest must have a matching test here.
@@ -415,18 +415,7 @@ async fn single_seam_error() {
 async fn sdk_survey() {}
 
 #[tokio::test]
-async fn sdk_build() {
-    let scenario = test_programs::protocol::BuildScenario {
-        op: "stub".to_owned(),
-    };
-    let (response, _) = drive::<serde_json::Value, _>(
-        test_programs::SDK_BUILD,
-        (omnia_test::host::scratch(), serde_json::to_string(&scenario).unwrap()),
-        single_model(Vec::<String>::new()),
-    )
-    .await;
-    assert!(matches!(response, test_programs::protocol::Response::Ok { .. }));
-}
+async fn sdk_build() {}
 
 #[tokio::test]
 async fn sdk_verify() {}

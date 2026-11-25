@@ -3,13 +3,17 @@
 use std::path::Path;
 
 use emery_adapter::source::SourceInput;
+use emery_adapter::target::{DesignType, Requirement, Scenario, Slice};
 use emery_prose::Doc;
-use emery_sdk::target::Grant;
+use emery_sdk::target::{Grant, Guarded, Marker, Scaffold};
 use emery_sdk::{Lexicon, Seam};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::protocol::{FileSpec, GrantSpec, InputSpec, Response, SeamSpec, SurveyCheck, WORKSPACE};
+use crate::protocol::{
+    BuildSliceSpec, DesignTypeSpec, FileSpec, GrantSpec, GuardedSpec, InputSpec, MarkerSpec,
+    RequirementSpec, Response, ScaffoldSpec, ScenarioSpec, SeamSpec, SurveyCheck, WORKSPACE,
+};
 
 /// Parses the JSON scenario from argv past the program name.
 ///
@@ -189,6 +193,24 @@ pub const SURVEY_PROSE_OMIT_PROMPT: &[Doc] = &[
     },
 ];
 
+/// Embedded prose for [`target::build`](emery_sdk::target::build) drivers.
+pub const BUILD_PROSE: &[Doc] = &[
+    Doc {
+        path: "build.md",
+        body: "BUILD",
+    },
+    Doc {
+        path: "references/layout.md",
+        body: "One module per requirement.",
+    },
+];
+
+/// Prose without `build.md` for refusal scenarios.
+pub const BUILD_PROSE_OMIT_PROMPT: &[Doc] = &[Doc {
+    path: "references/layout.md",
+    body: "One module per requirement.",
+}];
+
 /// Embedded prose for [`target::verify`](emery_sdk::target::verify) drivers.
 pub const VERIFY_PROSE: &[Doc] = &[
     Doc {
@@ -210,6 +232,80 @@ pub const VERIFY_PROSE_OMIT_PROMPT: &[Doc] = &[Doc {
     path: "build.md",
     body: "BUILD",
 }];
+
+/// Maps a [`BuildSliceSpec`] to a [`Slice`].
+#[must_use]
+pub fn build_slice(spec: &BuildSliceSpec) -> Slice {
+    Slice {
+        id: spec.id.clone(),
+        part: spec.part.clone(),
+        name: spec.name.clone(),
+        index: spec.index,
+        count: spec.count,
+        base: spec.base.clone(),
+        requirements: spec.requirements.iter().map(requirement).collect(),
+        types: spec.types.iter().map(design_type).collect(),
+        brief: spec.brief.clone(),
+        spec: spec.spec.clone(),
+        design: spec.design.clone(),
+        plan: spec.plan.clone(),
+    }
+}
+
+fn requirement(spec: &RequirementSpec) -> Requirement {
+    Requirement {
+        id: spec.id.clone(),
+        subject: spec.subject.clone(),
+        statement: spec.statement.clone(),
+        scenarios: spec.scenarios.iter().map(acceptance_scenario).collect(),
+        trigger: None,
+    }
+}
+
+fn acceptance_scenario(spec: &ScenarioSpec) -> Scenario {
+    Scenario {
+        name: spec.name.clone(),
+        given: spec.given.clone(),
+        when: spec.when.clone(),
+        then: spec.then.clone(),
+        and: spec.and.clone(),
+    }
+}
+
+fn design_type(spec: &DesignTypeSpec) -> DesignType {
+    DesignType {
+        key: spec.key.clone(),
+        signature: spec.signature.clone(),
+    }
+}
+
+/// Leaks a [`ScaffoldSpec`] into a `'static` [`Scaffold`] for one driver run.
+#[must_use]
+pub fn leak_scaffold(spec: &ScaffoldSpec) -> Scaffold<'static> {
+    let brief: &'static str = spec.brief.clone().leak();
+    let passages: &'static str = spec.passages.clone().leak();
+    let types: &'static [String] = spec.types.clone().leak();
+    let files: Vec<Guarded> = spec.files.iter().map(guarded).collect();
+    let files: &'static [Guarded] = files.leak();
+    Scaffold {
+        brief,
+        passages,
+        files,
+        types,
+    }
+}
+
+fn guarded(spec: &GuardedSpec) -> Guarded {
+    Guarded {
+        path: spec.path.clone(),
+        keeps: spec.keeps.clone(),
+        markers: spec.markers.iter().map(marker).collect(),
+    }
+}
+
+fn marker(spec: &MarkerSpec) -> Marker {
+    Marker::new(spec.key.clone(), spec.block.clone())
+}
 
 /// Maps an SDK error to the wire [`Response::Err`].
 #[must_use]

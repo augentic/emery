@@ -268,11 +268,153 @@ pub enum SeamSpec {
     },
 }
 
-/// A build-driver placeholder scenario (A8 fills behaviour).
+/// Requirement payload in a [`BuildScenario`].
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct RequirementSpec {
+    /// The stable requirement identifier.
+    pub id: String,
+    /// The dotted subject.
+    pub subject: String,
+    /// Statement paragraphs.
+    pub statement: Vec<String>,
+    /// Acceptance scenarios.
+    pub scenarios: Vec<ScenarioSpec>,
+}
+
+/// One scenario in a [`RequirementSpec`].
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ScenarioSpec {
+    /// Scenario heading.
+    pub name: String,
+    /// `GIVEN` lines.
+    #[serde(default)]
+    pub given: Vec<String>,
+    /// `WHEN` line.
+    pub when: String,
+    /// `THEN` line.
+    pub then: String,
+    /// `AND` lines.
+    #[serde(default)]
+    pub and: Vec<String>,
+}
+
+/// Owned design type in a [`BuildSliceSpec`].
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DesignTypeSpec {
+    /// Type key.
+    pub key: String,
+    /// Signature text.
+    pub signature: String,
+}
+
+/// The slice a build driver runs.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct BuildSliceSpec {
+    /// Slice id, `SLICE-001`.
+    pub id: String,
+    /// Part id.
+    pub part: String,
+    /// Part name.
+    pub name: String,
+    /// Slice index.
+    pub index: u32,
+    /// Slice count in the part.
+    pub count: u32,
+    /// Base commit id.
+    pub base: String,
+    /// Requirements to build.
+    pub requirements: Vec<RequirementSpec>,
+    /// Types the slice owns.
+    pub types: Vec<DesignTypeSpec>,
+    /// Brief paragraphs.
+    pub brief: Vec<String>,
+    /// Specification cut.
+    pub spec: String,
+    /// Design document.
+    pub design: String,
+    /// Plan entry.
+    pub plan: String,
+}
+
+/// Marker entry in [`GuardedSpec`].
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct MarkerSpec {
+    /// Key an `edit_files` `find` names.
+    pub key: String,
+    /// Block the scaffold laid.
+    pub block: String,
+}
+
+/// Guarded file in [`ScaffoldSpec`].
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct GuardedSpec {
+    /// Root-relative path.
+    pub path: String,
+    /// Tokens a whole write must keep.
+    #[serde(default)]
+    pub keeps: Vec<String>,
+    /// Fill markers.
+    #[serde(default)]
+    pub markers: Vec<MarkerSpec>,
+}
+
+/// Scaffold the adapter laid before the turn.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ScaffoldSpec {
+    /// Brief under the scaffold heading.
+    #[serde(default)]
+    pub brief: String,
+    /// Reference passages after the scaffold section.
+    #[serde(default)]
+    pub passages: String,
+    /// Guarded scaffold files.
+    #[serde(default)]
+    pub files: Vec<GuardedSpec>,
+    /// Laid type keys.
+    #[serde(default)]
+    pub types: Vec<String>,
+}
+
+/// Adapter check wired in the build guest.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildCheck {
+    /// Accept every report the gate allows.
+    #[default]
+    None,
+}
+
+/// A `target::build` driver scenario.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct BuildScenario {
-    /// The operation the stub understands.
-    pub op: String,
+    /// Adapter id passed to `BuildContext`.
+    pub adapter_id: String,
+    /// Slice to build.
+    pub slice: BuildSliceSpec,
+    /// Worker grants.
+    #[serde(default)]
+    pub grants: Vec<GrantSpec>,
+    /// Optional scaffold.
+    #[serde(default)]
+    pub scaffold: Option<ScaffoldSpec>,
+    /// Files staged under [`WORKSPACE`] before the run.
+    #[serde(default)]
+    pub files: Vec<FileSpec>,
+    /// Per-candidate adapter check.
+    #[serde(default)]
+    pub check: BuildCheck,
+    /// Omits `build.md` from embedded prose.
+    #[serde(default)]
+    pub omit_build_prompt: bool,
+}
+
+/// Successful payload returned by `sdk_build`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct BuildOutcome<R> {
+    /// Accepted report.
+    pub report: R,
+    /// Number of candidates the adapter `check` saw.
+    pub checks: usize,
 }
 
 /// One `Grant` entry passed to a target driver.
