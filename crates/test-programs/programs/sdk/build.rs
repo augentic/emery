@@ -3,6 +3,8 @@
 
 #![cfg(target_arch = "wasm32")]
 
+use std::path::Path;
+
 use emery_adapter::target::Report;
 use emery_sdk::target::BuildContext;
 use test_programs::helpers::{
@@ -34,6 +36,16 @@ async fn run() {
         checks += 1;
         match scenario.check {
             BuildCheck::None => Ok(Vec::new()),
+            BuildCheck::RequireManifest => {
+                let held = Path::new(WORKSPACE).join("Cargo.toml").is_file();
+                Ok((!held)
+                    .then(|| "- the tree lacks `Cargo.toml`; write it".to_owned())
+                    .into_iter()
+                    .collect())
+            }
+            BuildCheck::PermissionDenied => {
+                Err(omnia_sdk::server_error!("reading `Cargo.toml`: permission denied"))
+            }
         }
     })
     .await

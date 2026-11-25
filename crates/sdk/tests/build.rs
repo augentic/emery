@@ -6,17 +6,20 @@ mod support;
 
 use std::fs;
 use std::num::NonZeroU32;
+use std::os::unix::fs::symlink;
+use std::path::Path;
 
 use emery_sdk::target::{
-    Grant, Guarded, MergeRule, Metadata, Scaffold, Slice, TargetMetadata, metadata,
+    Grant, Guarded, Marker, MergeRule, Metadata, Scaffold, Slice, TargetMetadata, metadata,
 };
+use omnia_sdk::ErrorKind;
 use omnia_test::host::{Scratch, ScriptedModel, scratch};
-use omnia_test::{SeenFormat, SeenWorker};
+use omnia_test::{Seen, SeenFormat, SeenWorker};
 use support::build_fixtures::{
     VALID, designed, grants_from, scaffold_spec, scenario_for, scenario_with_grants, slice,
 };
-use support::harness::build;
-use test_programs::protocol::ScaffoldSpec;
+use support::harness::{BuildRun, build};
+use test_programs::protocol::{BuildCheck, ScaffoldSpec};
 
 async fn ask(
     project: &Scratch, model: &ScriptedModel, slice: &Slice,
@@ -48,6 +51,23 @@ async fn ask_guarded(
     let mut scenario = scenario_for(slice);
     scenario.scaffold = Some(scaffold_spec(scaffold));
     build(project, &scenario, model.clone()).await.report()
+}
+
+async fn ask_checked(
+    project: &Scratch, model: &ScriptedModel, slice: &Slice, check: BuildCheck,
+) -> BuildRun {
+    let mut scenario = scenario_for(slice);
+    scenario.check = check;
+    build(project, &scenario, model.clone()).await
+}
+
+fn names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .expect("read_dir")
+        .map(|entry| entry.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
 }
 
 fn stage<'a>(root: &std::path::Path, files: impl IntoIterator<Item = (&'a str, &'a str)>) {
@@ -947,5 +967,1065 @@ async fn edit_nearest_line() {
              `src/empty.rs`: `find` matches nothing in the file; the file is empty"
             .to_owned())
     );
+    model.assert_exhausted();
+}
+// A `find` that matches nowhere as written matches with its layout
+// whitespace read past: a one-line `todo!("…")` meets the three lines the
+// formatter broke it over, the indentation before the opening line is
+// replaced with it, a `find` ending in a line break and the next line's
+// indentation leaves an empty next line as it stands, a comment line and a
+// string literal match as written, and a kept space between two words is
+// not read past; a literal whose spaces differ, or a `find` matching two
+// places modulo layout, is refused as one as written is.
+#[tokio::test]
+async fn edit_relaid() {
+    let project = scratch();
+    let module = "pub(crate) async fn read(input: ReadInput) -> Output {\n    \
+                  let _ = (&input, &context);\n    \
+                  todo!(\n        \"REQ-001 orders.read: the handler\"\n    )\n}\n\n\
+                  // REQ-002 orders.list: the statement\n\
+                  pub fn list() {\n    let store_up = probe(\"SELECT 1\")\n        .await;\n\n    \
+                  let _ = store_up;\n}\n";
+    let twice = "fn a() {\n    todo!(\n        \"x\"\n    )\n}\nfn b() {\n    todo!(\n        \"x\"\n    \
+                 )\n}\n";
+    let literal = "fn c() {\n    say(\"two  spaces\")\n}\n";
+    let words = "pub struct Order;\npubstruct Line;\n";
+    stage(
+        project.path(),
+        [
+            ("src/orders.rs", module),
+            ("src/twice.rs", twice),
+            ("src/literal.rs", literal),
+            ("src/words.rs", words),
+        ],
+    );
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [
+            edit_files(&[
+                (
+                    "src/orders.rs",
+                    "    let _ = (&input, &context);\n    todo!(\"REQ-001 orders.read: the \
+                         handler\")",
+                    "    let _ = &context;\n    Ok(Output::from(input))",
+                ),
+                (
+                    "src/orders.rs",
+                    "// REQ-002 orders.list: the statement\npub fn list() {\n    let \
+                         store_up = probe(\"SELECT 1\").await;\n    ",
+                    "// REQ-002 orders.list: the statement\npub fn list() {\n    let \
+                         store_up = probe(\"SELECT 1\").await.is_ok();\n    ",
+                ),
+            ]),
+            edit_files(&[("src/twice.rs", "todo!(\"x\")", "x()")]),
+            edit_files(&[("src/literal.rs", "say(\"two spaces\")", "say(\"two\")")]),
+            edit_files(&[("src/words.rs", "pub struct Line;", "pub struct Row;")]),
+        ],
+    );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/orders.rs")).expect("edited"),
+        "pub(crate) async fn read(input: ReadInput) -> Output {\n    \
+         let _ = &context;\n    Ok(Output::from(input))\n}\n\n\
+         // REQ-002 orders.list: the statement\n\
+         pub fn list() {\n    let store_up = probe(\"SELECT 1\").await.is_ok();\n    \n    \
+         let _ = store_up;\n}\n",
+        "the marker's three lines and the statement's two are replaced, the empty line kept"
+    );
+    for untouched in [("src/twice.rs", twice), ("src/literal.rs", literal), ("src/words.rs", words)]
+    {
+        assert_eq!(
+            fs::read_to_string(project.path().join(untouched.0)).expect("as it was"),
+            untouched.1
+        );
+    }
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "four calls, then the check");
+    assert!(exchanges[0].outcome.is_ok(), "{:?}", exchanges[0].outcome);
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("edit_files: nothing edited: `src/twice.rs`: `find` matches 2 places in the file"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[2].outcome,
+        Err("edit_files: nothing edited: `src/literal.rs`: `find` matches nothing in the file; \
+             no line holds its first line; the file has 3 lines and opens with `fn c() {`"
+            .to_owned()),
+        "a literal's spaces are its own"
+    );
+    assert_eq!(
+        exchanges[3].outcome,
+        Err("edit_files: nothing edited: `src/words.rs`: `find` matches nothing in the file; no \
+             line holds its first line; the file has 2 lines and opens with `pub struct Order;`"
+            .to_owned()),
+        "the space between two words is kept"
+    );
+    model.assert_exhausted();
+}
+
+// A `find` matching nothing whose first line is a call the formatter broke
+// after its opener is refused naming the opener's line and the line after
+// it, the occurrence whose next line shares the most of the call where
+// several are broken; and the lines after a found first line match with
+// their indentation read past.
+#[tokio::test]
+async fn edit_nearest_broken() {
+    let project = scratch();
+    let module = "fn a() {\n    todo!(\n        \"REQ-001 orders.create: the handler\"\n    \
+                  )\n}\nfn b() {\n    todo!(\n        \"REQ-002 orders.list: the handler\"\n    \
+                  )\n}\n";
+    let indented = "fn c() {\n        let x = 1;\n        let y = 2;\n}\n";
+    stage(project.path(), [("src/orders.rs", module), ("src/indented.rs", indented)]);
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [edit_files(&[
+            ("src/orders.rs", "todo!(\"REQ-002 orders.list: the hander\")", "Ok(())"),
+            ("src/indented.rs", "fn c() {\n    let x = 1;\n    let y = 3;", "fn c() {}"),
+        ])],
+    );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, Vec::<String>::new());
+
+    let exchanges = model.exchanges();
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("edit_files: nothing edited: \
+             `src/orders.rs`: `find` matches nothing in the file; no line holds its first line \
+             whole; its opener `todo!(` is line 7 of 10, the call broken over lines after it, \
+             and line 8 is `        \"REQ-002 orders.list: the handler\"`; \
+             `src/indented.rs`: `find` matches nothing in the file; its first line is on line 1 \
+             of 4, `fn c() {`, line 2 matches, and line 3 is `        let y = 2;`"
+            .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// A marker a guarded file names is filled by an edit whose `find` is the
+// marker's key alone, the block the scaffold laid replaced whole where the
+// file holds it as written or re-laid by the formatter, never the key's
+// own text inside it; a key named again once its block is gone is refused
+// naming the marker.
+#[tokio::test]
+async fn edit_marker_key() {
+    let project = scratch();
+    let module = "pub(crate) async fn create(input: CreateInput) -> Output {\n    \
+                  let _ = (&input, &context);\n    \
+                  todo!(\n        \"REQ-001 orders.create: the handler\"\n    )\n}\n\n\
+                  pub fn total() {\n    todo!(\"REQ-002 orders.list: the behaviour\")\n}\n";
+    let tests = "#[tokio::test]\n#[ignore = \"REQ-001 create: unfilled\"]\nasync fn create() {\n    \
+                 let provider = provider();\n    let _ = &provider;\n    \
+                 todo!(\"REQ-001 create: arrange, act, assert\")\n}\n";
+    stage(project.path(), [("src/orders.rs", module), ("tests/orders.rs", tests)]);
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#,
+    ])
+    .calling(
+        0,
+        [
+            edit_files(&[
+                (
+                    "src/orders.rs",
+                    "REQ-001 orders.create: the handler",
+                    "    let _ = &context;\n    Ok(Output::from(input))",
+                ),
+                ("src/orders.rs", " REQ-002 orders.list: the behaviour ", "    Ok(())"),
+                (
+                    "tests/orders.rs",
+                    "REQ-001 create: unfilled",
+                    "async fn create() {\n    let (status, _) = send(provider()).await;\n    \
+                             assert_eq!(status, 201);\n}",
+                ),
+            ]),
+            edit_files(&[("src/orders.rs", "REQ-001 orders.create: the handler", "")]),
+        ],
+    );
+    let files = [
+        Guarded::new("src/orders.rs", ["REQ-001 orders.create", "REQ-002 orders.list"])
+            .with_markers([
+                Marker::new(
+                    "REQ-001 orders.create: the handler",
+                    "    let _ = (&input, &context);\n    todo!(\"REQ-001 orders.create: the \
+                     handler\")",
+                ),
+                Marker::new(
+                    "REQ-002 orders.list: the behaviour",
+                    "    todo!(\"REQ-002 orders.list: the behaviour\")",
+                ),
+            ]),
+        Guarded::new("tests/orders.rs", ["REQ-001 create"]).with_markers([Marker::new(
+            "REQ-001 create: unfilled",
+            "#[ignore = \"REQ-001 create: unfilled\"]\nasync fn create() {\n    let provider = \
+             provider();\n    let _ = &provider;\n    todo!(\"REQ-001 create: arrange, act, \
+             assert\")\n}",
+        )]),
+    ];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n- `tests/orders.rs`: scaffolded\n",
+        passages: "",
+        files: &files,
+        types: &[],
+    };
+
+    let report = ask_guarded(&project, &model, &slice(), scaffold).await;
+    assert_eq!(report.written, ["src/orders.rs", "tests/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/orders.rs")).expect("edited"),
+        "pub(crate) async fn create(input: CreateInput) -> Output {\n    \
+         let _ = &context;\n    Ok(Output::from(input))\n}\n\n\
+         pub fn total() {\n    Ok(())\n}\n",
+        "each block is replaced whole, the re-laid one included"
+    );
+    assert_eq!(
+        fs::read_to_string(project.path().join("tests/orders.rs")).expect("edited"),
+        "#[tokio::test]\nasync fn create() {\n    let (status, _) = send(provider()).await;\n    \
+         assert_eq!(status, 201);\n}\n",
+        "the test's block is replaced from its `#[ignore]` line"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 3, "two calls, then the check");
+    assert!(exchanges[0].outcome.is_ok(), "{:?}", exchanges[0].outcome);
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("edit_files: nothing edited: `src/orders.rs`: `find` names the marker `REQ-001 \
+             orders.create: the handler`, but the file no longer holds the block the scaffold \
+             laid for it; copy what stands there into `find`"
+            .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// A key is a marker of the file it guards alone, plain text in any other;
+// and the brief says how a key is used where any scaffolded file carries
+// one.
+#[tokio::test]
+async fn edit_marker_scoped() {
+    let project = scratch();
+    stage(
+        project.path(),
+        [
+            (
+                "src/orders.rs",
+                "pub fn total() {\n    todo!(\"REQ-002 orders.list: the behaviour\")\n}\n",
+            ),
+            ("tests/orders.rs", "#[tokio::test]\nasync fn create() {}\n"),
+        ],
+    );
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#])
+        .calling(0, [edit_files(&[("tests/orders.rs", "REQ-002 orders.list: the behaviour", "")])]);
+    let files = [
+        Guarded::new("src/orders.rs", ["REQ-002 orders.list"]).with_markers([Marker::new(
+            "REQ-002 orders.list: the behaviour",
+            "    todo!(\"REQ-002 orders.list: the behaviour\")",
+        )]),
+        Guarded::new("tests/orders.rs", Vec::<String>::new()),
+    ];
+    let scaffold = Scaffold {
+        brief: "- `src/orders.rs`: scaffolded\n- `tests/orders.rs`: scaffolded\n",
+        passages: "",
+        files: &files,
+        types: &[],
+    };
+
+    let report = ask_guarded(&project, &model, &slice(), scaffold).await;
+    assert_eq!(report.written, Vec::<String>::new());
+
+    let exchanges = model.exchanges();
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("edit_files: nothing edited: `tests/orders.rs`: `find` matches nothing in the file; \
+             no line holds its first line; the file has 2 lines and opens with `#[tokio::test]`"
+            .to_owned())
+    );
+    let user = &model.seen()[0].messages[0];
+    assert!(
+        user.contains(
+            "as a `delete` naming one of them is. A marker the brief quotes a key for is filled \
+             by one `edit_files` edit whose `find` is that key alone and whose `replace` is the \
+             text that takes the block's place, so its lines are never copied; a `find` copied \
+             from the brief matches where the formatter has broken its lines or moved its \
+             indentation.\n\nImplement every requirement"
+        ),
+        "{user}"
+    );
+    model.assert_exhausted();
+}
+
+// An edit of a file the tree does not hold, or at a path the write rule
+// refuses, refuses the call whole as a write there would.
+#[tokio::test]
+async fn edit_unheld() {
+    let project = scratch();
+    stage(project.path(), [("src/orders.rs", "pub struct Order;\n")]);
+    symlink("orders.rs", project.path().join("src/link.rs")).expect("file symlink");
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [edit_files(&[
+            ("src/orders.rs", "Order", "Purchase"),
+            ("src/missing.rs", "Order", "Purchase"),
+            ("src/link.rs", "Order", "Purchase"),
+            ("../outside.rs", "Order", "Purchase"),
+            (".emery/storage/x", "Order", "Purchase"),
+        ])],
+    );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, Vec::<String>::new());
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/orders.rs")).expect("as it was"),
+        "pub struct Order;\n"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("edit_files: nothing edited: `src/missing.rs` names no file in the tree; \
+             `src/link.rs` is a symlink; `../outside.rs` escapes the root; `.emery/storage/x` \
+             is under the reserved `.emery/`"
+            .to_owned())
+    );
+    model.assert_exhausted();
+}
+
+// One `write_files` call lands every file it names beneath the lend, the
+// directories above each created; a call naming one path the rule refuses
+// writes nothing, every refusal named, as a call naming no file or missing a
+// content does; the report naming what was written is accepted.
+#[tokio::test]
+async fn write_tool() {
+    let project = scratch();
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml"]}"#,
+    ])
+    .calling(
+        0,
+        [
+            write_files(&[
+                ("./src//orders.rs", "pub struct Order;\n"),
+                ("Cargo.toml", "[package]\n"),
+            ]),
+            write_files(&[
+                ("src/lib.rs", "pub mod orders;\n"),
+                ("../escape.rs", ""),
+                (".emery/storage/x", ""),
+                ("docs/spec.md", ""),
+                ("spec/spec.json", ""),
+            ]),
+            ("write_files".to_owned(), r#"{"files":[{"path":"src/lib.rs"}]}"#.to_owned()),
+            write_files(&[]),
+        ],
+    );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["Cargo.toml", "src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/orders.rs")).expect("written"),
+        "pub struct Order;\n"
+    );
+    assert_eq!(
+        fs::read_to_string(project.path().join("Cargo.toml")).expect("written"),
+        "[package]\n"
+    );
+    assert_eq!(names(project.path()), ["Cargo.toml", "src"], "the one accepted call lands alone");
+    assert_eq!(names(&project.path().join("src")), ["orders.rs"], "the refused call wrote nothing");
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "four tool calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"},{"bytes":10,"path":"Cargo.toml"}]}"#),
+        "the answer spells each path as the tree does, in call order"
+    );
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("write_files: nothing written: `../escape.rs` escapes the root; `.emery/storage/x` \
+             is under the reserved `.emery/`; `docs/spec.md` names the engine's own `spec.md`; \
+             `spec/spec.json` is under `spec/`, where the specification lives"
+            .to_owned())
+    );
+    let malformed = exchanges[2].outcome.as_deref().expect_err("a file without content");
+    assert!(malformed.starts_with("write_files: invalid arguments"), "{malformed}");
+    assert_eq!(
+        exchanges[3].outcome,
+        Err("write_files: `files` names no file and `delete` no path".to_owned())
+    );
+    assert_eq!(exchanges[4].tool, "check");
+    assert_eq!(exchanges[4].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// `files` spelled as a map from path to content is read as the listed shape
+// is, in the order the call spells it.
+#[tokio::test]
+async fn write_map_shape() {
+    let project = scratch();
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml"]}"#,
+    ])
+    .calling(
+        0,
+        [(
+            "write_files".to_owned(),
+            r#"{"files":{"src/orders.rs":"pub struct Order;\n","Cargo.toml":"[package]\n"}}"#
+                .to_owned(),
+        )],
+    );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["Cargo.toml", "src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/orders.rs")).expect("written"),
+        "pub struct Order;\n"
+    );
+    assert_eq!(
+        fs::read_to_string(project.path().join("Cargo.toml")).expect("written"),
+        "[package]\n"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 2, "the write, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"},{"bytes":10,"path":"Cargo.toml"}]}"#)
+    );
+    model.assert_exhausted();
+}
+
+// `files` sent as a JSON string — the list, the map, or one entry,
+// serialised before the call — is read as the shape it spells; a string
+// spelling no JSON is refused naming the shapes expected.
+#[tokio::test]
+async fn write_string_shape() {
+    let project = scratch();
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml","src/lib.rs"]}"#,
+    ])
+    .calling(
+        0,
+        [
+            (
+                "write_files",
+                serde_json::json!({
+                    "files": r#"[{"path":"src/orders.rs","content":"pub struct Order;\n"}]"#
+                })
+                .to_string(),
+            ),
+            (
+                "write_files",
+                serde_json::json!({ "files": r#"{"Cargo.toml":"[package]\n"}"# }).to_string(),
+            ),
+            (
+                "write_files",
+                serde_json::json!({
+                    "files": r#"{"path":"src/lib.rs","content":"pub mod orders;\n"}"#
+                })
+                .to_string(),
+            ),
+            (
+                "write_files",
+                serde_json::json!({ "files": "src/lib.rs: pub mod orders;" }).to_string(),
+            ),
+        ],
+    );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["Cargo.toml", "src/lib.rs", "src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/orders.rs")).expect("written"),
+        "pub struct Order;\n"
+    );
+    assert_eq!(
+        fs::read_to_string(project.path().join("Cargo.toml")).expect("written"),
+        "[package]\n"
+    );
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/lib.rs")).expect("written"),
+        "pub mod orders;\n"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "four calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"}]}"#)
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":10,"path":"Cargo.toml"}]}"#)
+    );
+    assert_eq!(
+        exchanges[2].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":16,"path":"src/lib.rs"}]}"#)
+    );
+    let prose = exchanges[3].outcome.as_deref().expect_err("a string that is not JSON");
+    assert!(prose.starts_with("write_files: invalid arguments"), "{prose}");
+    assert!(
+        prose.contains(
+            "a string that is not JSON (expected value at line 1 column 1), where a list of \
+             `{path, content}` entries, one such entry, or a map from path to content is expected"
+        ),
+        "{prose}"
+    );
+    assert_eq!(exchanges[4].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// `files` spelled as one `{path, content}` object, the shape the schema
+// declares for an entry, is that one file, never a map of two files named
+// `path` and `content`, and so is that object spelled bare at the root of
+// the call, `delete` riding beside it; one missing its content, or carrying
+// another key, is malformed as a listed entry would be, and a call spelling
+// `files` and a bare entry is refused whole.
+#[tokio::test]
+async fn write_object_shape() {
+    let project = scratch();
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#,
+    ])
+    .calling(
+        0,
+        [
+            (
+                "write_files".to_owned(),
+                r#"{"files":{"path":"src/orders.rs","content":"pub struct Order;\n"}}"#.to_owned(),
+            ),
+            ("write_files".to_owned(), r#"{"files":{"path":"src/lib.rs"}}"#.to_owned()),
+            (
+                "write_files".to_owned(),
+                r#"{"files":{"path":"src/lib.rs","content":"","mode":"644"}}"#.to_owned(),
+            ),
+            (
+                "write_files".to_owned(),
+                r#"{"path":"src/lib.rs","content":"pub mod orders;\n","delete":["src/old.rs"]}"#
+                    .to_owned(),
+            ),
+            (
+                "write_files".to_owned(),
+                r#"{"files":[{"path":"src/a.rs","content":""}],"path":"src/b.rs","content":""}"#
+                    .to_owned(),
+            ),
+        ],
+    );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["src/lib.rs", "src/orders.rs"]);
+    assert_eq!(names(project.path()), ["src"], "no file named `path` or `content`");
+    assert_eq!(names(&project.path().join("src")), ["lib.rs", "orders.rs"]);
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 6, "five calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":18,"path":"src/orders.rs"}]}"#)
+    );
+    let missing = exchanges[1].outcome.as_deref().expect_err("an entry without content");
+    assert!(missing.contains("missing field `content`"), "{missing}");
+    let unknown = exchanges[2].outcome.as_deref().expect_err("an entry with a stray key");
+    assert!(unknown.contains("unknown field `mode`"), "{unknown}");
+    assert_eq!(
+        exchanges[3].outcome.as_deref(),
+        Ok(r#"{"deleted":["src/old.rs"],"written":[{"bytes":16,"path":"src/lib.rs"}]}"#),
+        "the bare entry is the one file, and `delete` rides beside it"
+    );
+    let both = exchanges[4].outcome.as_deref().expect_err("`files` beside a bare entry");
+    assert!(both.contains("cannot both be given"), "{both}");
+    assert_eq!(exchanges[5].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// `edits` spelled as one `{path, find, replace}` object, or that object
+// spelled bare at the root of the call, is that one edit, as a write's
+// one file is; one missing its `find`, or carrying another key, is
+// malformed as a listed edit would be, and a call spelling `edits` and a
+// bare edit is refused whole.
+#[tokio::test]
+async fn edit_object_shape() {
+    let project = scratch();
+    stage(project.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+            .calling(
+                0,
+                [
+                    (
+                        "edit_files".to_owned(),
+                        r#"{"edits":{"path":"src/orders.rs","find":"Order","replace":"Purchase"}}"#
+                            .to_owned(),
+                    ),
+                    (
+                        "edit_files".to_owned(),
+                        r#"{"path":"src/orders.rs","find":"Line","replace":"Item"}"#.to_owned(),
+                    ),
+                    (
+                        "edit_files".to_owned(),
+                        r#"{"edits":{"path":"src/orders.rs","replace":"Row"}}"#.to_owned(),
+                    ),
+                    (
+                        "edit_files".to_owned(),
+                        r#"{"path":"src/orders.rs","find":"Item","replace":"Row","mode":"644"}"#
+                            .to_owned(),
+                    ),
+                    (
+                        "edit_files".to_owned(),
+                        r#"{"edits":[],"path":"src/orders.rs","find":"Item","replace":"Row"}"#
+                            .to_owned(),
+                    ),
+                ],
+            );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/orders.rs")).expect("edited"),
+        "pub struct Purchase;\npub struct Item;\n",
+        "the two bare edits landed and the three refused calls changed nothing"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 6, "five calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"edited":[{"bytes":38,"path":"src/orders.rs"}]}"#)
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(r#"{"edited":[{"bytes":38,"path":"src/orders.rs"}]}"#)
+    );
+    let missing = exchanges[2].outcome.as_deref().expect_err("an edit without `find`");
+    assert!(missing.contains("missing field `find`"), "{missing}");
+    let unknown = exchanges[3].outcome.as_deref().expect_err("an edit with a stray key");
+    assert!(unknown.contains("unknown field `mode`"), "{unknown}");
+    let both = exchanges[4].outcome.as_deref().expect_err("`edits` beside a bare edit");
+    assert!(both.contains("cannot both be given"), "{both}");
+    assert_eq!(exchanges[5].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// `edits` sent as a JSON string — the list, or one edit — is read as the
+// shape it spells; a string spelling no JSON is refused naming the shapes
+// expected.
+#[tokio::test]
+async fn edit_string_shape() {
+    let project = scratch();
+    stage(project.path(), [("src/orders.rs", "pub struct Order;\npub struct Line;\n")]);
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#])
+            .calling(
+            0,
+            [
+                (
+                    "edit_files",
+                    serde_json::json!({
+                        "edits": r#"[{"path":"src/orders.rs","find":"Order","replace":"Purchase"}]"#
+                    })
+                    .to_string(),
+                ),
+                (
+                    "edit_files",
+                    serde_json::json!({
+                        "edits": r#"{"path":"src/orders.rs","find":"Line","replace":"Item"}"#
+                    })
+                    .to_string(),
+                ),
+                ("edit_files", serde_json::json!({ "edits": "replace Item with Row" }).to_string()),
+            ],
+        );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["src/orders.rs"]);
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/orders.rs")).expect("edited"),
+        "pub struct Purchase;\npub struct Item;\n"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 4, "three calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"edited":[{"bytes":38,"path":"src/orders.rs"}]}"#)
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(r#"{"edited":[{"bytes":38,"path":"src/orders.rs"}]}"#)
+    );
+    let prose = exchanges[2].outcome.as_deref().expect_err("a string that is not JSON");
+    assert!(prose.starts_with("edit_files: invalid arguments"), "{prose}");
+    assert!(
+        prose.contains(
+            "a string that is not JSON (expected value at line 1 column 1), where a list of \
+             `{path, find, replace}` edits, or one such edit is expected"
+        ),
+        "{prose}"
+    );
+    assert_eq!(exchanges[3].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// A path that leads through a symlink — a directory on the way or the file
+// itself — is refused as the lexical rule's refusals are, whatever the link
+// points at, since a write or a removal would follow it wherever the mount
+// reaches; one through a file, or at a directory, is refused beside it; a
+// file under directories not yet made still lands; and a `written` path at
+// a link names no regular file.
+#[tokio::test]
+async fn write_through_symlink() {
+    let project = scratch();
+    let outside = project.path().join("outside");
+    fs::create_dir(&outside).expect("outside dir");
+    fs::write(outside.join("config"), "[core]\n").expect("outside file");
+    seed(project.path(), ["src/real.rs"]);
+    symlink("outside", project.path().join("link")).expect("dir symlink");
+    symlink("../outside/config", project.path().join("src/config")).expect("file symlink");
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001"],"written":["src/config"]}"#,
+        r#"{"covered":["REQ-001"],"written":["src/new/mod.rs"]}"#,
+    ])
+    .calling(
+        0,
+        [
+            write_files(&[
+                ("link/hook", "#!/bin/sh\n"),
+                ("src/config", "[core]\n\thooksPath = hooks\n"),
+                ("src/real.rs/x.rs", ""),
+                ("src", ""),
+            ]),
+            ("write_files".to_owned(), r#"{"delete":["link/config","src/config"]}"#.to_owned()),
+            write_files(&[("src/new/mod.rs", "pub mod new;\n")]),
+        ],
+    );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["src/new/mod.rs"]);
+    assert_eq!(fs::read_to_string(outside.join("config")).expect("untouched"), "[core]\n");
+    assert_eq!(names(&outside), ["config"], "nothing landed outside the tree");
+    assert!(
+        project
+            .path()
+            .join("src/config")
+            .symlink_metadata()
+            .expect("the link stands")
+            .file_type()
+            .is_symlink()
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "three calls, the refused check, the accepted check");
+    assert_eq!(
+        exchanges[0].outcome,
+        Err("write_files: nothing written: `link/hook` leads through the symlink `link`; \
+             `src/config` is a symlink; `src/real.rs/x.rs` leads through `src/real.rs`, which \
+             is not a directory; `src` names a directory"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("write_files: nothing written: `link/config` leads through the symlink `link`; \
+             `src/config` is a symlink"
+            .to_owned())
+    );
+    assert_eq!(
+        exchanges[2].outcome.as_deref(),
+        Ok(r#"{"written":[{"bytes":13,"path":"src/new/mod.rs"}]}"#)
+    );
+    let correction = exchanges[3].outcome.as_ref().expect_err("a link is no regular file");
+    assert!(
+        correction.contains("- written `src/config` names no regular file under the lent tree"),
+        "{correction}"
+    );
+    assert_eq!(exchanges[4].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// `delete` removes the files it names beside the files written, one the
+// tree lacks counting as removed; a path the rule refuses refuses the call
+// whole; a call that only deletes is a call; and a file written then
+// removed is not filled into `written`.
+#[tokio::test]
+async fn write_delete() {
+    let project = scratch();
+    seed(project.path(), ["src/old.rs", "src/stale.rs"]);
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [
+            (
+                "write_files".to_owned(),
+                r#"{"files":[{"path":"src/orders.rs","content":"pub struct Order;\n"},{"path":"src/draft.rs","content":""}],"delete":["src/old.rs","src/never.rs"]}"#
+                    .to_owned(),
+            ),
+            (
+                "write_files".to_owned(),
+                r#"{"delete":["src/stale.rs","../escape.rs"]}"#.to_owned(),
+            ),
+            (
+                "write_files".to_owned(),
+                r#"{"delete":["src/stale.rs","src/draft.rs"]}"#.to_owned(),
+            ),
+        ],
+    );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["src/orders.rs"], "the file written and kept");
+    assert_eq!(names(&project.path().join("src")), ["orders.rs"]);
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 4, "three calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(
+            r#"{"deleted":["src/old.rs","src/never.rs"],"written":[{"bytes":18,"path":"src/orders.rs"},{"bytes":0,"path":"src/draft.rs"}]}"#
+        )
+    );
+    assert_eq!(
+        exchanges[1].outcome,
+        Err("write_files: nothing written: `../escape.rs` escapes the root".to_owned())
+    );
+    assert_eq!(
+        exchanges[2].outcome.as_deref(),
+        Ok(r#"{"deleted":["src/stale.rs","src/draft.rs"],"written":[]}"#)
+    );
+    assert_eq!(exchanges[3].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// A path one call names more than once is met as the call left it, not as
+// the tree stood before it: one twice in `files` holds the later content,
+// and one in `files` and `delete` is the entry's, written and kept, since a
+// model spells a whole write as a removal and a write of the path; the
+// answer lists it written and not deleted, and a path `delete` alone names
+// is removed beside it.
+#[tokio::test]
+async fn write_path_twice() {
+    let project = scratch();
+    seed(project.path(), ["src/scratch.rs", "src/stale.rs"]);
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":[]}"#]).calling(
+        0,
+        [(
+            "write_files".to_owned(),
+            r#"{"files":[{"path":"src/scratch.rs","content":"// scratch\n"},{"path":"src/orders.rs","content":"pub struct Draft;\n"},{"path":"src/orders.rs","content":"pub struct Order;\n"}],"delete":["src/scratch.rs","src/stale.rs"]}"#
+                .to_owned(),
+        )],
+    );
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["src/orders.rs", "src/scratch.rs"], "the files written and kept");
+    assert_eq!(names(&project.path().join("src")), ["orders.rs", "scratch.rs"]);
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/orders.rs")).expect("written"),
+        "pub struct Order;\n",
+        "the later entry replaces the earlier"
+    );
+    assert_eq!(
+        fs::read_to_string(project.path().join("src/scratch.rs")).expect("written"),
+        "// scratch\n",
+        "the entry replaces the file the delete also names"
+    );
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 2, "one call, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(
+            r#"{"deleted":["src/stale.rs"],"written":[{"bytes":11,"path":"src/scratch.rs"},{"bytes":18,"path":"src/orders.rs"},{"bytes":18,"path":"src/orders.rs"}]}"#
+        )
+    );
+    assert_eq!(exchanges[1].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// A `written` path the tree does not hold is a finding; a file `write_files`
+// wrote that `written` leaves out is none, since the accepted report is
+// filled in with it, every path spelled as the tree does, and the write
+// stands across rounds.
+#[tokio::test]
+async fn written_unheld() {
+    let project = scratch();
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001"],"written":["src/missing.rs"]}"#,
+        r#"{"covered":["REQ-001"],"written":["./Cargo.toml"]}"#,
+    ])
+    .calling(0, [write_files(&[("src/orders.rs", "pub struct Order;\n"), ("Cargo.toml", "")])]);
+
+    let report = ask(&project, &model, &slice()).await;
+    assert_eq!(report.written, ["Cargo.toml", "src/orders.rs"], "filled from what was written");
+
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 3, "the write, the refused check, the accepted check");
+    let correction = exchanges[1].outcome.as_ref().expect_err("the first report is refused");
+    assert_eq!(
+        correction.lines().filter(|line| line.starts_with("- ")).collect::<Vec<_>>(),
+        ["- written `src/missing.rs` names no regular file under the lent tree"],
+        "{correction}"
+    );
+    assert_eq!(exchanges[2].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// The build turn offers the adapter's references and the runtime's through
+// the same tools a mining turn has, over the adapter's references alone: no
+// system document is listed — `build.md` rides this turn's system — and the
+// runtime references a source's turns import are neither listed nor read,
+// since the claim rules and the reconciliation teach a build nothing; a read
+// still answers an unlisted document of the adapter's.
+#[tokio::test]
+async fn doc_refs() {
+    let project = scratch();
+    seed(project.path(), ["src/orders.rs", "Cargo.toml"]);
+    let model = ScriptedModel::answering([VALID]).calling(
+        0,
+        [
+            ("list_docs", "{}".to_string()),
+            ("read_doc", r#"{"path":"references/layout.md"}"#.to_string()),
+            ("read_doc", r#"{"path":"build.md"}"#.to_string()),
+            ("read_doc", r#"{"path":"reconciliation.md"}"#.to_string()),
+        ],
+    );
+
+    ask(&project, &model, &slice()).await;
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 5, "four reference calls, then the check");
+    assert_eq!(
+        exchanges[0].outcome.as_deref(),
+        Ok(r#"{"paths":["references/layout.md"]}"#),
+        "`list_docs` lists the adapter's references alone"
+    );
+    assert_eq!(
+        exchanges[1].outcome.as_deref(),
+        Ok(r#"{"path":"references/layout.md","body":"One module per requirement."}"#)
+    );
+    assert_eq!(
+        exchanges[2].outcome.as_deref(),
+        Ok(r#"{"path":"build.md","body":"BUILD"}"#),
+        "`read_doc` still answers an unlisted document"
+    );
+    assert_eq!(
+        exchanges[3].outcome.as_ref().map(String::as_str).map_err(String::as_str),
+        Err("no document `reconciliation.md`"),
+        "a source's runtime reference is no build's to read"
+    );
+    assert_eq!(exchanges[4].tool, "check");
+    assert_eq!(exchanges[4].outcome, Ok(String::new()));
+    model.assert_exhausted();
+}
+
+// A corpus without `build.md` is the adapter build's own defect.
+#[tokio::test]
+async fn missing_prompt() {
+    let project = scratch();
+    let model = ScriptedModel::default();
+    let mut scenario = scenario_for(&slice());
+    scenario.adapter_id = "target:mute".to_owned();
+    scenario.omit_build_prompt = true;
+
+    let error = build(&project, &scenario, model.clone()).await.error();
+    assert_eq!(error.code(), "server_error");
+    assert!(error.description().contains("`build.md` is not embedded"), "{error}");
+    assert_eq!(model.seen(), [] as [Seen; 0]);
+}
+
+// Every rule the slice can hold the report to is a finding, all returned
+// together, and the corrected report is accepted; a requirement left
+// uncovered is no finding, since the gate holds what is claimed, not what is
+// missing.
+#[tokio::test]
+async fn gate_findings() {
+    let project = scratch();
+    seed(project.path(), ["src/orders.rs"]);
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001","REQ-009","REQ-001"],
+            "written":["src/orders.rs","../escape.rs","./","src/orders.rs",".emery/storage/x"]}"#,
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#,
+    ]);
+    let slice = slice();
+
+    let report = ask(&project, &model, &slice).await;
+    assert_eq!(report.covered, ["REQ-001"]);
+    assert_eq!(report.uncovered(&slice), ["REQ-002"]);
+
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the first report is refused");
+    for finding in [
+        "- covered `REQ-009` is not a requirement of slice `SLICE-001`; its requirements are \
+         REQ-001, REQ-002",
+        "- covered `REQ-001` is listed twice",
+        "- written `../escape.rs` escapes the root",
+        "- written `./` names no file",
+        "- written `src/orders.rs` is listed twice",
+        "- written `.emery/storage/x` is under the reserved `.emery/`",
+    ] {
+        assert!(correction.contains(finding), "{finding}: {correction}");
+    }
+    assert!(exchanges[1].outcome.is_ok(), "the corrected report is accepted");
+    model.assert_exhausted();
+}
+
+// A report that never lands within the rounds is the operator's `bad_request`,
+// as a mining turn's is.
+#[tokio::test]
+async fn rounds_exhausted() {
+    let project = scratch();
+    let model = ScriptedModel::answering([r#"{"covered":["REQ-404"],"written":[]}"#]);
+
+    let error = build(&project, &scenario_for(&slice()), model.clone()).await.error();
+    assert_eq!(error.kind(), ErrorKind::BadRequest, "{error}");
+    assert_eq!(error.code(), "exhausted");
+    model.assert_exhausted();
+}
+
+// The adapter's check reads the tree as the model left it: its finding
+// joins the gate's under the one correction, and the candidate that
+// repaired the tree is accepted, the check having seen each.
+#[tokio::test]
+async fn check_findings() {
+    let project = scratch();
+    seed(project.path(), ["src/orders.rs"]);
+    let model = ScriptedModel::answering([
+        r#"{"covered":["REQ-001","REQ-009"],"written":["src/orders.rs"]}"#,
+        r#"{"covered":["REQ-001"],"written":["src/orders.rs","Cargo.toml"]}"#,
+    ])
+    .calling(1, [write_files(&[("Cargo.toml", "[workspace]\n")])]);
+    let slice = slice();
+
+    let outcome =
+        ask_checked(&project, &model, &slice, BuildCheck::RequireManifest).await.outcome();
+    let report = outcome.report;
+
+    assert_eq!(report.written, ["Cargo.toml", "src/orders.rs"]);
+    assert_eq!(outcome.checks, 2, "the check saw each candidate");
+    let exchanges = model.exchanges();
+    let correction = exchanges[0].outcome.as_ref().expect_err("the first report is refused");
+    assert!(
+        correction.contains("- covered `REQ-009` is not a requirement of slice `SLICE-001`"),
+        "the gate's finding: {correction}"
+    );
+    assert!(
+        correction.contains("- the tree lacks `Cargo.toml`; write it"),
+        "the adapter's finding under the same correction: {correction}"
+    );
+    assert!(exchanges[2].outcome.is_ok(), "the repaired candidate is accepted");
+    model.assert_exhausted();
+}
+
+// A check that fails is the run's error as the adapter put it, the
+// candidate it failed on ending the turn: one candidate seen, no correction
+// put, and the error carried out whole.
+#[tokio::test]
+async fn check_error() {
+    let project = scratch();
+    seed(project.path(), ["src/orders.rs"]);
+    let model =
+        ScriptedModel::answering([r#"{"covered":["REQ-001"],"written":["src/orders.rs"]}"#]);
+
+    let error = ask_checked(&project, &model, &slice(), BuildCheck::PermissionDenied).await.error();
+
+    assert_eq!(error.code(), "server_error", "{error}");
+    assert!(error.to_string().contains("permission denied"), "{error}");
+    let exchanges = model.exchanges();
+    assert_eq!(exchanges.len(), 1, "one candidate, no correction: {exchanges:?}");
+    assert!(exchanges[0].outcome.is_ok(), "the candidate ends the turn: {exchanges:?}");
     model.assert_exhausted();
 }

@@ -382,6 +382,10 @@ pub enum BuildCheck {
     /// Accept every report the gate allows.
     #[default]
     None,
+    /// Refuse until `Cargo.toml` exists under the workspace.
+    RequireManifest,
+    /// Fail the check with a simulated permission error on `Cargo.toml`.
+    PermissionDenied,
 }
 
 /// A `target::build` driver scenario.
