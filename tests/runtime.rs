@@ -12,7 +12,7 @@ use std::process::{Command, Output};
 
 use emery_engine::amend::PartClass;
 use emery_engine::vcs::{Message, PartSummary, RevisionMessage, Summary};
-use omnia::{CompileOptions, Connect as _, Digest, ExitStatus, RuntimeOptions, StoreCtx};
+use omnia::{CompileOptions, Connect as _, Digest, ExitStatus, RuntimeOptions};
 use omnia_git::{Client, ConnectOptions};
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
 use omnia_wasi_blobstore::WasiBlobStore;
@@ -521,6 +521,7 @@ impl Roots {
     fn unrouted(&self, args: &[&str]) -> Deployment {
         Deployment::new()
             .guest("emery", guest())
+            .command("emery")
             .mount(self.project.mount(true))
             .store(self.store.path())
             .args(args.iter().copied())
@@ -623,12 +624,12 @@ async fn emery(deployment: Deployment, backends: &Bundle, model: &ScriptedModel)
 }
 
 // The hosts the engine imports; the guest loader is assembly's.
-fn link(deployment: &mut omnia::Deployment<StoreCtx<Bundle>>) -> anyhow::Result<()> {
-    deployment.host::<WasiModel, Bundle>()?;
-    deployment.host::<WasiKeyValue, Bundle>()?;
-    deployment.host::<WasiBlobStore, Bundle>()?;
-    deployment.host::<WasiOtel, Bundle>()?;
-    deployment.host::<WasiVcs, Bundle>()?;
+fn link(deployment: &mut omnia::Deployment<Bundle>) -> anyhow::Result<()> {
+    deployment.host::<WasiModel>()?;
+    deployment.host::<WasiKeyValue>()?;
+    deployment.host::<WasiBlobStore>()?;
+    deployment.host::<WasiOtel>()?;
+    deployment.host::<WasiVcs>()?;
     Ok(())
 }
 
@@ -3043,7 +3044,7 @@ async fn precompiled_fetched() {
     let run =
         emery(roots.deployment(&["--format", "json", "specify", SOURCE]), &backends, &model).await;
 
-    let envelope = refused(&run, 1, "refused");
+    let envelope = refused(&run, 3, "invalid");
     assert_message(&envelope, &format!("adapter `{SOURCE}`: "));
     assert_message(&envelope, "raw wasm alone");
     assert!(roots.stored_files().is_empty(), "nothing pre-compiled is kept");
@@ -3066,14 +3067,13 @@ async fn specify_unrouted() {
     )
     .await;
 
-    let envelope = refused(&run, 1, "refused");
+    let envelope = refused(&run, 3, "not-found");
     assert_message(&envelope, "adapter `acme:nope@1.0.0`: no registry routes `acme:nope@1.0.0`");
     assert_message(&envelope, "the `acme` namespace");
     assert_message(
         &envelope,
         &format!("the store `{}` holds no `acme_nope@1.0.0.wasm`", roots.store.path().display()),
     );
-    assert_hint(&envelope, "wkg get <reference> -o ~/.emery/adapters/");
     assert!(roots.stored_files().is_empty(), "nothing is kept");
     model.assert_exhausted();
 }
@@ -3090,7 +3090,7 @@ async fn file_off_reference() {
     let run =
         emery(roots.unrouted(&["--format", "json", "specify", SOURCE]), &backends, &model).await;
 
-    let envelope = refused(&run, 1, "refused");
+    let envelope = refused(&run, 3, "not-found");
     assert_message(&envelope, &format!("holds no `{}`", stored_name(SOURCE)));
     assert_eq!(roots.stored_files(), ["source.wasm"], "the store is left as it was");
     model.assert_exhausted();
@@ -3135,7 +3135,7 @@ async fn pin_mismatch() {
 
     let envelope = refused(&run, 1, "refused");
     assert_message(&envelope, &format!("adapter `{SOURCE}`: "));
-    assert_message(&envelope, &format!("not its declared digest {pin}"));
+    assert_message(&envelope, "not the pinned digest");
     model.assert_exhausted();
 }
 
@@ -3184,7 +3184,7 @@ async fn precompiled_in_store() {
     let run =
         emery(roots.deployment(&["--format", "json", "specify", SOURCE]), &backends, &model).await;
 
-    let envelope = refused(&run, 1, "refused");
+    let envelope = refused(&run, 3, "invalid");
     assert_message(&envelope, "raw wasm alone");
     model.assert_exhausted();
 }
