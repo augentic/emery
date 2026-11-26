@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use emery_adapter::source::{Backing, Claim, ClaimKind, Evidence, SourceInput, SourceKind};
 use emery_adapter::target::{MergeRule, Report, Slice, Verdict};
+use futures::FutureExt as _;
 use futures::executor::block_on;
 use omnia::RegistryConfig;
 use omnia_sdk::Error;
@@ -15,7 +16,9 @@ use omnia_sdk::command::Response;
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
 use omnia_wasi_blobstore::WasiBlobStore;
 use omnia_wasi_keyvalue::WasiKeyValue;
-use omnia_wasi_model::WasiModel;
+use omnia_wasi_model::{
+    Answer, Error as ModelError, FutureResult, Limits, ModelClient, Request, ToolHost, WasiModel,
+};
 use omnia_wasi_otel::WasiOtel;
 use omnia_wasi_vcs::WasiVcs;
 use test_programs::script::{
@@ -28,6 +31,72 @@ use super::storage::Storage;
 use super::vcs::VcsScript;
 
 type Recorded = Vec<(String, SourceInput)>;
+
+/// A [`ModelClient`] that refuses the first `count` completions upstream, then
+/// delegates to `inner` for the rest.
+/// The model backend wired into each deployment run.
+#[derive(Clone, Debug)]
+enum HostModel {
+    Scripted(ScriptedModel),
+    Failing(FailingCompletes),
+}
+
+impl ModelClient for HostModel {
+    fn complete(&self, request: Request, tool_host: Arc<dyn ToolHost>) -> FutureResult<Answer> {
+        match self {
+            Self::Scripted(model) => model.complete(request, tool_host),
+            Self::Failing(model) => model.complete(request, tool_host),
+        }
+    }
+
+    fn limits(&self) -> Limits {
+        match self {
+            Self::Scripted(model) => ModelClient::limits(model),
+            Self::Failing(model) => ModelClient::limits(model),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct FailingCompletes {
+    inner: ScriptedModel,
+    left: Arc<Mutex<usize>>,
+    message: String,
+    /// When false, every completion is an upstream failure and `inner` is never called.
+    delegate: bool,
+}
+
+impl FailingCompletes {
+    fn new(count: usize, message: impl Into<String>, inner: ScriptedModel, delegate: bool) -> Self {
+        Self {
+            inner,
+            left: Arc::new(Mutex::new(count)),
+            message: message.into(),
+            delegate,
+        }
+    }
+}
+
+impl ModelClient for FailingCompletes {
+    fn complete(&self, request: Request, tool_host: Arc<dyn ToolHost>) -> FutureResult<Answer> {
+        if !self.delegate {
+            let message = self.message.clone();
+            return async move { Err(ModelError::Unavailable(message).into()) }.boxed();
+        }
+        let mut left = self.left.lock().expect("transport failures");
+        if *left > 0 {
+            *left -= 1;
+            let message = self.message.clone();
+            return async move { Err(ModelError::Unavailable(message).into()) }.boxed();
+        }
+        drop(left);
+        self.inner.complete(request, tool_host)
+    }
+
+    fn limits(&self) -> Limits {
+        ModelClient::limits(&self.inner)
+    }
+}
 
 /// Parallel-dispatch barrier configuration staged for adapter guests.
 #[derive(Clone, Debug, Default)]
@@ -102,6 +171,7 @@ impl TargetScript {
 /// The façade behind every root scenario suite.
 pub struct Provider {
     pub model: ScriptedModel,
+    model_override: Option<FailingCompletes>,
     pub source: SourceScript,
     pub target: TargetScript,
     pub vcs: VcsScript,
@@ -132,6 +202,23 @@ impl Provider {
         provider
     }
 
+    /// Scripts the first `count` model completions as upstream transport failures,
+    /// then answers through `self.model`.
+    #[must_use]
+    pub fn failing_model(mut self, count: usize, message: impl Into<String>) -> Self {
+        let message = message.into();
+        self.model_override = Some(FailingCompletes::new(count, message, self.model.clone(), true));
+        self
+    }
+
+    /// Every model completion fails upstream; `inner` is never called.
+    #[must_use]
+    pub fn upstream_failing(mut self, message: impl Into<String>) -> Self {
+        self.model_override =
+            Some(FailingCompletes::new(0, message.into(), self.model.clone(), false));
+        self
+    }
+
     /// A follow-up run over staged or sealed storage, with the same scripted sources and vcs history.
     pub fn continuing(self, answers: impl IntoIterator<Item = impl Into<String>>) -> Self {
         let Self {
@@ -151,6 +238,7 @@ impl Provider {
         next.target = target;
         next.vcs = vcs;
         next.vcs.bind_project(next.project.path());
+        next.model_override = self.model_override;
         next
     }
 
@@ -171,7 +259,11 @@ impl Provider {
             self.target.metadata.lock().expect("metadata").push("acme:builder".to_owned());
         }
         self.files.mark_run_start();
-        let backends = self.backends.clone().model(self.model.clone()).vcs(self.vcs.clone());
+        let model = self.model_override.as_ref().map_or_else(
+            || HostModel::Scripted(self.model.clone()),
+            |failing| HostModel::Failing(failing.clone()),
+        );
+        let backends = self.backends.clone().model(model).vcs(self.vcs.clone());
         let captured = self.deployment(argv).captured();
         let run = captured
             .run(backends, |deployment| {
@@ -211,6 +303,7 @@ impl Provider {
         publish_adapters(&store, &registry, &script_source, &script_target);
         Self {
             model,
+            model_override: None,
             source: SourceScript::default(),
             target: TargetScript::default(),
             vcs,
@@ -467,6 +560,7 @@ fn publish_adapters(store: &Scratch, registry: &Scratch, source: &Path, target: 
         "acme:source@1.0.0",
         "acme:source@0.1.0",
         "acme:docs@1.0.0",
+        "acme:docsv99@1.0.0",
         "acme:docs@1.2.0",
         "acme:wiki@1.0.0",
         "acme:wiki-live@1.0.0",

@@ -15,9 +15,8 @@ struct Adapter;
 impl Guest for Adapter {
     fn metadata(id: export::AdapterId) -> export::AdapterMetadata {
         // Metadata is sync on the host poll; reading the script mount here traps on wasip3.
-        let _ = id;
         export::AdapterMetadata::from(SourceMetadata {
-            emery_version: None,
+            emery_version: scripted_emery_version(&id),
             kind: kind_for_adapter(&id),
         })
     }
@@ -32,6 +31,10 @@ impl Guest for Adapter {
         }
         future::ready(extract_scripted(&id, &source, &state)).await
     }
+}
+
+fn scripted_emery_version(id: &str) -> Option<String> {
+    if id == "acme:docsv99" { Some("99.0.0".into()) } else { None }
 }
 
 fn kind_for_adapter(id: &str) -> SourceKind {
