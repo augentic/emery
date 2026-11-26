@@ -55,7 +55,7 @@ Key store invariants:
 
 - **One invertible filename convention:** `<namespace>_<name>@<version>.wasm` is the exact filename `wkg get <reference> -o ~/.emery/adapters/` writes. Files named any other way or placed in subdirectories are ignored.
 - **Immutable once stored:** If `~/.emery/adapters/<namespace>_<name>@<version>.wasm` exists on disk, Emery reads it directly without contacting any network registry. To force a fresh download or update a custom `-dev` build, overwrite or remove the file in `~/.emery/adapters/`.
-- **Raw Wasm only:** The loader accepts only uncompiled `.wasm` WebAssembly components. Precompiled `.cwasm` files are rejected with `refused` (exit `1`), even if a `digest` pin matches.
+- **Raw Wasm only:** The loader accepts only uncompiled `.wasm` WebAssembly components. Precompiled `.cwasm` files are rejected with `invalid` (exit `3`), even if a `digest` pin matches.
 
 ---
 
@@ -79,7 +79,7 @@ mkdir -p ~/.emery/adapters
 wkg get acme:ledger@2.1.0 -o ~/.emery/adapters/
 
 # Or copy a locally built component directly:
-cp target/wasm32-wasip2/release/emery_typescript.wasm \
+cp target/wasm32-wasip3/release/emery_typescript.wasm \
   ~/.emery/adapters/emery_typescript@0.40.0-dev.wasm
 ```
 
@@ -87,7 +87,7 @@ cp target/wasm32-wasip2/release/emery_typescript.wasm \
 
 ## Source adapters vs. target adapters
 
-Every adapter is a `wasm32-wasip2` component implementing one of the two worlds in the `emery:adapter` WebAssembly Interface Types (WIT) package (`wit/emery.wit`). Before dispatching any call, Emery verifies that the loaded component exports the interface required by the command (`Axis::require`).
+Every adapter is a `wasm32-wasip3` component implementing one of the two worlds in the `emery:adapter` WebAssembly Interface Types (WIT) package (`wit/emery.wit`). Before dispatching any call, Emery verifies that the loaded component exports the interface required by the command (`Axis::require`).
 
 ### Source adapter contract (`emery:adapter/source`)
 
@@ -130,9 +130,10 @@ See [Security, sandboxing, and gates](../explanation/security-and-sandbox.md#1-w
 | Reference is missing namespace or `@<semver>` (or is a file path / `@latest`) | `adapter-reference` / `bad_request` | `1` | Use `namespace:name@version` syntax. |
 | Two different versions of the same package in one run, or one version pinned to two different digests | `bad_request` | `1` | Align all entries of that package to one version and digest in `emery.toml`. |
 | Component exports the wrong axis (for example, a source adapter passed to `emery build`) | `bad_request` | `1` | Pass a source adapter to `specify`/`amend` and a target adapter to `build`. |
-| Non-`emery` namespace missing from `~/.emery/adapters` | `refused` | `1` | Run `wkg get <reference> -o ~/.emery/adapters/`. |
+| Non-`emery` namespace missing from `~/.emery/adapters` (or wrong store filename) | `not-found` | `3` | Run `wkg get <reference> -o ~/.emery/adapters/` or copy the file to the exact `<namespace>_<name>@<version>.wasm` name. |
 | Stored or fetched bytes do not match `digest` in `emery.toml` | `refused` | `1` | Verify the `digest` value or replace the file in `~/.emery/adapters/`. |
-| Stored or fetched file is precompiled (`.cwasm`) or has a mismatched WIT signature | `refused` | `1` | Replace with a raw `.wasm` component built against the current WIT contract. |
+| Stored or fetched file is precompiled (`.cwasm`) or has a mismatched WIT signature | `invalid` | `3` | Replace with a raw `.wasm` component built against the current WIT contract. |
+| Two incompatible `digest` pins for the same package in one run | `conflict` | `5` | Align every `[[source]]` / `[target]` entry to one digest. |
 | Adapter's `emery-version` is newer than the installed `emery` binary | `unsupported-version` | `1` | Upgrade `emery` (`brew upgrade emery` or `cargo install`). |
 | Registry (`augentic.io`) is unreachable or version is unpublished | `unavailable` | `4` | Check network and version number, or place the `.wasm` file in `~/.emery/adapters/`. |
 

@@ -22,7 +22,7 @@ alwaysApply: false
    - When the user gives a narrative paragraph, use it to shape the slide sequence, headlines, short visual labels, and `<!-- speaker notes -->` (plus the prose column of `approach-brief.md`). Never paste paragraph prose into `.live-card` elements in `approach-live.md`.
    - In `approach-live.md`, a `.live-card p` must be a short label or phrase ($\le 14$ words, no multi-sentence paragraphs).
 3. **No internal product or crate names in `approach-*`:**
-   - New clients do not know what `Emery` or `Omnia` are. Never use `Emery`, `Omnia`, `clippy.toml`, `wasm32-wasip2`, or internal Rust function/module names on slides in `approach-live.md` or `approach-brief.md`.
+   - New clients do not know what `Emery` or `Omnia` are. Never use `Emery`, `Omnia`, `clippy.toml`, `wasm32-wasip3`, or internal Rust function/module names on slides in `approach-live.md` or `approach-brief.md`.
    - Use **Spec-driven delivery** (`spec.md`, `design.md`), **Sandboxed execution** (`WASI Component`, `Wasm Runtime`, `Wasmtime sandbox`), and **Compiler-enforced standards**.
 4. **Chunk edits to large slide files:**
    - `approach-live.md` and `approach-brief.md` are 1,200–2,200 lines long. Always use targeted `StrReplace` calls on individual slides rather than rewriting the whole file in one tool call.

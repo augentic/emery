@@ -41,13 +41,27 @@ This page defines the canonical JSON output schemas, exit codes, recovery error 
 | `2` | `not_found` | Missing revision, nothing staged, or Git repository/revision not found. |
 | `3` | `server_error` | Claim gate or report gate violation, corrupted storage blob, or local I/O error. |
 | `4` | `bad_gateway` | Upstream model backend error, Git remote error, or unreachable adapter registry. |
+| `5` | `conflict` | Loader or store conflict (for example, two different digest pins for the same package). |
 | `64` | *(usage)* | Clap CLI usage error (unknown flag, missing required argument, or `--jobs 0`). Printed on `stderr` with no JSON envelope (`EX_USAGE`). |
 
 ---
 
 ## Recovery error codes
 
-When a command fails with exit code `1`–`4`, the `error` field in the failure envelope carries either one of the 19 specific `kebab-case` recovery codes below, a plugin loader code (`refused`, `unavailable`, `internal`), or a generic `snake_case` class (`bad_request`, `not_found`, `server_error`, `bad_gateway`):
+When a command fails with exit code `1`–`5`, the `error` field in the failure envelope carries either one of the engine-specific `kebab-case` recovery codes below, a plugin loader code (`refused`, `not-found`, `invalid`, `unavailable`, `internal`, `conflict`), or a generic class (`bad_request`, `not_found`, `server_error`, `bad_gateway`, `conflict`):
+
+### Plugin loader codes
+
+| `error` | Exit | When it occurs |
+| --- | --- | --- |
+| `not-found` | `3` | The adapter is missing from `~/.emery/adapters/` and the `emery` registry fetch did not apply (unrouted namespace, wrong store filename, or unpublished `emery:*` version). |
+| `invalid` | `3` | The bytes are not a loadable raw Wasm component (for example, a precompiled `.cwasm` artifact or a mismatched WIT export). |
+| `refused` | `1` | A configured `digest` pin does not match the stored or fetched `.wasm` bytes, or the loader rejected the package for another policy reason. |
+| `unavailable` | `4` | The registry is unreachable or the requested release is not published. |
+| `conflict` | `5` | The run names incompatible pins for the same package (for example, two different digests). |
+| `internal` | `3` | An unexpected loader failure after the bytes were read. |
+
+### Engine recovery codes
 
 | `error` discriminant | Exit | Raised by | When it occurs |
 | --- | --- | --- | --- |
@@ -75,7 +89,7 @@ When a command fails with exit code `1`–`4`, the `error` field in the failure 
 
 ## Failure envelope
 
-On any error (exit codes `1`–`4`), Emery writes a flat JSON object to `stderr` when `--format json` is active:
+On any error (exit codes `1`–`5`), Emery writes a flat JSON object to `stderr` when `--format json` is active:
 
 ```json
 {
@@ -90,7 +104,7 @@ On any error (exit codes `1`–`4`), Emery writes a flat JSON object to `stderr`
 | --- | --- | --- | --- |
 | `error` | `string` | Yes | Stable error discriminant (from the table above). |
 | `message` | `string` | Yes | Human-readable description naming the specific rule, path, or adapter that failed. |
-| `exit-code` | `number` | Yes | Process exit code (`1`, `2`, `3`, or `4`). |
+| `exit-code` | `number` | Yes | Process exit code (`1`, `2`, `3`, `4`, or `5`). |
 | `hint` | `string` | Optional | Actionable recovery command or guidance. |
 
 In `text` mode, the same failure is rendered on `stderr` as:

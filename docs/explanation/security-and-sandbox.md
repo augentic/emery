@@ -48,14 +48,14 @@ At startup, the Omnia runtime verifies that the plugin store does not sit inside
 A build turn can edit files inside its worktree, including `emery.toml`. To ensure a modified project configuration can never redirect network fetches or execute untrusted machine code:
 
 - **Compiled-in registry routing:** `emery.toml` can name an adapter package (`namespace:name@version`) and an optional `sha256:` content `digest`, but it cannot configure registry URLs. The `emery` binary compiles in a single registry route (`emery` -> `augentic.io`) and ignores `~/.emery/wasm-pkg.toml`.
-- **Raw Wasm only:** The plugin loader accepts only uncompiled `.wasm` components and rejects precompiled `.cwasm` artifacts (`refused`), even if a digest matches.
+- **Raw Wasm only:** The plugin loader accepts only uncompiled `.wasm` components and rejects precompiled `.cwasm` artifacts (`invalid`, exit `3`), even if a digest matches.
 - **Digest pinning:** When `digest = "sha256:..."` is set on a `[[source]]` or `[target]` entry, the host loader verifies the SHA-256 hash of the `.wasm` bytes—whether read from `~/.emery/adapters` or freshly fetched—before compiling and instantiating the component.
 
 ---
 
 ## 2. WebAssembly guest isolation
 
-The Emery engine and every source or target adapter are compiled to `wasm32-wasip2` components:
+The Emery engine and every source or target adapter are compiled to `wasm32-wasip3` components:
 
 - **No ambient host access:** Guests cannot spawn processes, open network sockets, or read environment variables unless explicitly provided through typed WIT interfaces.
 - **Host-mediated Git (`omnia:vcs`):** Guests never hold Git credentials, host filesystem paths, or `git` subprocesses. The engine passes deployment-local relative paths (such as `.`, `.emery/vcs/repos/<name>`, or `.emery/vcs/worktrees/<slice>`) to the `omnia:vcs` host capability, which resolves them against the project mount and invokes `git` on the host.
@@ -102,7 +102,7 @@ Operators deploying on Linux should note three differences between macOS Seatbel
 
 ## 4. Safe file operations and symlink protection
 
-All file writes performed by the SDK's `write_files` and `edit_files` tools and by the engine's `Files::write` implementation pass through two shared guards in `emery-adapter`:
+All file writes performed by the SDK's `write_files` and `edit_files` tools and by the engine guest's `emery_engine::files` helpers pass through two shared guards in `emery-adapter`:
 
 1. **Lexical path guard (`beneath`):** Every path must be a relative path containing no `..` segments, naming a file outside `.git/` and `.emery/` (`SKIP_DIRS`), outside `spec.md`, `design.md`, and `plan.md` (`SKIP_FILES`), and not starting with the root-level `spec/` directory (`SPECIFICATION`).*(A deeper directory such as `src/spec/` is permitted.)*
 2. **No-follow filesystem walk (`standing`, `make_dirs`, `write_whole`):** Before creating parent directories or opening a file, Emery inspects every path component one segment at a time using `symlink_metadata` (`lstat`). If any parent directory or the target file itself is a symbolic link (`NoFollow::Link` or `NoFollow::Symlink`), the write is refused immediately. Parent directories are created one level at a time with `create_dir`, and new files are opened with `create_new`. This prevents a symlink planted by a repository or shell command from redirecting file writes outside the worktree.
@@ -124,7 +124,7 @@ Before reading any file contents during a build, Emery checks the list of modifi
 
 ### The secret gate (`secret-detected`)
 
-Next, Emery scans every added or modified path in the worktree (`crates/engine/src/secrets.rs`). Each path is read through `Files::read` exactly as Git would commit it—regular files as their raw bytes, and symbolic links as their link target string (never following the symlink)—so even a broken symlink whose target string contains a token is caught.
+Next, Emery scans every added or modified path in the worktree (`crates/engine/src/secrets.rs`). Each path is read through `emery_engine::files::read` exactly as Git would commit it—regular files as their raw bytes, and symbolic links as their link target string (never following the symlink)—so even a broken symlink whose target string contains a token is caught.
 
 A change is rejected with `secret-detected` (exit code `1`) if it matches either rule:
 

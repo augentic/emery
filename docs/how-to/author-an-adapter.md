@@ -11,7 +11,7 @@ This guide shows how to write, compile, and install a custom WebAssembly (Wasm) 
 - [Author a target adapter (`TargetAdapter`)](#author-a-target-adapter-targetadapter)
   - [1. Write `prose/build.md` and `prose/verify.md`](#1-write-prosebuildmd-and-proseverifymd)
   - [2. Implement `TargetAdapter` in `src/lib.rs`](#2-implement-targetadapter-in-srclibrs)
-- [Host-to-guest tool calls](#host-to-guest-tool-calls)
+- [Model-turn tools](#model-turn-tools)
 - [Test your adapter corpus and logic](#test-your-adapter-corpus-and-logic)
 - [Build and install into `~/.emery/adapters`](#build-and-install-into-emeryadapters)
 - [See also](#see-also)
@@ -20,7 +20,7 @@ This guide shows how to write, compile, and install a custom WebAssembly (Wasm) 
 
 ## Crate setup (`Cargo.toml`)
 
-Every Emery adapter is a Rust library crate compiled to `wasm32-wasip2` with `crate-type = ["cdylib", "rlib"]` (`cdylib` produces the `.wasm` component; `rlib` lets native Rust tests exercise your adapter directly on the host):
+Every Emery adapter is a Rust library crate compiled to `wasm32-wasip3` with `crate-type = ["cdylib", "rlib"]` (`cdylib` produces the `.wasm` component; `rlib` lets native unit tests and `emery_sdk::check` run on the host):
 
 ```toml
 [package]
@@ -75,8 +75,8 @@ Implement `emery_sdk::SourceAdapter` on `pub struct Adapter;`, embed your prompt
 
 ```rust
 use emery_sdk::{
-    Context, Doc, Error, Evidence, Metadata, Model, Seam, SourceAdapter, SourceContent,
-    SourceInput, SourceKind, bad_request,
+    Context, Doc, Error, Evidence, Metadata, Seam, SourceAdapter, SourceContent, SourceInput,
+    SourceKind, bad_request,
 };
 
 pub struct Adapter;
@@ -89,7 +89,7 @@ impl SourceAdapter for Adapter {
         }
     }
 
-    async fn extract<P: Model>(ctx: &Context<'_, P>) -> Result<Evidence, Error> {
+    async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
         let seams = survey(ctx.input)?;
         emery_sdk::extract(ctx, PROSE, &seams).await
     }
@@ -137,7 +137,7 @@ use std::path::Path;
 use emery_sdk::target::{
     Grant, InitContext, MergeRule, Metadata, Outcome, TargetAdapter, Task,
 };
-use emery_sdk::{Doc, Error, Model, server_error};
+use emery_sdk::{Doc, Error, server_error};
 
 // Path-glob merge rules applied when slice commits merge into .emery/vcs/integration
 const RULES: &[MergeRule] = &[MergeRule::union("src/index.ts")];
@@ -156,7 +156,7 @@ impl TargetAdapter for Adapter {
         }
     }
 
-    async fn run<P: Model>(task: Task<'_, P>) -> Result<Outcome, Error> {
+    async fn run(task: Task<'_>) -> Result<Outcome, Error> {
         match task {
             Task::Init(ctx) => init(&ctx).map(|()| Outcome::Initialised),
             Task::Build(ctx) => emery_sdk::target::build(&ctx, PROSE, |_| Ok(Vec::new()))
@@ -195,11 +195,11 @@ See [`examples/target/lib.rs`](../../examples/target/lib.rs) for the complete mo
 
 ---
 
-## Host-to-guest tool calls
+## Model-turn tools
 
-During model turns, `emery-sdk` declares and serves guest tools in-process over `wasi-model` streams (the host writes each `ToolCall` to the session's `calls` stream, and the guest replies with a `ToolResult` carrying the matching correlation ID):
+During model turns, the engine or adapter guest declares tools to the host's `omnia:model` interface. The host streams each `ToolCall` on the session's `calls` channel, and the guest answers with a `ToolResult` carrying the matching correlation ID:
 
-- **Reference tools (`list_docs` and `read_doc`):** Available on extraction, survey, build, and verify turns. Served in-process from the adapter's embedded `PROSE` table (plus `claims.md` and `reconciliation.md` on source turns). Root system prompts (`extract.md`, `survey.md`, `build.md`, `verify.md`) are excluded from `list_docs`.
+- **Reference tools (`list_docs` and `read_doc`):** Available on extraction, survey, build, and verify turns. Served by the adapter guest from its embedded `PROSE` table (plus `claims.md` and `reconciliation.md` on source turns). Root system prompts (`extract.md`, `survey.md`, `build.md`, `verify.md`) are excluded from `list_docs`.
 - **Workspace write tools (`write_files` and `edit_files`):** Available on `Task::Build` and `Task::Verify` turns only, operating strictly beneath the lent worktree (`.emery/vcs/worktrees/<id>` or `.emery/vcs/integration`) through no-follow path validation (`beneath` and `standing`). See [Security, sandboxing, and gates](../explanation/security-and-sandbox.md#4-safe-file-operations-and-symlink-protection).
 
 ---
@@ -225,13 +225,13 @@ fn prose_corpus() {
 
 ## Build and install into `~/.emery/adapters`
 
-Compile the component for `wasm32-wasip2` and copy the resulting `.wasm` file into `~/.emery/adapters/` using the `<namespace>_<name>@<version>.wasm` filename convention:
+Compile the component for `wasm32-wasip3` and copy the resulting `.wasm` file into `~/.emery/adapters/` using the `<namespace>_<name>@<version>.wasm` filename convention:
 
 ```bash
-cargo build --target wasm32-wasip2 --release
+cargo build --target wasm32-wasip3 --release
 
 mkdir -p ~/.emery/adapters
-cp target/wasm32-wasip2/release/acme_runbook.wasm \
+cp target/wasm32-wasip3/release/acme_runbook.wasm \
   ~/.emery/adapters/acme_runbook@0.1.0.wasm
 ```
 

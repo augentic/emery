@@ -48,12 +48,12 @@ From the root of the `emery` repository, run:
 ```bash
 # Build the emery binary and the two WebAssembly example adapters
 cargo build --release
-cargo build --examples --target wasm32-wasip2 --release
+cargo build --examples --target wasm32-wasip3 --release
 
 # Copy the built .wasm components into the local adapter store
 mkdir -p ~/.emery/adapters
-cp target/wasm32-wasip2/release/examples/source.wasm ~/.emery/adapters/example_source@0.1.0.wasm
-cp target/wasm32-wasip2/release/examples/target.wasm ~/.emery/adapters/example_target@0.1.0.wasm
+cp target/wasm32-wasip3/release/examples/source.wasm ~/.emery/adapters/example_source@0.1.0.wasm
+cp target/wasm32-wasip3/release/examples/target.wasm ~/.emery/adapters/example_target@0.1.0.wasm
 ```
 
 Next, create a clean temporary directory for our tutorial project and initialize it as a Git repository:

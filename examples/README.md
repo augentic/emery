@@ -13,15 +13,15 @@ Minimal WebAssembly (Wasm) source and target adapters and a sample project fixtu
 
 ## Build and install the mock adapters
 
-From the repository root, compile both example adapters for `wasm32-wasip2` and copy them into the local adapter store (`~/.emery/adapters`):
+From the repository root, compile both example adapters for `wasm32-wasip3` and copy them into the local adapter store (`~/.emery/adapters`):
 
 ```bash
 cargo build --release
-cargo build --examples --target wasm32-wasip2 --release
+cargo build --examples --target wasm32-wasip3 --release
 
 mkdir -p ~/.emery/adapters
-cp target/wasm32-wasip2/release/examples/source.wasm ~/.emery/adapters/example_source@0.1.0.wasm
-cp target/wasm32-wasip2/release/examples/target.wasm ~/.emery/adapters/example_target@0.1.0.wasm
+cp target/wasm32-wasip3/release/examples/source.wasm ~/.emery/adapters/example_source@0.1.0.wasm
+cp target/wasm32-wasip3/release/examples/target.wasm ~/.emery/adapters/example_target@0.1.0.wasm
 ```
 
 ## Walkthroughs and guides
@@ -31,4 +31,4 @@ Step-by-step walkthroughs and explanations using these examples live in the docu
 - **[Your first specification and build](../docs/tutorials/quickstart.md):** Install `cursor-sdk-bridge`, configure a scratch project with these mock adapters, and run `emery specify`, `emery show`, `emery apply`, and `emery build`.
 - **[Evolving a specification with `emery amend`](../docs/tutorials/amending-a-spec.md):** Amend requirements, layer inline `--description` sources with `--config`, resolve `[conflict]` requirements, and reset a lineage with `--fresh`.
 - **[Merge specifications across Git branches](../docs/how-to/merge-branches.md):** Resolve `spec/` conflicts when two branches or clones seal amendments independently.
-- **[Author a custom source or target adapter](../docs/how-to/author-an-adapter.md):** How `source/lib.rs`, `target/lib.rs`, `PROSE`, and in-process guest tool calls (`list_docs`, `read_doc`, `write_files`, `edit_files`) work.
+- **[Author a custom source or target adapter](../docs/how-to/author-an-adapter.md):** How `source/lib.rs`, `target/lib.rs`, `PROSE`, and model-turn tools (`list_docs`, `read_doc`, `write_files`, `edit_files`) work.

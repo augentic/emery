@@ -91,7 +91,7 @@ The **Publish Release** workflow runs four jobs after the release-branch gate:
 
 Each matrix leg in `binaries` runs `cargo build --release --locked --target <triple> --bin emery` followed by `emery --help`:
 
-- During a `--release` build, `build.rs` compiles the engine guest to `wasm32-wasip2` and then ahead-of-time (AOT) precompiles it for the target architecture using the workspace's `emery-precompile` binary with `omnia_compile::CompileOptions::default()`.
+- During a `--release` build, `build.rs` compiles the engine guest to `wasm32-wasip3` and then ahead-of-time (AOT) precompiles it for the target architecture using the workspace's `emery-precompile` binary with `omnia_compile::CompileOptions::default()`.
 - At runtime, the host's Wasmtime settings (`MAX_FUEL`, `BRANCH_HINTING`, `MEMORY_RESERVATION`, `MEMORY_GUARD_SIZE`, `DEBUG_SYMBOLS`, `GENERATE_ADDRESS_MAP`) default to those same options.
 - Running `emery --help` in CI loads the precompiled engine guest immediately, catching any Wasmtime version or compile-option mismatch before the archive can ship.
 
@@ -110,11 +110,11 @@ Each leg outputs `emery-v${VERSION}-${TARGET}.tar.gz` (or `.zip` on Windows) and
 
 Both `wasm-pkg` packages are published manually with `wkg publish`. Configure `~/.config/wasm-pkg/config.toml` to map the `emery` namespace to `augentic.io` with a GitHub token carrying `packages: write` (see [`wit/README.md`](../wit/README.md)). Registry versions are immutable—never overwrite an existing version.
 
-- **Engine guest (`emery:engine@<version>`):** After tagging the release, build and publish the `wasm32-wasip2` engine component so other Omnia hosts can compose it at the exact binary version:
+- **Engine guest (`emery:engine@<version>`):** After tagging the release, build and publish the `wasm32-wasip3` engine component so other Omnia hosts can compose it at the exact binary version:
 
 ```bash
-cargo build --lib -p emery --release --target wasm32-wasip2
-wkg publish target/wasm32-wasip2/release/emery.wasm \
+cargo build --lib -p emery --release --target wasm32-wasip3
+wkg publish target/wasm32-wasip3/release/emery.wasm \
   --package "emery:engine@$(cargo pkgid -p emery | sed 's/.*#//')"
 ```
 
@@ -152,7 +152,7 @@ cargo binstall --git https://github.com/augentic/emery emery@<version>
 ```
 
 - **GitHub Release archives:** Download the archive for your platform from the GitHub Releases page, verify its `.sha256` checksum, and place `emery` on your `PATH`.
-- **Source build** (`build.rs` compiles and embeds the `wasm32-wasip2` engine guest automatically):
+- **Source build** (`build.rs` compiles and embeds the `wasm32-wasip3` engine guest automatically):
 
 ```bash
 cargo install --git https://github.com/augentic/emery --locked
