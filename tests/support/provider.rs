@@ -311,51 +311,89 @@ impl Provider {
             return;
         };
         for line in text.lines().filter(|line| !line.trim().is_empty()) {
-            let call: ScriptCall =
-                serde_json::from_str(line).unwrap_or_else(|err| panic!("call line: {err}: {line}"));
-            match call {
-                ScriptCall::SourceMetadata { id } => {
-                    self.source.metadata.lock().expect("metadata").push(id);
-                }
-                ScriptCall::SourceExtract { id, input } => {
-                    self.source.calls.lock().expect("calls").push((id, input));
-                }
-                ScriptCall::TargetMetadata { id } => {
-                    self.target.metadata.lock().expect("metadata").push(id);
-                }
-                ScriptCall::TargetInit { workspace, .. } => {
-                    self.target.inits.lock().expect("inits").push(workspace);
-                }
-                ScriptCall::TargetBuild {
-                    id,
-                    slice_id,
-                    workspace,
-                } => {
-                    self.target.calls.lock().expect("calls").push((
+            for call in parse_script_calls(line) {
+                match call {
+                    ScriptCall::SourceMetadata { id } => {
+                        self.source.metadata.lock().expect("metadata").push(id);
+                    }
+                    ScriptCall::SourceExtract { id, input } => {
+                        self.source.calls.lock().expect("calls").push((id, input));
+                    }
+                    ScriptCall::TargetMetadata { id } => {
+                        self.target.metadata.lock().expect("metadata").push(id);
+                    }
+                    ScriptCall::TargetInit { workspace, .. } => {
+                        self.target.inits.lock().expect("inits").push(workspace);
+                    }
+                    ScriptCall::TargetBuild {
                         id,
-                        Slice {
-                            id: slice_id,
-                            part: String::new(),
-                            name: String::new(),
-                            index: 1,
-                            count: 1,
-                            base: String::new(),
-                            requirements: Vec::new(),
-                            types: Vec::new(),
-                            brief: Vec::new(),
-                            spec: String::new(),
-                            design: String::new(),
-                            plan: String::new(),
-                        },
+                        slice_id,
                         workspace,
-                    ));
-                }
-                ScriptCall::TargetVerify { workspace, .. } => {
-                    self.target.verifies.lock().expect("verifies").push(workspace);
+                    } => {
+                        self.target.calls.lock().expect("calls").push((
+                            id,
+                            Slice {
+                                id: slice_id,
+                                part: String::new(),
+                                name: String::new(),
+                                index: 1,
+                                count: 1,
+                                base: String::new(),
+                                requirements: Vec::new(),
+                                types: Vec::new(),
+                                brief: Vec::new(),
+                                spec: String::new(),
+                                design: String::new(),
+                                plan: String::new(),
+                            },
+                            workspace,
+                        ));
+                    }
+                    ScriptCall::TargetVerify { workspace, .. } => {
+                        self.target.verifies.lock().expect("verifies").push(workspace);
+                    }
                 }
             }
         }
     }
+}
+
+fn parse_script_calls(line: &str) -> Vec<ScriptCall> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    if let Ok(call) = serde_json::from_str::<ScriptCall>(trimmed) {
+        return vec![call];
+    }
+    let mut calls = Vec::new();
+    let mut depth = 0usize;
+    let mut open = None::<usize>;
+    for (index, ch) in trimmed.char_indices() {
+        match ch {
+            '{' => {
+                if depth == 0 {
+                    open = Some(index);
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    let begin = open.unwrap_or(0);
+                    let slice = &trimmed[begin..=index];
+                    calls.push(
+                        serde_json::from_str(slice)
+                            .unwrap_or_else(|err| panic!("call fragment: {err}: {slice}")),
+                    );
+                    open = None;
+                }
+            }
+            _ => {}
+        }
+    }
+    assert!(!calls.is_empty(), "call line: {trimmed}");
+    calls
 }
 
 /// Runs one CLI invocation, returning the raw response.
@@ -376,6 +414,10 @@ pub fn claim(kind: ClaimKind, id: &str, (key, value): (&str, &str)) -> Claim {
 
 pub fn requirement(id: &str, statement: &str) -> Claim {
     claim(ClaimKind::Requirement, id, ("statement", statement))
+}
+
+pub fn retire(id: &str, statement: &str) -> Claim {
+    claim(ClaimKind::Retire, id, ("statement", statement))
 }
 
 pub const fn evidence(claims: Vec<Claim>) -> Evidence {
@@ -402,6 +444,9 @@ fn publish_adapters(store: &Scratch, registry: &Scratch, source: &Path, target: 
     for (reference, wasm) in [
         ("acme:source@1.0.0", source),
         ("acme:source@0.1.0", source),
+        ("acme:docs@1.0.0", source),
+        ("acme:wiki@1.0.0", source),
+        ("acme:code@1.0.0", source),
         ("acme:builder@1.0.0", target),
         ("acme:builder@2.1.0", target),
         ("acme:target@0.1.0", target),

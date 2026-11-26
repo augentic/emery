@@ -4,7 +4,7 @@
 
 use std::future::{self, pending};
 
-use emery_adapter::source::{Evidence, SourceMetadata};
+use emery_adapter::source::{Evidence, SourceKind, SourceMetadata};
 use emery_sdk::SourceInput;
 use emery_sdk::export::{self, Guest};
 use test_programs::script::{CombinedScript, EvidenceScript, ScriptCall, SourceScriptState};
@@ -14,10 +14,11 @@ struct Adapter;
 
 impl Guest for Adapter {
     fn metadata(id: export::AdapterId) -> export::AdapterMetadata {
+        // Metadata is sync on the host poll; reading the script mount here traps on wasip3.
         let _ = id;
         export::AdapterMetadata::from(SourceMetadata {
             emery_version: None,
-            kind: emery_adapter::source::SourceKind::Documentation,
+            kind: kind_for_adapter(&id),
         })
     }
 
@@ -31,6 +32,10 @@ impl Guest for Adapter {
         }
         future::ready(extract_scripted(&id, &source, &state)).await
     }
+}
+
+fn kind_for_adapter(id: &str) -> SourceKind {
+    if id.contains("code") { SourceKind::Behaviour } else { SourceKind::Documentation }
 }
 
 fn extract_scripted(
