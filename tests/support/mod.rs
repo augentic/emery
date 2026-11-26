@@ -25,6 +25,12 @@ pub async fn cli_ok(provider: &Provider, argv: &[&str]) -> Response {
 /// Returns the last JSON object in `stderr`, past any log lines the guest may emit.
 pub fn envelope_bytes(stderr: &[u8]) -> &[u8] {
     let text = std::str::from_utf8(stderr).expect("utf-8 stderr");
+    for marker in ["\n{\n  \"error\"", "\n{\"error\"", "{\n  \"error\""] {
+        if let Some(idx) = text.rfind(marker) {
+            let start = idx + usize::from(marker.starts_with('\n'));
+            return &stderr[start..];
+        }
+    }
     let Some(start) = text.rfind('{') else {
         return stderr;
     };
