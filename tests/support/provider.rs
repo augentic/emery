@@ -132,6 +132,28 @@ impl Provider {
         provider
     }
 
+    /// A follow-up run over staged or sealed storage, with the same scripted sources and vcs history.
+    pub fn continuing(self, answers: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        let Self {
+            storage,
+            backends,
+            files,
+            vcs,
+            source,
+            target,
+            ..
+        } = self;
+        let mut next = Self::answering(answers);
+        next.storage = storage;
+        next.backends = backends;
+        super::store::carry(&files, &next.files);
+        next.source = source;
+        next.target = target;
+        next.vcs = vcs;
+        next.vcs.bind_project(next.project.path());
+        next
+    }
+
     /// Writes `contents` under the deployment project mount and returns its relative path.
     pub fn write_project(&self, relative: &str, contents: impl AsRef<[u8]>) -> String {
         self.project.write(relative, contents);
@@ -441,16 +463,27 @@ fn adapter_paths() -> (PathBuf, PathBuf) {
 
 fn publish_adapters(store: &Scratch, registry: &Scratch, source: &Path, target: &Path) {
     let root = store.path();
-    for (reference, wasm) in [
-        ("acme:source@1.0.0", source),
-        ("acme:source@0.1.0", source),
-        ("acme:docs@1.0.0", source),
-        ("acme:wiki@1.0.0", source),
-        ("acme:code@1.0.0", source),
-        ("acme:builder@1.0.0", target),
-        ("acme:builder@2.1.0", target),
-        ("acme:target@0.1.0", target),
+    for reference in [
+        "acme:source@1.0.0",
+        "acme:source@0.1.0",
+        "acme:docs@1.0.0",
+        "acme:docs@1.2.0",
+        "acme:wiki@1.0.0",
+        "acme:wiki-live@1.0.0",
+        "acme:code@1.0.0",
+        "acme:api@1.0.0",
+        "acme:intent@1.0.0",
+        "acme:builder@1.0.0",
+        "acme:builder@2.1.0",
+        "acme:target@0.1.0",
+        "emery:documentation@1.2.0",
+        "emery:docs@1.2.0",
     ] {
+        let wasm = if reference.starts_with("acme:builder") || reference == "acme:target@0.1.0" {
+            target
+        } else {
+            source
+        };
         copy_pkg(root, reference, wasm);
         publish_registry(registry.path(), reference, wasm);
     }
@@ -523,8 +556,9 @@ fn deployment_command<'a>(argv: &'a [&'a str]) -> (String, Vec<&'a str>) {
 
 fn local_registry(root: &Path) -> RegistryConfig {
     format!(
-        "[namespace_registries]\nacme = \"registry.test\"\n\n[registry.\"registry.test\"]\n\
-         default = \"local\"\n\n[registry.\"registry.test\".local]\nroot = {:?}\n",
+        "[namespace_registries]\nacme = \"registry.test\"\nemery = \"registry.test\"\n\n\
+         [registry.\"registry.test\"]\ndefault = \"local\"\n\n[registry.\"registry.test\".local]\n\
+         root = {:?}\n",
         root.display()
     )
     .into()

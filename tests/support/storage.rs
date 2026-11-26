@@ -65,6 +65,17 @@ impl Storage {
         bucket.get(key.to_owned()).await.expect("read state").map(|entry| entry.value)
     }
 
+    /// Names of every object in a container, or an empty list when the container is absent.
+    pub async fn list_objects(&self, container: &str) -> Vec<String> {
+        let store = Arc::clone(&self.blobstore);
+        if !store.container_exists(container.to_owned()).await.unwrap_or(false) {
+            return Vec::new();
+        }
+        let container = store.get_container(container.to_owned()).await.expect("open container");
+        let page = container.list_objects(String::new(), None).await.expect("list objects");
+        page.objects.into_iter().map(|object| object.name).collect()
+    }
+
     /// Reads an object when it exists.
     pub async fn object(&self, container: &str, name: &str) -> Option<Vec<u8>> {
         let store = Arc::clone(&self.blobstore);

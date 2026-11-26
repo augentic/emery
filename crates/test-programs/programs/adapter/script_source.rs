@@ -35,7 +35,13 @@ impl Guest for Adapter {
 }
 
 fn kind_for_adapter(id: &str) -> SourceKind {
-    if id.contains("code") { SourceKind::Behaviour } else { SourceKind::Documentation }
+    if id.contains("code") {
+        SourceKind::Behaviour
+    } else if id.contains("intent") {
+        SourceKind::Intent
+    } else {
+        SourceKind::Documentation
+    }
 }
 
 fn extract_scripted(
