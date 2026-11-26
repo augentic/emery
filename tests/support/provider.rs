@@ -567,10 +567,13 @@ fn publish_adapters(store: &Scratch, registry: &Scratch, source: &Path, target: 
         "acme:code@1.0.0",
         "acme:api@1.0.0",
         "acme:intent@1.0.0",
+        "acme:local@1.0.0",
         "acme:builder@1.0.0",
         "acme:builder@2.1.0",
         "acme:target@0.1.0",
         "emery:documentation@1.2.0",
+        "emery:intent@1.0.0",
+        "emery:demo@1.2.0",
         "emery:docs@1.2.0",
     ] {
         let wasm = if reference.starts_with("acme:builder") || reference == "acme:target@0.1.0" {

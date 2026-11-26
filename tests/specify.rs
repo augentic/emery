@@ -1,7 +1,6 @@
 //! Verifies `emery specify` and `emery show` over scripted capabilities.
 
 #![cfg(not(target_arch = "wasm32"))]
-#![expect(dead_code, reason = "fixtures and helpers resume in A23–A24")]
 
 mod support;
 
@@ -2303,6 +2302,1124 @@ async fn model_transient_error() {
         .failing_model(1, "scripted transport failure");
     cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
     assert!(provider.model.seen().len() >= 2, "the transport failure and the completed run");
+    provider.model.assert_exhausted();
+}
+
+// --- triggers ---
+
+// A `contract` claim's route binds to every requirement whose id leads with
+// the contract's id, read in the one route grammar: the stored requirement
+// carries it as its typed trigger, the projection renders it as its `Route:`
+// line, and the drafting turns see it in the requirement outline.
+#[tokio::test]
+async fn contract_route() {
+    let apis = design_with_apis();
+    let mut provider = Provider::answering([SPEC_ANSWER, apis.as_str()]);
+    let mut contract = claim(ClaimKind::Contract, "greeting", ("route", "get /greeting/"));
+    contract.path = Some("src/greeting.ts#L3-L9".to_string());
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            contract,
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let id = staged(&provider.storage).await;
+    let spec: Value =
+        serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json").await)
+            .expect("the committed spec is JSON");
+    assert_eq!(
+        spec["requirements"][0]["trigger"],
+        serde_json::json!({"http": {"method": "GET", "path": "/greeting"}}),
+        "the route is stored as the typed trigger, normalised: {spec}"
+    );
+    let shown = shown(&provider, "spec").await;
+    assert!(shown.contains("Status: unknown\nRoute: GET /greeting\n\nGET /greeting"), "{shown}");
+    let draft = provider.model.seen()[0].messages.join("\n");
+    assert!(draft.contains("— Route: GET /greeting\n"), "the outline carries the route: {draft}");
+    provider.model.assert_exhausted();
+}
+
+// A `contract` claim's message binds the same way, so a consumer's handler
+// is laid at the message the source registered it for: stored typed,
+// rendered as the `Message:` line, and shown to the drafting turns.
+#[tokio::test]
+async fn contract_message() {
+    let apis = design_with_apis();
+    let mut provider = Provider::answering([SPEC_ANSWER, apis.as_str()]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Contract, "greeting", ("message", " greeting.requested ")),
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let id = staged(&provider.storage).await;
+    let spec: Value =
+        serde_json::from_slice(&staged_document(&provider.storage, &id, "spec.json").await)
+            .expect("the committed spec is JSON");
+    assert_eq!(
+        spec["requirements"][0]["trigger"],
+        serde_json::json!({"message": "greeting.requested"}),
+        "the message is stored as the typed trigger, trimmed: {spec}"
+    );
+    let shown = shown(&provider, "spec").await;
+    assert!(shown.contains("Status: unknown\nMessage: greeting.requested\n\n"), "{shown}");
+    let draft = provider.model.seen()[0].messages.join("\n");
+    assert!(
+        draft.contains("— Message: greeting.requested\n"),
+        "the outline carries the message: {draft}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// The second run binds the same requirement to a message where the first
+// bound a route, and nothing else moves: the diff names the trigger alone.
+#[tokio::test]
+async fn diff_trigger() {
+    let apis = design_with_apis();
+    let mut provider =
+        Provider::answering([SPEC_ANSWER, apis.as_str(), SPEC_ANSWER, apis.as_str()]);
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Contract, "greeting", ("route", "GET /greeting")),
+        ])),
+    );
+    cli_ok(
+        &provider,
+        &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+    )
+    .await;
+    let first = committed(&provider.storage).await;
+
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Contract, "greeting", ("message", "greeting.requested")),
+        ])),
+    );
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "specify", &reference("docs"), "--config", PROJECT_CONFIG],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    let diff = &envelope["diff"];
+    assert_eq!(diff["from"], first, "{envelope}");
+    assert_eq!(diff["spec"]["added"], serde_json::json!([]), "{envelope}");
+    assert_eq!(diff["spec"]["removed"], serde_json::json!([]), "{envelope}");
+    assert_eq!(
+        diff["spec"]["changed"],
+        serde_json::json!([{"id": "REQ-001", "subject": "greeting.behaviour", "fields": ["trigger"]}]),
+        "{envelope}"
+    );
+    assert_eq!(diff["plan"]["changed"], serde_json::json!([]), "{envelope}");
+    provider.model.assert_exhausted();
+}
+
+// A `contract` claim is reached through one trigger: a message holding
+// whitespace, or a claim carrying both a route and a message, is the
+// adapter's defect, named by the claim gate before any turn.
+#[tokio::test]
+async fn contract_trigger_malformed() {
+    let mut provider = Provider::idle();
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Contract, "greeting", ("message", "greeting requested")),
+        ])),
+    );
+    let envelope =
+        fail(&provider, &["emery", "specify", &reference("docs")], 3, "server_error").await;
+    assert_message(
+        &envelope,
+        "- claim 1: message \"greeting requested\" names the message `greeting requested`, which \
+         holds whitespace; a message is one word",
+    );
+
+    let mut provider = Provider::idle();
+    let mut both = claim(ClaimKind::Contract, "greeting", ("route", "GET /greeting"));
+    both.extras.insert("message".to_string(), Value::String("greeting.requested".to_string()));
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            both,
+        ])),
+    );
+    let envelope =
+        fail(&provider, &["emery", "specify", &reference("docs")], 3, "server_error").await;
+    assert_message(
+        &envelope,
+        "- claim 1: carries both `route` and `message`; a surface is reached through one",
+    );
+}
+
+// A `contract` claim whose route the grammar refuses is the adapter's
+// defect, named by the claim gate before any turn.
+#[tokio::test]
+async fn contract_route_malformed() {
+    let mut provider = Provider::idle();
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("greeting.behaviour", "GET /greeting returns the static string 'hello'."),
+            claim(ClaimKind::Contract, "greeting", ("route", "FETCH greeting")),
+        ])),
+    );
+
+    let envelope =
+        fail(&provider, &["emery", "specify", &reference("docs")], 3, "server_error").await;
+    assert_message(
+        &envelope,
+        "- claim 1: route \"FETCH greeting\" names the method `FETCH`, which is none of GET, \
+         POST, PUT, PATCH, DELETE, HEAD, OPTIONS",
+    );
+}
+
+// Requirements under two stems reached through one route are one part: the
+// one not under the contract's id binds where it anchors within the
+// contract's lines, the baseline lists the trigger under each stem, and a
+// slicing that puts the two apart is refused and corrected.
+#[tokio::test]
+async fn split_trigger() {
+    let split = r#"{"preamble": [], "parts": [
+        {"name": "health", "requirements": ["REQ-001"]},
+        {"name": "start", "requirements": ["REQ-002"]}
+    ]}"#;
+    let merged = r#"{"preamble": [], "parts": [
+        {"name": "health", "requirements": ["REQ-001", "REQ-002"]}
+    ]}"#;
+    let subjects = ["health.ready".to_string(), "start.ready-probe".to_string()];
+    let spec = spec_draft(&subjects, &["Readiness, stated twice."]);
+    let design = design_with_apis();
+    let grouping = separate_grouping(2);
+    let mut provider =
+        Provider::answering([grouping.as_str(), spec.as_str(), design.as_str(), split, merged]);
+    let mut contract = claim(ClaimKind::Contract, "health", ("route", "GET /health/ready"));
+    contract.path = Some("src/health.ts#L2-L8".to_string());
+    let mut probe = requirement("start.ready-probe", "The process reports ready once it listens.");
+    probe.path = Some("src/health.ts#L5".to_string());
+    provider.source.evidence.insert(
+        "docs".to_string(),
+        Ok(evidence(vec![
+            requirement("health.ready", "GET /health/ready answers 200 once the process listens."),
+            probe,
+            contract,
+        ])),
+    );
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let slicing = &provider.model.seen()[3];
+    let request = slicing.messages.join("\n");
+    assert!(
+        request.contains("- `health` — REQ-001 — triggers: `GET /health/ready`\n"),
+        "{request}"
+    );
+    assert!(request.contains("- `start` — REQ-002 — triggers: `GET /health/ready`\n"), "{request}");
+    assert!(
+        request.contains("Requirements reached through one trigger are one handler"),
+        "{request}"
+    );
+    let check = &provider.model.exchanges()[3];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the split slicing is rejected");
+    assert!(
+        correction.contains(
+            "requirements reached through `GET /health/ready` (REQ-001, REQ-002) are split \
+             across `health`, `start`: one trigger is one handler, built by one part"
+        ),
+        "{correction}"
+    );
+    let spec = shown(&provider, "spec").await;
+    assert_eq!(spec.matches("Route: GET /health/ready\n").count(), 2, "{spec}");
+    let plan = shown(&provider, "plan").await;
+    assert!(plan.contains("Requirements: [REQ-001, REQ-002]\n"), "{plan}");
+    provider.model.assert_exhausted();
+}
+
+// A relative route registered under two non-`start` stems does not merge the
+// stems into one part, while requirements of one stem sharing that route are
+// still one handler and cannot be split across parts.
+#[tokio::test]
+async fn trigger_scoped_to_stem() {
+    let mut claims = vec![
+        requirement("customers.get", "GET / lists the customers."),
+        requirement("orders.get", "GET / reads the orders."),
+        requirement("orders.list", "GET / lists the orders."),
+        requirement("orders.post", "POST / creates an order."),
+    ];
+    let subjects: Vec<String> = claims.iter().filter_map(|claim| claim.id.clone()).collect();
+    claims.push(claim(ClaimKind::Contract, "customers", ("route", "GET /")));
+    claims.push(claim(ClaimKind::Contract, "orders.get", ("route", "GET /")));
+    claims.push(claim(ClaimKind::Contract, "orders.list", ("route", "GET /")));
+
+    let grouping = separate_grouping(subjects.len());
+    let draft = spec_draft(&subjects, &["Customers and orders mounted at relative roots."]);
+    let design = design_with_apis();
+    let split = separate_slicing(&[
+        ("customers", &["REQ-001"]),
+        ("orders-main", &["REQ-002", "REQ-004"]),
+        ("orders-list", &["REQ-003"]),
+    ]);
+    let merged = separate_slicing(&[
+        ("customers", &["REQ-001"]),
+        ("orders", &["REQ-002", "REQ-003", "REQ-004"]),
+    ]);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        draft.as_str(),
+        design.as_str(),
+        split.as_str(),
+        merged.as_str(),
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let check = &provider.model.exchanges()[3];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the intra-stem trigger split is rejected");
+    assert!(
+        correction.contains(
+            "requirements reached through `GET /` (REQ-002, REQ-003) are split across \
+             `orders-list`, `orders-main`: one trigger is one handler, built by one part"
+        ),
+        "{correction}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// --- slicing ---
+
+// Three stems and two types: the model merges two stems, the engine refuses
+// the draft that leaves a requirement out, then numbers the corrected parts by
+// their lowest requirement and writes every list in canonical order — the
+// requirements the answer listed backwards in id order, the types in key
+// order. The slicing follows the design and runs from the bases, so its
+// request carries the requirement outline and the design's data type keys,
+// never a rendered document.
+#[tokio::test]
+async fn sliced() {
+    let refused = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"]},
+        {"name": "orders", "requirements": ["REQ-003"], "types": ["orders.order", "orders.line"], "uses": []}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        SLICED_SPEC,
+        SLICED_DESIGN,
+        refused,
+        SLICING_ANSWER,
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+
+    // the envelope carries the committed plan's waves
+    let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        committed["waves"],
+        serde_json::json!([["PART-001", "PART-002"]]),
+        "two parts sharing no type are one wave: {committed}"
+    );
+
+    // the slicing request carries the stems, the keys, and the requirement outline
+    let slicing = &provider.model.seen()[3];
+    let SeenFormat::Schema { name, schema } = &slicing.format else {
+        panic!("the slicing is steered by schema");
+    };
+    assert_eq!(name, "slicing");
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    assert_eq!(schema["properties"]["parts"]["minItems"], 1);
+    assert_eq!(schema["properties"]["parts"]["maxItems"], 3, "one part per stem at most");
+    let draft = &schema["$defs"]["Draft"]["properties"];
+    assert_eq!(draft["requirements"]["minItems"], 1);
+    assert_eq!(
+        draft["requirements"]["items"]["enum"],
+        serde_json::json!(["REQ-001", "REQ-002", "REQ-003", "REQ-004"]),
+        "the run's requirement ids ride the schema as a hint"
+    );
+    assert_eq!(
+        draft["types"]["items"]["enum"],
+        serde_json::json!(["orders.line", "orders.order"]),
+        "the design's type keys ride the schema in key order"
+    );
+    assert_eq!(
+        draft["uses"]["items"]["enum"],
+        serde_json::json!(["orders.line", "orders.order"]),
+        "the design's type keys ride `uses` in key order"
+    );
+    let request = slicing.messages.join("\n");
+    assert!(request.contains("- `auth` — REQ-001\n"), "{request}");
+    assert!(request.contains("- `orders` — REQ-003, REQ-004\n"), "{request}");
+    assert!(request.contains("- `orders.line`\n- `orders.order`\n"), "the keys ride: {request}");
+    assert!(
+        request.contains("- REQ-004 `orders.cancel` — Status: unknown"),
+        "the requirement outline rides: {request}"
+    );
+    assert!(!request.contains("### Requirement:"), "no rendered spec rides: {request}");
+    assert!(!request.contains("## Domain model"), "no rendered design rides: {request}");
+
+    // the design request carries the same outline in place of a rendered spec
+    let design = provider.model.seen()[2].messages.join("\n");
+    assert!(design.contains("- REQ-004 `orders.cancel` — Status: unknown"), "{design}");
+    assert!(!design.contains("### Requirement:"), "no rendered spec rides: {design}");
+
+    // the refusal is the correction; the corrected slicing commits
+    let check = &provider.model.exchanges()[3];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("the first slicing is rejected");
+    assert!(correction.contains("`REQ-004` is in no part"), "{correction}");
+    let id = staged(&provider.storage).await;
+    assert_eq!(
+        String::from_utf8_lossy(&staged_document(&provider.storage, &id, "plan.json").await),
+        SLICED_REVISION,
+        "plan.json is the canonical revision"
+    );
+    assert_eq!(
+        shown(&provider, "plan").await,
+        projection(SLICED_RENDERED, &id),
+        "show renders plan.md"
+    );
+    let resp = cli_ok(&provider, &["emery", "--format", "json", "show", "plan", "--staged"]).await;
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    let document: Value =
+        serde_json::from_str(SLICED_REVISION).expect("the revision fixture is JSON");
+    assert_eq!(envelope["document"], document, "the envelope carries the typed plan");
+    provider.model.assert_exhausted();
+}
+
+// A large stem of 20 requirements is one floor: the brief lists the stem
+// whole, the schema admits one part per stem, a draft that splits the stem
+// along its sub-stems is refused, and the draft keeping all 20 together
+// commits with no cap finding.
+#[tokio::test]
+async fn large_stem_whole() {
+    let verbs: Vec<(&str, usize)> = vec![("get", 8), ("post", 8), ("delete", 4)];
+    let mut claims = Vec::new();
+    for (verb, count) in &verbs {
+        for index in 0..*count {
+            let statement = format!("`{verb}` does thing {index}.");
+            claims.push(requirement(&format!("orders.{verb}.thing-{index}"), &statement));
+        }
+    }
+    claims.push(requirement("auth.login", "Users sign in with a credential."));
+    let subjects: Vec<String> = claims.iter().filter_map(|claim| claim.id.clone()).collect();
+    let numbered: Vec<String> = (1..=claims.len()).map(|n| format!("REQ-{n:03}")).collect();
+    let ids: Vec<&str> = numbered.iter().map(String::as_str).collect();
+    let (orders, auth) = ids.split_at(20);
+    let (get, writes) = orders.split_at(8);
+    let grouping = separate_grouping(claims.len());
+    let draft = spec_draft(&subjects, &["Orders in three verbs, and sign-in."]);
+    let refused = separate_slicing(&[
+        ("orders-reading", get),
+        ("orders-writing", writes),
+        ("authentication", auth),
+    ]);
+    let accepted = separate_slicing(&[("orders", orders), ("authentication", auth)]);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        draft.as_str(),
+        DESIGN_ANSWER,
+        refused.as_str(),
+        accepted.as_str(),
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+
+    // the brief lists the 20-requirement stem as one floor and admits one part per stem
+    let slicing = &provider.model.seen()[3];
+    let SeenFormat::Schema { name, schema } = &slicing.format else {
+        panic!("the slicing is steered by schema");
+    };
+    assert_eq!(name, "slicing");
+    let schema: Value = serde_json::from_str(schema).expect("the steering schema is JSON");
+    assert_eq!(schema["properties"]["parts"]["maxItems"], 2, "two stems, one floor each");
+    let request = slicing.messages.join("\n");
+    let baseline = format!("- `orders` — {}\n- `auth` — {}\n", orders.join(", "), auth.join(", "));
+    assert!(request.contains(&baseline), "{request}");
+    assert!(!request.contains("sub-stem"), "{request}");
+
+    // splitting the stem along its sub-stems is refused; keeping it whole commits
+    let check = &provider.model.exchanges()[3];
+    assert_eq!(check.tool, "check");
+    let correction = check.outcome.as_ref().expect_err("splitting the stem is rejected");
+    assert!(
+        correction.contains(
+            "requirements sharing the stem `orders` are split across `orders-reading`, \
+             `orders-writing`"
+        ),
+        "{correction}"
+    );
+    let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        committed["waves"],
+        serde_json::json!([["PART-001", "PART-002"]]),
+        "two parts depending on nothing are one wave: {committed}"
+    );
+    let id = staged(&provider.storage).await;
+    let plan: Value =
+        serde_json::from_slice(&staged_document(&provider.storage, &id, "plan.json").await)
+            .expect("the committed plan is JSON");
+    let parts: Vec<(&str, &str)> = plan["parts"]
+        .as_array()
+        .expect("parts")
+        .iter()
+        .map(|part| (part["id"].as_str().expect("id"), part["name"].as_str().expect("name")))
+        .collect();
+    assert_eq!(parts, vec![("PART-001", "orders"), ("PART-002", "authentication")]);
+    assert_eq!(plan["parts"][0]["requirements"], serde_json::json!(orders));
+    provider.model.assert_exhausted();
+}
+
+// The slicing leg is gated as the drafts are, one finding per case.
+#[tokio::test]
+async fn invalid_plan() {
+    let plan = |parts: &str| format!(r#"{{"preamble": [], "parts": [{parts}]}}"#);
+    let all = |extra: &str| {
+        plan(&format!(
+            r#"{{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]{extra}}}"#
+        ))
+    };
+    let cases: Vec<(String, &str)> = vec![
+        (
+            plan(
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002", "REQ-003"]}, {"name": "orders", "requirements": ["REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "requirements sharing the stem `orders` are split across `authentication`, `orders`",
+        ),
+        (
+            plan(
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"]}, {"name": "orders", "requirements": ["REQ-003"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "`REQ-004` is in no part",
+        ),
+        (
+            plan(
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002", "REQ-003"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "`REQ-003` appears in more than one part",
+        ),
+        (
+            plan(
+                r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004", "REQ-009"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "part `all`: `REQ-009` is not a requirement",
+        ),
+        (
+            plan(
+                r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}, {"name": "empty", "requirements": []}"#,
+            ),
+            "part `empty` has no requirement",
+        ),
+        (
+            plan(
+                r#"{"name": "All Parts", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "part name `All Parts` is not kebab-case",
+        ),
+        (
+            plan(
+                r#"{"name": "all", "requirements": ["REQ-001", "REQ-002"]}, {"name": "all", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "part `all` is drafted more than once",
+        ),
+        (
+            all(r#", "uses": ["orders.receipt"]"#),
+            "part `all` uses `orders.receipt`, which is not a type in the design",
+        ),
+        (all(r#", "uses": ["orders.order"]"#), "part `all` uses `orders.order`, which it owns"),
+        (
+            plan(
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["orders.line"], "uses": ["orders.order"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order"], "uses": ["orders.line"]}"#,
+            ),
+            "parts `authentication`, `orders` cannot be ordered: the edges derived from `orders.line`, `orders.order` form a cycle",
+        ),
+        (
+            plan(
+                r#"{"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["orders.order"]}, {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}"#,
+            ),
+            "type `orders.order` is owned by 2 parts: `authentication`, `orders`",
+        ),
+        (
+            plan(
+                r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.line"]}"#,
+            ),
+            "type `orders.order` is owned by no part",
+        ),
+        (
+            plan(
+                r#"{"name": "all", "requirements": ["REQ-001", "REQ-002", "REQ-003", "REQ-004"], "types": ["orders.order", "orders.line", "orders.receipt"]}"#,
+            ),
+            "`orders.receipt` is not a type in the design",
+        ),
+        (
+            all(r#", "brief": ["Depends on: nothing"]"#),
+            "part `all` brief: a paragraph line opens with the reserved marker `Depends on:`",
+        ),
+        ("not json".to_string(), "schema and answer type disagree"),
+    ];
+    for (answer, fragment) in cases {
+        let grouping = separate_grouping(4);
+        let mut provider = Provider::answering([
+            grouping.as_str(),
+            SLICED_SPEC,
+            SLICED_DESIGN,
+            answer.as_str(),
+            answer.as_str(),
+            answer.as_str(),
+        ]);
+        provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+        let (exit, code) = if answer == "not json" { (3, "invalid") } else { (1, "exhausted") };
+        let envelope = fail(&provider, &["emery", "specify", &reference("docs")], exit, code).await;
+        assert_message(&envelope, fragment);
+        provider.model.assert_exhausted();
+    }
+}
+
+// A `uses` entry naming a key absent from the design is refused with the key named.
+#[tokio::test]
+async fn uses_not_a_type() {
+    let refused = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "uses": ["orders.receipt"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        SLICED_SPEC,
+        SLICED_DESIGN,
+        refused,
+        SLICING_ANSWER,
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let check = &provider.model.exchanges()[3];
+    let correction = check.outcome.as_ref().expect_err("unknown `uses` key is rejected");
+    assert!(
+        correction.contains(
+            "part `authentication` uses `orders.receipt`, which is not a type in the design"
+        ),
+        "{correction}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A `uses` entry naming a key the same part owns, or a key no part owns, is refused.
+#[tokio::test]
+async fn uses_owned() {
+    let self_owned = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"], "uses": ["orders.order"]}
+    ]}"#;
+    let unowned = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "uses": ["orders.order"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.line"], "brief": ["Uses: nothing"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        SLICED_SPEC,
+        SLICED_DESIGN,
+        self_owned,
+        unowned,
+        SLICING_ANSWER,
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let first = &provider.model.exchanges()[3];
+    let correction = first.outcome.as_ref().expect_err("self-owned `uses` key is rejected");
+    assert!(
+        correction.contains("part `orders` uses `orders.order`, which it owns"),
+        "{correction}"
+    );
+    let second = &provider.model.exchanges()[4];
+    let correction = second.outcome.as_ref().expect_err("unowned `uses` key is rejected");
+    assert!(
+        correction.contains("part `authentication` uses `orders.order`, which is owned by no part"),
+        "{correction}"
+    );
+    assert!(
+        correction.contains(
+            "part `orders` brief: a paragraph line opens with the reserved marker `Uses:`"
+        ),
+        "{correction}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// Two parts whose owned types name each other in their signatures form a cycle:
+// the gate quotes both keys and asks that they be owned by one part.
+#[tokio::test]
+async fn edges_cyclic() {
+    let mut claims = sliced_evidence().claims;
+    claims[4] =
+        claim(ClaimKind::Type, "orders.order", ("signature", "interface Order { line: Line }"));
+    claims[5] =
+        claim(ClaimKind::Type, "orders.line", ("signature", "interface Line { order: Order }"));
+    let refused = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["orders.line"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([
+        grouping.as_str(),
+        SLICED_SPEC,
+        SLICED_DESIGN,
+        refused,
+        SLICING_ANSWER,
+    ]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+
+    let check = &provider.model.exchanges()[3];
+    let correction = check.outcome.as_ref().expect_err("mutual type references across parts cycle");
+    assert!(
+        correction.contains(
+            "parts `authentication`, `orders` cannot be ordered: the edges derived from \
+             `orders.line`, `orders.order` form a cycle; own types that name each other in one \
+             part"
+        ),
+        "{correction}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A part owning a type whose signature names another part's declared type
+// derives a dependency onto that owner with no `uses` answered, and the brief
+// lists the cross-type reference under `## Type keys`.
+#[tokio::test]
+async fn edges_derived() {
+    let mut claims = sliced_evidence().claims;
+    claims[4] = claim(
+        ClaimKind::Type,
+        "orders.order",
+        ("signature", "interface Order { id: string; credential: Credential; lines: Line[] }"),
+    );
+    claims.push(claim(
+        ClaimKind::Type,
+        "auth.credential",
+        ("signature", "interface Credential { token: string }"),
+    ));
+    let design = r#"{"preamble": [], "sections": [
+        {"kind": "overview", "blocks": [{"text": "Sign-in issues a session; orders are placed and cancelled under it."}]},
+        {"kind": "domain-model", "blocks": [
+            {"type": {"key": "auth.credential", "role": "data"}},
+            {"type": {"key": "orders.order", "role": "data"}},
+            {"type": {"key": "orders.line", "role": "data"}}
+        ]}
+    ]}"#;
+    let slicing = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["auth.credential"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "types": ["orders.order", "orders.line"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider = Provider::answering([grouping.as_str(), SLICED_SPEC, design, slicing]);
+    provider.source.evidence.insert("docs".to_string(), Ok(evidence(claims)));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+
+    let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        committed["waves"],
+        serde_json::json!([["PART-001"], ["PART-002"]]),
+        "the derived edge serialises `orders` after `authentication`: {committed}"
+    );
+    let request = provider.model.seen()[3].messages.join("\n");
+    assert!(
+        request.contains("- `orders.order` — names `auth.credential`, `orders.line`\n"),
+        "the brief lists the referenced keys: {request}"
+    );
+    let id = staged(&provider.storage).await;
+    let plan: Value =
+        serde_json::from_slice(&staged_document(&provider.storage, &id, "plan.json").await)
+            .expect("the committed plan is JSON");
+    assert_eq!(plan["parts"][1]["uses"], serde_json::json!([]));
+    assert_eq!(plan["parts"][1]["depends-on"], serde_json::json!(["PART-001"]));
+    let rendered = shown(&provider, "plan").await;
+    assert!(
+        rendered.contains("Types: [orders.line, orders.order]\nDepends on: [PART-001]"),
+        "{rendered}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// A part owning no type that lists another part's keys in `uses` stores `uses`
+// in design order, derives the dependency onto their owner, and renders `Uses:`
+// before `Depends on:`.
+#[tokio::test]
+async fn edges_used() {
+    let slicing = r#"{"preamble": [], "parts": [
+        {"name": "authentication", "requirements": ["REQ-001", "REQ-002"], "types": ["orders.order", "orders.line"]},
+        {"name": "orders", "requirements": ["REQ-003", "REQ-004"], "uses": ["orders.order", "orders.line"]}
+    ]}"#;
+    let grouping = separate_grouping(4);
+    let mut provider =
+        Provider::answering([grouping.as_str(), SLICED_SPEC, SLICED_DESIGN, slicing]);
+    provider.source.evidence.insert("docs".to_string(), Ok(sliced_evidence()));
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "specify", &reference("docs")]).await;
+
+    let committed: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(committed["waves"], serde_json::json!([["PART-001"], ["PART-002"]]), "{committed}");
+    let id = staged(&provider.storage).await;
+    let plan: Value =
+        serde_json::from_slice(&staged_document(&provider.storage, &id, "plan.json").await)
+            .expect("the committed plan is JSON");
+    assert_eq!(
+        plan["parts"][1]["uses"],
+        serde_json::json!(["orders.line", "orders.order"]),
+        "`uses` is stored in design order"
+    );
+    assert_eq!(plan["parts"][1]["depends-on"], serde_json::json!(["PART-001"]));
+    let rendered = shown(&provider, "plan").await;
+    assert!(
+        rendered.contains(
+            "ID: PART-002\nRequirements: [REQ-003, REQ-004]\nUses: [orders.line, \
+             orders.order]\nDepends on: [PART-001]"
+        ),
+        "{rendered}"
+    );
+    provider.model.assert_exhausted();
+}
+
+// --- config file ---
+
+// The list is checked whole before a single adapter loads.
+#[tokio::test]
+#[expect(clippy::too_many_lines, reason = "one table-driven refusal per config gate")]
+async fn config_file() {
+    struct Case<'a> {
+        path: &'a str,
+        body: &'a str,
+        exit: u8,
+        code: &'a str,
+        fragment: &'a str,
+    }
+    let cases = [
+        Case {
+            path: "emery.toml",
+            body: "not toml [",
+            exit: 1,
+            code: "bad_request",
+            fragment: "TOML parse error",
+        },
+        Case {
+            path: "emery.toml",
+            body: "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\nbranch = \
+             \"main\"\n",
+            exit: 1,
+            code: "bad_request",
+            fragment: "unknown field `branch`",
+        },
+        Case {
+            path: "emery.toml",
+            body: "",
+            exit: 1,
+            code: "specify-source-required",
+            fragment: "",
+        },
+        Case {
+            path: "emery.toml",
+            body: "[sources.docs]\nadapter = \"emery:documentation@1.2.0\"\n",
+            exit: 1,
+            code: "bad_request",
+            fragment: "unknown field `sources`",
+        },
+        Case {
+            path: "emery.toml",
+            body: "[[source]]\nname = \"intent\"\nadapter = \"emery:intent@1.0.0\"\nvalue = \"text\"\n",
+            exit: 1,
+            code: "bad_request",
+            fragment: "unknown field `value`",
+        },
+        Case {
+            path: "emery.toml",
+            body: "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\npath = \
+             \"docs\"\ndescription = \"text\"\n",
+            exit: 1,
+            code: "bad_request",
+            fragment: "both `path` and `description`",
+        },
+        Case {
+            path: "emery.toml",
+            body: "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n\n\
+             [[source]]\nname = \"docs\"\nadapter = \"emery:intent@1.0.0\"\n",
+            exit: 1,
+            code: "bad_request",
+            fragment: "appears twice",
+        },
+        Case {
+            path: "emery.toml",
+            body: "[[source]]\nname = \"Docs\"\nadapter = \"emery:documentation@1.2.0\"\n",
+            exit: 1,
+            code: "bad_request",
+            fragment: "is not a kebab-case name",
+        },
+        Case {
+            path: "emery.toml",
+            body: "[[source]]\nname = \"local\"\nadapter = \"acme:source@1.0.0\"\n\
+             digest = \"sha256:9f2c44aa\"\n",
+            exit: 3,
+            code: "invalid",
+            fragment: "is not 64 hex characters",
+        },
+        Case {
+            path: "emery.toml",
+            body: "[[source]]\nname = \"upstream\"\nadapter = \"emery:documentation@1.2.0\"\ngit = \
+             \"https://github.com/acme/api@v2\"\n",
+            exit: 1,
+            code: "bad_request",
+            fragment: "unknown field `git`",
+        },
+        Case {
+            path: "emery.toml",
+            body: "[[source]]\nname = \"upstream\"\nadapter = \"emery:documentation@1.2.0\"\nurl = \
+             \"https://example.com/openapi.yaml\"\n",
+            exit: 1,
+            code: "bad_request",
+            fragment: "unknown field `url`",
+        },
+        Case {
+            path: "emery.toml",
+            body: "[[source]]\nname = \"ledger\"\nadapter = \"acme:ledger@2.1.0\"\nregistry = \
+             \"registry.acme.io\"\n",
+            exit: 1,
+            code: "bad_request",
+            fragment: "unknown field `registry`",
+        },
+        Case {
+            path: "nested/deep/emery.toml",
+            body: "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\npath = \
+             \"../../../outside\"\n",
+            exit: 1,
+            code: "bad_request",
+            fragment: "../../../outside",
+        },
+    ];
+    for case in cases {
+        let provider = Provider::idle();
+        let config = provider.write_project(case.path, case.body);
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], case.exit, case.code).await;
+        if !case.fragment.is_empty() {
+            assert_message(&envelope, case.fragment);
+        }
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a refused list gates nothing: {}",
+            case.body
+        );
+    }
+
+    let provider = Provider::idle();
+    fail(&provider, &["emery", "specify", "--config", "nonexistent/emery.toml"], 3, "server_error")
+        .await;
+
+    for path in ["/nonexistent/emery.toml", "../emery.toml"] {
+        fail(&provider, &["emery", "specify", "--config", path], 1, "bad_request").await;
+    }
+}
+
+// A file's `adapter` is an exact package reference, refused at the field
+// otherwise: no path, no bare name, no unversioned or unnamespaced package.
+#[tokio::test]
+async fn config_reference() {
+    let cases: &[(&str, &str)] = &[
+        ("./source.wasm", "adapter `./source.wasm` names no version"),
+        ("/tmp/source.wasm", "adapter `/tmp/source.wasm` names no version"),
+        ("documentation", "adapter `documentation` names no version"),
+        ("documentation@1.2.0", "adapter `documentation@1.2.0` names no namespace"),
+        ("emery:documentation", "adapter `emery:documentation` names no version"),
+        (
+            "emery:documentation@latest",
+            "adapter `emery:documentation@latest` has an invalid version `latest`",
+        ),
+    ];
+    for (adapter, fragment) in cases {
+        let provider = Provider::idle();
+        let config = provider.write_project(
+            "emery.toml",
+            format!("[[source]]\nname = \"docs\"\nadapter = \"{adapter}\"\n"),
+        );
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+        assert_message(&envelope, fragment);
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a refused reference loads nothing: {adapter}"
+        );
+    }
+}
+
+// A file's `rank` is a positive integer, refused at the field otherwise.
+#[tokio::test]
+async fn config_rank() {
+    let cases: &[(&str, &str)] = &[
+        ("0", "invalid value: integer `0`, expected a nonzero u32"),
+        ("-1", "invalid value: integer `-1`, expected a nonzero u32"),
+        ("1.5", "invalid type: floating point `1.5`, expected a nonzero u32"),
+        ("\"high\"", "invalid type: string \"high\", expected a nonzero u32"),
+    ];
+    for (rank, fragment) in cases {
+        let provider = Provider::idle();
+        let config = provider.write_project(
+            "emery.toml",
+            format!(
+                "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\nrank = {rank}\n"
+            ),
+        );
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+        assert_message(&envelope, fragment);
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a refused rank loads nothing: {rank}"
+        );
+    }
+}
+
+// A file's `scope` is `delta` or `whole`, `delta` when omitted, refused at
+// the field otherwise. A specify reads nothing of it, so acceptance is the
+// one observable here: a stated or omitted scope runs as before. What an
+// amend retires by it is `tests/amend.rs`'s.
+#[tokio::test]
+async fn config_scope() {
+    for scope in ["scope = \"delta\"\n", "scope = \"whole\"\n", ""] {
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        let config = provider.write_project(
+            "emery.toml",
+            format!(
+                "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n{scope}"
+            ),
+        );
+        cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+        provider.model.assert_exhausted();
+    }
+
+    let cases: &[(&str, &str)] = &[
+        ("\"partial\"", "unknown variant `partial`, expected `delta` or `whole`"),
+        ("1", "wanted string or table"),
+    ];
+    for (scope, fragment) in cases {
+        let provider = Provider::idle();
+        let config = provider.write_project(
+            "emery.toml",
+            format!(
+                "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\nscope = \
+                 {scope}\n"
+            ),
+        );
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+        assert_message(&envelope, fragment);
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a refused scope loads nothing: {scope}"
+        );
+    }
+}
+
+// Path anchoring, inline descriptions, and declaration order, all observed on
+// the `SourceInput` the adapter receives.
+#[tokio::test]
+async fn source_paths() {
+    let provider = Provider::answering([baseline_grouping(3).as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    provider.write_project("nested/placeholder", "");
+    provider.write_project("docs/placeholder", "");
+    let config = provider.write_project(
+        "emery.toml",
+        "[[source]]\nname = \"zulu\"\nadapter = \"emery:documentation@1.2.0\"\npath = \
+         \"nested/../docs\"\n\n\
+         [[source]]\nname = \"intent\"\nadapter = \"emery:intent@1.0.0\"\ndescription = \"Ship \
+         it.\"\n\n\
+         [[source]]\nname = \"alpha\"\nadapter = \"acme:local@1.0.0\"\npath = \"./docs\"\n",
+    );
+
+    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+
+    let calls = provider.source.calls();
+    let names: std::collections::BTreeSet<_> =
+        calls.iter().map(|(_, input)| input.name.as_str()).collect();
+    assert_eq!(
+        names,
+        std::collections::BTreeSet::from(["alpha", "intent", "zulu"]),
+        "every entry extracted"
+    );
+    let spec = shown(&provider, "spec").await;
+    for source in ["zulu", "intent", "alpha"] {
+        assert!(
+            spec.contains(&format!("{source}:greeting.behaviour")),
+            "each config entry contributes: {spec}"
+        );
+    }
+    for name in ["zulu", "alpha"] {
+        let (_, input) = calls.iter().find(|(_, input)| input.name == name).expect("dispatched");
+        let SourceContent::Workspace(root) = &input.content else {
+            panic!("a path source lends a workspace");
+        };
+        assert!(
+            !std::path::Path::new(root).is_absolute(),
+            "the lend must stay `.`-relative for the guest preopen: {root}"
+        );
+        assert!(
+            root.ends_with("docs") && !root.contains(".."),
+            "`.` and `..` fold away lexically against the file's directory: {root}"
+        );
+    }
+    let (_, input) = calls.iter().find(|(_, input)| input.name == "intent").expect("dispatched");
+    assert_eq!(
+        input.content,
+        SourceContent::Value("Ship it.".to_string()),
+        "a file `description` entry supplies inline text"
+    );
+    drop(calls);
+    provider.model.assert_exhausted();
+}
+
+#[tokio::test]
+async fn name_defaulted() {
+    let provider = Provider::answering([baseline_grouping(3).as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+    let config = provider.write_project(
+        "emery.toml",
+        format!(
+            "[[source]]\nadapter = \"emery:documentation@1.2.0\"\n\n             [[source]]\nadapter = \"emery:demo@1.2.0\"\n\n             [[source]]\nadapter = \"{SOURCE}\"\n",
+        ),
+    );
+
+    cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+
+    assert!(
+        shown(&provider, "spec").await.contains(
+            "Sources: [documentation:greeting.behaviour, demo:greeting.behaviour, \
+             source:greeting.behaviour]"
+        ),
+        "each entry is named for its adapter's package"
+    );
     provider.model.assert_exhausted();
 }
 
