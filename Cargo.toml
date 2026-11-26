@@ -48,7 +48,9 @@ emery-sdk.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 anyhow.workspace = true
+futures.workspace = true
 emery-adapter.workspace = true
+test-programs.workspace = true
 emery-cli.workspace = true
 emery-engine.workspace = true
 hex.workspace = true

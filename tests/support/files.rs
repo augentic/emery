@@ -1,138 +1,102 @@
-//! Scripted `Files` capability recording working-copy reads, listings, and writes.
+//! Revision trees on the project scratch mount.
 
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use emery_engine::{Entry, EntryKind, Files};
-use omnia_sdk::{Error, server_error};
+use emery_engine::vcs::SPECIFICATION;
+use omnia_test::host::Scratch;
 
-// `None` scripts a path the read fails at.
-type Keyed = BTreeMap<(String, String), Option<Vec<u8>>>;
-type Listings = BTreeMap<(String, String), Vec<Entry>>;
-type Write = (String, String, Vec<u8>);
+type BTreeMapSnapshot = BTreeMap<String, Vec<u8>>;
 
-// A scripted `Files` with a record of every read, listing, and write.
+const REVISION_DIR: &str = ".emery/vcs/revision";
+
+/// Tracks whether the revision tree changed across a run.
 #[derive(Clone, Debug, Default)]
-pub struct FilesScript {
-    // What each path beneath a working copy reads as, keyed by both.
-    pub contents: Arc<Mutex<Keyed>>,
-    // What each directory beneath a working copy lists as, keyed by both.
-    pub listings: Arc<Mutex<Listings>>,
-    // Every read, in order: the working copy and the path.
-    pub reads: Arc<Mutex<Vec<(String, String)>>>,
-    // Every listing, in order: the working copy and the directory.
-    pub listed: Arc<Mutex<Vec<(String, String)>>>,
-    // Every write, in order: the working copy, the path, and the bytes.
-    pub writes: Arc<Mutex<Vec<Write>>>,
+pub struct Files {
+    project: Option<PathBuf>,
+    before: Arc<Mutex<BTreeMapSnapshot>>,
 }
 
-impl FilesScript {
-    // Scripts what `path` beneath `at` reads as.
-    pub fn holds(&self, at: &str, path: &str, content: &str) {
-        self.holds_bytes(at, path, content.as_bytes());
+impl Files {
+    /// Binds this helper to `project` for subsequent staging.
+    pub fn bind(&mut self, project: &Scratch) {
+        self.project = Some(project.path().to_path_buf());
     }
 
-    // Scripts what `path` beneath `at` reads as, byte for byte.
-    pub fn holds_bytes(&self, at: &str, path: &str, content: &[u8]) {
-        self.script(at, path, Some(content.to_vec()));
-    }
-
-    // Scripts `path` beneath `at` as one whose read fails.
-    pub fn unreadable(&self, at: &str, path: &str) {
-        self.script(at, path, None);
-    }
-
-    // Scripts what the directory `path` beneath `at` lists as: each entry's name and kind.
-    pub fn lists(&self, at: &str, path: &str, entries: &[(&str, EntryKind)]) {
-        let entries = entries
-            .iter()
-            .map(|(name, kind)| Entry {
-                name: (*name).to_owned(),
-                kind: *kind,
-            })
-            .collect();
-        self.listings.lock().expect("listings").insert((at.to_owned(), path.to_owned()), entries);
-    }
-
-    // Returns every read so far, in order.
-    pub fn reads(&self) -> Vec<(String, String)> {
-        self.reads.lock().expect("reads").clone()
-    }
-
-    // Returns every listing so far, in order.
-    pub fn listed(&self) -> Vec<(String, String)> {
-        self.listed.lock().expect("listed").clone()
-    }
-
-    // Returns every write so far, in order.
-    pub fn writes(&self) -> Vec<Write> {
-        self.writes.lock().expect("writes").clone()
-    }
-
-    fn script(&self, at: &str, path: &str, content: Option<Vec<u8>>) {
-        self.contents.lock().expect("contents").insert((at.to_owned(), path.to_owned()), content);
-    }
-}
-
-impl Files for FilesScript {
-    fn read(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<u8>, Error>> + Send {
-        self.reads.lock().expect("reads").push((at.to_owned(), path.to_owned()));
-        let scripted =
-            self.contents.lock().expect("contents").get(&(at.to_owned(), path.to_owned())).cloned();
-        let answer = match scripted {
-            Some(Some(bytes)) => Ok(bytes),
-            Some(None) => Err(server_error!("reading `{path}` under `{at}`: scripted unreadable")),
-            None => Ok(Vec::new()),
-        };
-        async move { answer }
-    }
-
-    fn list(&self, at: &str, path: &str) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send {
-        self.listed.lock().expect("listed").push((at.to_owned(), path.to_owned()));
-        let entries = self
-            .listings
-            .lock()
-            .expect("listings")
-            .get(&(at.to_owned(), path.to_owned()))
-            .cloned()
-            .unwrap_or_default();
-        async move { Ok(entries) }
-    }
-
-    fn write(
-        &self, at: &str, path: &str, bytes: &[u8],
-    ) -> impl Future<Output = Result<(), Error>> + Send {
-        self.writes.lock().expect("writes").push((at.to_owned(), path.to_owned(), bytes.to_vec()));
-        self.script(at, path, Some(bytes.to_vec()));
-        self.place(at, path);
-        async move { Ok(()) }
-    }
-}
-
-impl FilesScript {
-    // Lists a written file under its directory and each directory on the way
-    // under its parent, so a listing after the write sees what it wrote.
-    fn place(&self, at: &str, path: &str) {
-        let mut directory = String::from(".");
-        let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
-        for (position, segment) in segments.iter().enumerate() {
-            let kind =
-                if position + 1 == segments.len() { EntryKind::File } else { EntryKind::Directory };
-            let mut listings = self.listings.lock().expect("listings");
-            let entries = listings.entry((at.to_owned(), directory.clone())).or_default();
-            if !entries.iter().any(|entry| entry.name == *segment) {
-                entries.push(Entry {
-                    name: (*segment).to_owned(),
-                    kind,
-                });
-            }
-            drop(listings);
-            directory = if directory == "." {
-                (*segment).to_owned()
-            } else {
-                format!("{directory}/{segment}")
-            };
+    /// Scripts `spec/` at the revision working copy with the three documents.
+    pub fn seed(&self, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
+        for (name, body) in [("spec", spec), ("design", design), ("plan", plan)] {
+            self.write_revision(&document(name), body);
         }
+        super::store::revision(spec, design, plan)
     }
+
+    /// Records what exists under the revision tree before the next CLI run.
+    pub fn mark_run_start(&self) {
+        self.before.lock().expect("before").clone_from(&self.snapshot_revision());
+    }
+
+    /// Returns paths under the revision tree that changed since [`mark_run_start`].
+    pub fn writes(&self) -> Vec<(String, String)> {
+        let before = self.before.lock().expect("before");
+        let after = self.snapshot_revision();
+        after
+            .into_iter()
+            .filter(|(path, bytes)| before.get(path) != Some(bytes))
+            .map(|(path, _)| (format!("./{REVISION_DIR}"), path))
+            .collect()
+    }
+
+    fn write_revision(&self, path: &str, body: &[u8]) {
+        let root = self.project.as_ref().expect("project bound");
+        let file = root.join(REVISION_DIR).join(path);
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent).expect("mkdir revision tree");
+        }
+        std::fs::write(file, body).expect("write revision file");
+    }
+
+    fn snapshot_revision(&self) -> BTreeMapSnapshot {
+        let root = self.project.as_ref().expect("project bound").join(REVISION_DIR);
+        let mut snap = BTreeMapSnapshot::new();
+        walk_snapshot(&root, &root, &mut snap);
+        snap
+    }
+}
+
+fn walk_snapshot(base: &Path, at: &Path, snap: &mut BTreeMapSnapshot) {
+    if !at.exists() {
+        return;
+    }
+    if at.is_file() {
+        let rel = at.strip_prefix(base).expect("under revision").display().to_string();
+        let bytes = std::fs::read(at).expect("read revision file");
+        snap.insert(format!("{SPECIFICATION}/{rel}"), bytes);
+        return;
+    }
+    for entry in std::fs::read_dir(at).expect("read revision dir") {
+        let entry = entry.expect("revision entry");
+        walk_snapshot(base, &entry.path(), snap);
+    }
+}
+
+/// Path of a revision document relative to the revision working copy root.
+pub fn document(name: &str) -> String {
+    format!("{SPECIFICATION}/{name}.json")
+}
+
+/// Bytes last written to `spec/<name>.json` in the revision working copy.
+pub fn written(files: &Files, name: &str) -> Vec<u8> {
+    let root = files.project.as_ref().expect("project bound");
+    let path = root.join(REVISION_DIR).join(document(name));
+    std::fs::read(path).unwrap_or_else(|err| panic!("{name} sealed: {err}"))
+}
+
+/// Scripts the revision `from` sealed into the tree `to` reads.
+pub fn carry(from: &Files, to: &Files) -> String {
+    let spec = written(from, "spec");
+    let design = written(from, "design");
+    let plan = written(from, "plan");
+    to.seed(&spec, &design, &plan)
 }

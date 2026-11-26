@@ -4,9 +4,12 @@
 //! the generated path constants and the `foreach_*!` completeness macros.
 
 pub mod protocol;
+pub mod script;
 
 #[cfg(target_arch = "wasm32")]
 pub mod helpers;
+#[cfg(target_arch = "wasm32")]
+pub mod script_io;
 #[cfg(target_arch = "wasm32")]
 pub mod seams;
 

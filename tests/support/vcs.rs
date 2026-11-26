@@ -1,26 +1,27 @@
-//! Scripted `Vcs` capability recording version-control operations.
+//! Scripted `omnia:vcs` backend recording version-control operations.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::future::Future;
 use std::sync::{Arc, Mutex};
 
-use omnia_sdk::Vcs;
-use omnia_sdk::vcs::{Change, CloneOptions, Entry, Error, Merged, Rule};
+use omnia::futures::FutureExt;
+use omnia_wasi_vcs::{
+    Change, CloneOptions, Entry, Error, FutureResult, Merged, Place, Rule, VcsClient,
+};
 
-// The commit every unscripted `head` answers.
+/// The commit every unscripted `head` answers.
 pub const HEAD: &str = "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6";
 
 type Queued<T> = BTreeMap<String, VecDeque<Result<T, Error>>>;
 
-// One merge as the script saw it: the message whole and the policy it rode.
+/// One merge as the script saw it: the message whole and the policy it rode.
 pub type Merge = (String, Vec<Rule>);
 
-// Answers queued per location, consumed in call order.
+/// Answers queued per location, consumed in call order.
 #[derive(Clone, Debug, Default)]
 pub struct Queue<T>(Arc<Mutex<Queued<T>>>);
 
 impl<T> Queue<T> {
-    // Queues `answer` for the next call at `location`.
+    /// Queues `answer` for the next call at `location`.
     pub fn script(&self, location: &str, answer: Result<T, Error>) {
         self.0.lock().expect("queue").entry(location.to_owned()).or_default().push_back(answer);
     }
@@ -35,78 +36,63 @@ impl<T> Queue<T> {
     }
 }
 
-// A scripted `Vcs` with a record of every call.
-//
-// Unscripted answers:
-//
-// - `pending` holds nothing;
-// - `head` is the revision `add` cut the working copy at, until a commit or
-//   a merge lands there; `HEAD` otherwise;
-// - `resolve` is `<revision>-commit`;
-// - `labelled` is `NotFound`: a fresh build;
-// - `descends` holds;
-// - `log` holds nothing;
-// - `commit` seals `<first word of the message>-commit`;
-// - `merge` merges as `m:<first word of the message>`;
-// - every other operation succeeds.
+/// A scripted [`VcsClient`] with a record of every call.
 #[derive(Clone, Debug, Default)]
 pub struct VcsScript {
-    // `pending` answers by working copy.
+    /// `pending` answers by working copy.
     pub pending: Queue<Vec<Change>>,
-    // `head` answers by working copy.
+    /// `head` answers by working copy.
     pub heads: Queue<String>,
-    // `resolve` answers by repository.
+    /// `resolve` answers by repository.
     pub resolves: Queue<String>,
-    // `labelled` answers by repository.
+    /// `labelled` answers by repository.
     pub labelleds: Queue<String>,
-    // `descends` answers by repository.
+    /// `descends` answers by repository.
     pub descends: Queue<bool>,
-    // `log` answers by repository.
+    /// `log` answers by repository.
     pub logs: Queue<Vec<Entry>>,
-    // `commit` answers by working copy.
+    /// `commit` answers by working copy.
     pub commits: Queue<Option<String>>,
-    // `merge` answers by working copy.
+    /// `merge` answers by working copy.
     pub merges: Queue<Merged>,
-    // `fetch` answers by repository.
+    /// `fetch` answers by repository.
     pub fetches: Queue<()>,
-    // `init` answers by repository.
+    /// `init` answers by repository.
     pub inits: Queue<()>,
-    // `clone` answers by clone location.
+    /// `clone` answers by clone location.
     pub clones: Queue<()>,
-    // `add` answers by working copy.
+    /// `add` answers by working copy.
     pub adds: Queue<()>,
-    // `remove` answers by working copy.
+    /// `remove` answers by working copy.
     pub removes: Queue<()>,
-    // `label` answers by repository.
+    /// `label` answers by repository.
     pub labels: Queue<()>,
-    // Every call, in order, spelled `<operation> <arguments>`; a commit or
-    // merge carries its message's first line.
+    /// Every call, in order, spelled `<operation> <arguments>`.
     pub calls: Arc<Mutex<Vec<String>>>,
-    // Every commit message whole, in order.
+    /// Every commit message whole, in order.
     pub messages: Arc<Mutex<Vec<String>>>,
-    // Every merge, in order.
+    /// Every merge, in order.
     pub merged: Arc<Mutex<Vec<Merge>>>,
-    // the revision each working copy was cut at, while nothing has landed there
     cut: Arc<Mutex<BTreeMap<String, String>>>,
 }
 
 impl VcsScript {
-    // Returns every call so far, in order.
+    /// Returns every call so far, in order.
     pub fn calls(&self) -> Vec<String> {
         self.calls.lock().expect("calls").clone()
     }
 
-    // Returns every commit message so far, in order.
+    /// Returns every commit message so far, in order.
     pub fn messages(&self) -> Vec<String> {
         self.messages.lock().expect("messages").clone()
     }
 
-    // Returns every merge so far, in order.
+    /// Returns every merge so far, in order.
     pub fn merged(&self) -> Vec<Merge> {
         self.merged.lock().expect("merged").clone()
     }
 
-    // Asserts that every queued answer was consumed.
+    /// Asserts that every queued answer was consumed.
     pub fn assert_exhausted(&self) {
         let left: Vec<String> = [
             ("pending", self.pending.drained()),
@@ -139,55 +125,54 @@ impl VcsScript {
     }
 }
 
-impl Vcs for VcsScript {
-    fn resolve(
-        &self, repo: &str, revision: &str,
-    ) -> impl Future<Output = Result<String, Error>> + Send {
-        self.record(format!("resolve {repo} {revision}"));
-        let answer = self.resolves.take(repo).unwrap_or_else(|| Ok(format!("{revision}-commit")));
-        async move { answer }
+impl VcsClient for VcsScript {
+    fn resolve(&self, repo: Place, revision: String) -> FutureResult<String> {
+        let key = held(&repo);
+        self.record(format!("resolve {key} {revision}"));
+        let answer = self.resolves.take(&key).unwrap_or_else(|| Ok(format!("{revision}-commit")));
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn descends(
-        &self, repo: &str, ancestor: &str, descendant: &str,
-    ) -> impl Future<Output = Result<bool, Error>> + Send {
-        self.record(format!("descends {repo} {ancestor} {descendant}"));
-        let answer = self.descends.take(repo).unwrap_or(Ok(true));
-        async move { answer }
+    fn descends(&self, repo: Place, ancestor: String, descendant: String) -> FutureResult<bool> {
+        let key = held(&repo);
+        self.record(format!("descends {key} {ancestor} {descendant}"));
+        let answer = self.descends.take(&key).unwrap_or(Ok(true));
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn head(&self, at: &str) -> impl Future<Output = Result<String, Error>> + Send {
-        self.record(format!("head {at}"));
-        let answer = self.heads.take(at).unwrap_or_else(|| {
-            let cut = self.cut.lock().expect("cut").get(at).cloned();
+    fn head(&self, at: Place) -> FutureResult<String> {
+        let key = held(&at);
+        self.record(format!("head {key}"));
+        let answer = self.heads.take(&key).unwrap_or_else(|| {
+            let cut = self.cut.lock().expect("cut").get(&key).cloned();
             Ok(cut.unwrap_or_else(|| HEAD.to_owned()))
         });
-        async move { answer }
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn commit(
-        &self, at: &str, message: &str,
-    ) -> impl Future<Output = Result<Option<String>, Error>> + Send {
-        let first = message.lines().next().unwrap_or_default();
-        self.record(format!("commit {at} {first}"));
-        self.messages.lock().expect("messages").push(message.to_owned());
-        let answer = self.commits.take(at).unwrap_or_else(|| {
+    fn commit(&self, at: Place, message: String) -> FutureResult<Option<String>> {
+        let key = held(&at);
+        let first = message.lines().next().unwrap_or_default().to_owned();
+        self.record(format!("commit {key} {first}"));
+        self.messages.lock().expect("messages").push(message);
+        let answer = self.commits.take(&key).unwrap_or_else(|| {
             let word = first.split_whitespace().next().unwrap_or_default();
             Ok(Some(format!("{word}-commit")))
         });
-        if matches!(answer, Ok(Some(_))) {
-            self.forget(at);
+        if matches!(&answer, Ok(Some(_))) {
+            self.forget(&key);
         }
-        async move { answer }
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
     fn merge(
-        &self, at: &str, revision: &str, message: &str, policy: &[Rule],
-    ) -> impl Future<Output = Result<Merged, Error>> + Send {
-        let first = message.lines().next().unwrap_or_default();
-        self.record(format!("merge {at} {revision} {first}"));
-        self.merged.lock().expect("merged").push((message.to_owned(), policy.to_vec()));
-        let answer = self.merges.take(at).unwrap_or_else(|| {
+        &self, at: Place, revision: String, message: String, policy: Vec<Rule>,
+    ) -> FutureResult<Merged> {
+        let key = held(&at);
+        let first = message.lines().next().unwrap_or_default().to_owned();
+        self.record(format!("merge {key} {revision} {first}"));
+        self.merged.lock().expect("merged").push((message, policy));
+        let answer = self.merges.take(&key).unwrap_or_else(|| {
             let word = first.split_whitespace().next().unwrap_or_default();
             Ok(Merged {
                 commit: Some(format!("m:{word}")),
@@ -195,92 +180,93 @@ impl Vcs for VcsScript {
             })
         });
         if matches!(&answer, Ok(merged) if merged.commit.is_some()) {
-            self.forget(at);
+            self.forget(&key);
         }
-        async move { answer }
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn log(
-        &self, repo: &str, revision: &str, base: &str,
-    ) -> impl Future<Output = Result<Vec<Entry>, Error>> + Send {
-        self.record(format!("log {repo} {revision} {base}"));
-        let answer = self.logs.take(repo).unwrap_or_else(|| Ok(Vec::new()));
-        async move { answer }
+    fn log(&self, repo: Place, revision: String, base: String) -> FutureResult<Vec<Entry>> {
+        let key = held(&repo);
+        self.record(format!("log {key} {revision} {base}"));
+        let answer = self.logs.take(&key).unwrap_or_else(|| Ok(Vec::new()));
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn init(&self, at: &str) -> impl Future<Output = Result<(), Error>> + Send {
-        self.record(format!("init {at}"));
-        let answer = self.inits.take(at).unwrap_or(Ok(()));
-        async move { answer }
+    fn init(&self, at: Place) -> FutureResult<()> {
+        let key = held(&at);
+        self.record(format!("init {key}"));
+        let answer = self.inits.take(&key).unwrap_or(Ok(()));
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn add(
-        &self, repo: &str, at: &str, revision: &str,
-    ) -> impl Future<Output = Result<(), Error>> + Send {
-        self.record(format!("add {repo} {at} {revision}"));
-        let answer = self.adds.take(at).unwrap_or(Ok(()));
+    fn add(&self, repo: Place, at: Place, revision: String) -> FutureResult<()> {
+        let repo_key = held(&repo);
+        let at_key = held(&at);
+        self.record(format!("add {repo_key} {at_key} {revision}"));
+        let answer = self.adds.take(&at_key).unwrap_or(Ok(()));
         if answer.is_ok() {
-            self.cut.lock().expect("cut").insert(at.to_owned(), revision.to_owned());
+            self.cut.lock().expect("cut").insert(at_key, revision);
         }
-        async move { answer }
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn remove(&self, at: &str) -> impl Future<Output = Result<(), Error>> + Send {
-        self.record(format!("remove {at}"));
-        let answer = self.removes.take(at).unwrap_or(Ok(()));
-        self.forget(at);
-        async move { answer }
+    fn remove(&self, at: Place) -> FutureResult<()> {
+        let key = held(&at);
+        self.record(format!("remove {key}"));
+        let answer = self.removes.take(&key).unwrap_or(Ok(()));
+        self.forget(&key);
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn pending(&self, at: &str) -> impl Future<Output = Result<Vec<Change>, Error>> + Send {
-        self.record(format!("pending {at}"));
-        let answer = self.pending.take(at).unwrap_or_else(|| Ok(Vec::new()));
-        async move { answer }
+    fn pending(&self, at: Place) -> FutureResult<Vec<Change>> {
+        let key = held(&at);
+        self.record(format!("pending {key}"));
+        let answer = self.pending.take(&key).unwrap_or_else(|| Ok(Vec::new()));
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn clone_repo(
-        &self, url: &str, at: &str, options: CloneOptions,
-    ) -> impl Future<Output = Result<(), Error>> + Send {
+    fn clone_repo(&self, url: String, at: Place, options: CloneOptions) -> FutureResult<()> {
         assert_eq!(options.depth, None, "a run clones whole: every label must resolve");
-        self.record(format!("clone {url} {at}"));
-        let answer = self.clones.take(at).unwrap_or(Ok(()));
-        async move { answer }
+        let key = held(&at);
+        self.record(format!("clone {url} {key}"));
+        let answer = self.clones.take(&key).unwrap_or(Ok(()));
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn fetch(&self, repo: &str, remote: &str) -> impl Future<Output = Result<(), Error>> + Send {
-        self.record(format!("fetch {repo} {remote}"));
-        let answer = self.fetches.take(repo).unwrap_or(Ok(()));
-        async move { answer }
+    fn fetch(&self, repo: Place, remote: String) -> FutureResult<()> {
+        let key = held(&repo);
+        self.record(format!("fetch {key} {remote}"));
+        let answer = self.fetches.take(&key).unwrap_or(Ok(()));
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn label(
-        &self, repo: &str, name: &str, revision: &str,
-    ) -> impl Future<Output = Result<(), Error>> + Send {
-        self.record(format!("label {repo} {name} {revision}"));
-        let answer = self.labels.take(repo).unwrap_or(Ok(()));
-        async move { answer }
+    fn label(&self, repo: Place, name: String, revision: String) -> FutureResult<()> {
+        let key = held(&repo);
+        self.record(format!("label {key} {name} {revision}"));
+        let answer = self.labels.take(&key).unwrap_or(Ok(()));
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn labelled(
-        &self, repo: &str, name: &str,
-    ) -> impl Future<Output = Result<String, Error>> + Send {
-        self.record(format!("labelled {repo} {name}"));
-        let answer =
-            self.labelleds.take(repo).unwrap_or_else(|| Err(Error::NotFound(name.to_owned())));
-        async move { answer }
+    fn labelled(&self, repo: Place, name: String) -> FutureResult<String> {
+        let key = held(&repo);
+        self.record(format!("labelled {key} {name}"));
+        let answer = self.labelleds.take(&key).unwrap_or(Err(Error::NotFound(name)));
+        async move { answer.map_err(Into::into) }.boxed()
     }
 
-    fn fetched(
-        &self, repo: &str, remote: &str, name: &str,
-    ) -> impl Future<Output = Result<String, Error>> + Send {
-        let call = format!("read `{remote}`'s `{name}` in `{repo}`");
-        async move { panic!("the engine never reads a remote's label, yet {call}") }
+    fn fetched(&self, repo: Place, remote: String, name: String) -> FutureResult<String> {
+        let key = held(&repo);
+        let call = format!("read `{remote}`'s `{name}` in `{key}`");
+        async move { panic!("the engine never reads a remote's label, yet {call}") }.boxed()
     }
 
-    fn push(
-        &self, repo: &str, remote: &str, label: &str,
-    ) -> impl Future<Output = Result<(), Error>> + Send {
-        let call = format!("pushed `{label}` to `{remote}` from `{repo}`");
-        async move { panic!("the engine never pushes, yet {call}") }
+    fn push(&self, repo: Place, remote: String, label: String) -> FutureResult<()> {
+        let key = held(&repo);
+        let call = format!("pushed `{label}` to `{remote}` from `{key}`");
+        async move { panic!("the engine never pushes, yet {call}") }.boxed()
     }
+}
+
+fn held(place: &Place) -> String {
+    place.path().display().to_string()
 }

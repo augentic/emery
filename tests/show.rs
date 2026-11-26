@@ -5,10 +5,9 @@
 mod support;
 
 use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
-use omnia_sdk::api::command::USAGE_EXIT;
+use omnia_sdk::command::USAGE_EXIT;
 use serde_json::{Value, json};
 use support::provider::{Provider, cli};
-use support::scratch::Scratch;
 use support::store::{seed, stage, stage_amendment, stage_fresh};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
@@ -32,7 +31,7 @@ const PLAN: &[u8] = include_bytes!("build/plan.json");
 #[tokio::test]
 async fn show_amendment() {
     let provider = Provider::idle();
-    let id = stage_amendment(&provider.storage, AMENDMENT);
+    let id = stage_amendment(&provider.storage, AMENDMENT).await;
 
     let resp = cli_ok(&provider, &["emery", "show", "amendment"]).await;
     assert_eq!(
@@ -68,7 +67,7 @@ async fn show_amendment_none() {
         "{envelope}"
     );
 
-    stage(&provider.storage, SPEC, DESIGN, PLAN);
+    stage(&provider.storage, SPEC, DESIGN, PLAN).await;
     let envelope = fail(&provider, &["emery", "show", "amendment"], 2, "nothing-staged").await;
     assert_eq!(envelope["message"], "no amendment is staged", "{envelope}");
 }
@@ -80,7 +79,7 @@ async fn show_amendment_none() {
 #[tokio::test]
 async fn amendment_pending() {
     let provider = Provider::idle();
-    let id = stage_amendment(&provider.storage, AMENDMENT);
+    let id = stage_amendment(&provider.storage, AMENDMENT).await;
 
     let envelope = fail(&provider, &["emery", "specify", SOURCE], 1, "amendment-pending").await;
     assert!(envelope["message"].as_str().is_some_and(|text| text.contains(&id)), "{envelope}");
@@ -116,7 +115,7 @@ async fn amendment_pending() {
     );
 
     assert!(
-        provider.storage.object(STAGED_CONTAINER, &format!("{id}/amendment.json")).is_some(),
+        provider.storage.object(STAGED_CONTAINER, &format!("{id}/amendment.json")).await.is_some(),
         "the amendment stays staged"
     );
     provider.model.assert_exhausted();
@@ -151,7 +150,7 @@ async fn show_hand_merged() {
         "{envelope}"
     );
 
-    stage_fresh(&provider.storage, SPEC, DESIGN, PLAN);
+    stage_fresh(&provider.storage, SPEC, DESIGN, PLAN).await;
     fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "spec-mismatch").await;
     assert!(provider.files.writes().is_empty(), "nothing is written");
     assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
@@ -192,7 +191,7 @@ async fn show_hand_mixed() {
         "{envelope}"
     );
 
-    stage_fresh(&provider.storage, SPEC, DESIGN, PLAN);
+    stage_fresh(&provider.storage, SPEC, DESIGN, PLAN).await;
     fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "spec-mismatch").await;
     assert!(provider.files.writes().is_empty(), "nothing is written");
     assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
@@ -203,13 +202,12 @@ async fn show_hand_mixed() {
 #[tokio::test]
 async fn corrupt_amendment() {
     let provider = Provider::idle();
-    let id = stage_amendment(&provider.storage, AMENDMENT);
+    let id = stage_amendment(&provider.storage, AMENDMENT).await;
     let tampered = String::from_utf8_lossy(AMENDMENT).replace("'hello'", "'hi'");
-    provider.storage.insert_object(
-        STAGED_CONTAINER,
-        &format!("{id}/amendment.json"),
-        tampered.as_bytes(),
-    );
+    provider
+        .storage
+        .insert_object(STAGED_CONTAINER, &format!("{id}/amendment.json"), tampered.as_bytes())
+        .await;
 
     fail(&provider, &["emery", "show", "amendment"], 3, "server_error").await;
 
@@ -221,7 +219,7 @@ async fn corrupt_amendment() {
         "base": {"revision": "r", "commit": "c"},
     })
     .to_string();
-    provider.storage.insert_state(STAGED_KEY, record.as_bytes());
+    provider.storage.insert_state(STAGED_KEY, record.as_bytes()).await;
     fail(&provider, &["emery", "show", "amendment"], 3, "server_error").await;
 }
 
@@ -292,10 +290,11 @@ async fn show_schedule() {
     );
 
     // `[target] budget` overrides the adapter's metadata without loading the adapter
-    let scratch = Scratch::new();
-    let config = scratch
-        .config("[target]\nadapter = \"acme:builder@2.1.0\"\nrepository = \".\"\nbudget = 6\n");
     let mut provider = Provider::idle();
+    let config = provider.write_project(
+        "tests/build/budget-six.toml",
+        "[target]\nadapter = \"acme:builder@2.1.0\"\nrepository = \".\"\nbudget = 6\n",
+    );
     provider.target.budget = Some(4);
     seed(&provider.files, SPEC, DESIGN, PLAN);
 
@@ -414,7 +413,7 @@ async fn schedule_budget_flag() {
 #[tokio::test]
 async fn schedule_staged_flag() {
     let provider = Provider::idle();
-    stage(&provider.storage, SPEC, DESIGN, PLAN);
+    stage(&provider.storage, SPEC, DESIGN, PLAN).await;
 
     let envelope =
         fail(&provider, &["emery", "show", "schedule", "--staged"], 1, "bad_request").await;
