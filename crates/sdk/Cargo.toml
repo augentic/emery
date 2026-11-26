@@ -13,8 +13,8 @@ readme = "README.md"
 # A guest crate: the worlds `export_source!` and `export_target!` export exist on
 # wasm32 alone, so that is the target the documentation opens on.
 [package.metadata.docs.rs]
-default-target = "wasm32-wasip2"
-targets = ["wasm32-wasip2", "x86_64-unknown-linux-gnu"]
+default-target = "wasm32-wasip3"
+targets = ["wasm32-wasip3", "x86_64-unknown-linux-gnu"]
 
 [lints]
 workspace = true

@@ -31,8 +31,8 @@ use std::path::{Component, Path, PathBuf};
 pub use adapter::{AdapterRef, Axis};
 pub use authority::Rank;
 pub use files::{Entry, EntryKind};
-use omnia_sdk::{Error, bad_request};
 pub use omnia_sdk::ErrorKind;
+use omnia_sdk::{Error, bad_request};
 pub use store::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 
 // How many times a question to the model, a slice's build, or a wave's

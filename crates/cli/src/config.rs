@@ -11,7 +11,6 @@ use emery_engine::show::{Artifact, ShowInput};
 use emery_engine::specify::{Scope, SourceConfig, SourceContent, SourceRepository};
 use emery_engine::vcs::TargetRef;
 use emery_engine::{AdapterRef, Rank, preopen_join, preopen_path};
-use omnia_sdk::plugins::Digest;
 use omnia_sdk::{Error, bad_request};
 
 // The config file a run naming no adapters looks for at the project root.
@@ -169,10 +168,7 @@ pub fn missing_target(verb: &str) -> Error {
 }
 
 fn target_required(description: impl Into<String>) -> Error {
-    Error::BadRequest {
-        code: "build-target-required".into(),
-        description: description.into(),
-    }
+    Error::bad_request("build-target-required", description)
 }
 
 // A positional target adapter, a `--repository`, an optional `--config` path,
@@ -304,7 +300,7 @@ struct SourceEntry {
     description: Option<String>,
     repository: Option<String>,
     revision: Option<String>,
-    digest: Option<Digest>,
+    digest: Option<String>,
     rank: Option<Rank>,
     #[serde(default)]
     scope: Scope,
@@ -372,7 +368,7 @@ struct TargetEntry {
     // Omitted, the adapter's package name, as on the command line.
     name: Option<String>,
     adapter: AdapterRef,
-    digest: Option<Digest>,
+    digest: Option<String>,
     repository: Option<String>,
     budget: Option<NonZeroUsize>,
 }

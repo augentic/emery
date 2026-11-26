@@ -8,84 +8,125 @@
 mod config;
 
 use std::borrow::Cow;
+use std::cell::Cell;
 use std::ffi::OsString;
+use std::fmt;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
-use emery_engine::amend::{AmendInput, amend};
-use emery_engine::apply::{ApplyInput, apply};
-use emery_engine::build::{BuildInput, build};
-use emery_engine::show::{Artifact, ShowInput, show};
-use emery_engine::specify::{SpecifyInput, specify};
-use emery_engine::{Provider, is_retryable};
-use omnia_sdk::Error;
-use omnia_sdk::api::command::{
-    Command, Failure, Format, Parsed, Response, Shell, Verbosity, completions, parse,
-};
-use omnia_sdk::api::{Client, Metadata};
+use emery_engine::amend::{AmendInput, AmendOutput, amend};
+use emery_engine::apply::{ApplyInput, ApplyOutput, apply};
+use emery_engine::build::{BuildInput, BuildOutput, build};
+use emery_engine::is_retryable;
+use emery_engine::show::{Artifact, ShowInput, ShowOutput, show};
+use emery_engine::specify::{SpecifyInput, SpecifyOutput, specify};
+use omnia_sdk::command::{Format, Render, Response, Shell, Verbosity, completions};
+use omnia_sdk::{Error, Handlers, Router};
+use serde::Serialize;
 use strum::VariantArray as _;
 
 const NAME: &str = "emery";
 const ABOUT: &str = "Deterministic primitives for spec-driven development";
 
-/// Executes the command described by `argv` using a [`Provider`].
+thread_local! {
+    static INVOKED: Cell<Option<Invoked>> = const { Cell::new(None) };
+}
+
+/// Command router every verb is registered on.
+pub fn router() -> Router {
+    Handlers::new()
+        .command("specify", specify_command)
+        .command("apply", apply_command)
+        .command("amend", amend_command)
+        .command("build", build_command)
+        .command("show", show_command)
+        .command("completions", completions_command)
+        .into_router()
+        .name(NAME)
+        .about(ABOUT)
+        .version(env!("CARGO_PKG_VERSION"))
+        .env_prefix("EMERY")
+        .hints(hint)
+}
+
+/// Executes the command described by `argv`.
 ///
 /// The returned [`Response`] contains the exit status and buffered standard
 /// output and error. Help, version, and usage responses are produced without
 /// invoking an engine operation.
-pub async fn run<P, I, T>(provider: P, argv: I) -> Response
+pub async fn run<I, T>(argv: I) -> Response
 where
-    P: Provider,
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let app = match parse::<App>(argv) {
-        Parsed::App(app) => app,
-        Parsed::Display(text) => return Response::success(text),
-        Parsed::Usage(error) => return Response::usage(&error),
-    };
-
-    let client = Client::new(provider);
-    let metadata = Metadata::from_env("EMERY");
-    let invoked = Invoked::from(&app.verb);
-    let format = app.format;
-    let command = Command::new(&client, &metadata, format).hints(move |error| invoked.hint(error));
-
-    match app.verb {
-        Verb::Completions { shell } => completions::<App>(shell, NAME),
-        Verb::Specify(arguments) => match SpecifyInput::try_from(arguments) {
-            Ok(input) => command.call(specify, input).await,
-            Err(error) => refuse(format, invoked, error),
-        },
-        Verb::Apply(arguments) => match ApplyInput::try_from(arguments) {
-            Ok(input) => command.call(apply, input).await,
-            Err(error) => refuse(format, invoked, error),
-        },
-        Verb::Amend(arguments) => match AmendInput::try_from(arguments) {
-            Ok(input) => command.call(amend, input).await,
-            Err(error) => refuse(format, invoked, error),
-        },
-        Verb::Build(arguments) => match BuildInput::try_from(arguments) {
-            Ok(input) => command.call(build, input).await,
-            Err(error) => refuse(format, invoked, error),
-        },
-        Verb::Show(arguments) => match ShowInput::try_from(arguments) {
-            Ok(input) => command.call(show, input).await,
-            Err(error) => refuse(format, invoked, error),
-        },
-    }
+    router().run(prepare_argv(argv)).await
 }
 
-fn refuse(format: Format, invoked: Invoked, error: Error) -> Response {
-    let mut failure = Failure::from(error);
-    if failure.hint().is_none()
-        && let Some(hint) = invoked.hint(failure.error())
+fn prepare_argv<I, T>(input: I) -> Vec<OsString>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    let mut args: Vec<OsString> = input.into_iter().map(Into::into).collect();
+    let has_format = args.iter().any(|arg| {
+        let lossy = arg.to_string_lossy();
+        lossy == "--format" || lossy.starts_with("--format=")
+    });
+    if !has_format
+        && let Ok(format) = std::env::var("EMERY_FORMAT")
+        && !format.is_empty()
     {
-        failure = failure.with_hint(hint);
+        let insert = args.len().min(1);
+        args.insert(insert, OsString::from("--format"));
+        args.insert(insert + 1, OsString::from(format));
     }
-    Response::failure(format.encode(&failure).bytes, failure.exit_code())
+    args
+}
+
+fn hint(error: &Error) -> Option<Cow<'static, str>> {
+    INVOKED.with(|invoked| invoked.get().and_then(|verb| verb.hint(error)))
+}
+
+async fn specify_command(args: SpecifyArgs) -> Result<SpecifyOutput, Error> {
+    INVOKED.with(|invoked| invoked.set(Some(Invoked::Specify)));
+    specify(SpecifyInput::try_from(args)?).await
+}
+
+async fn apply_command(args: ApplyArgs) -> Result<ApplyOutput, Error> {
+    INVOKED.with(|invoked| invoked.set(Some(Invoked::Apply)));
+    apply(ApplyInput::try_from(args)?).await
+}
+
+async fn amend_command(args: AmendArgs) -> Result<AmendOutput, Error> {
+    INVOKED.with(|invoked| invoked.set(Some(Invoked::Amend)));
+    amend(AmendInput::try_from(args)?).await
+}
+
+async fn build_command(args: BuildArgs) -> Result<BuildOutput, Error> {
+    INVOKED.with(|invoked| invoked.set(Some(Invoked::Build)));
+    build(BuildInput::try_from(args)?).await
+}
+
+async fn show_command(args: ShowArgs) -> Result<ShowOutput, Error> {
+    INVOKED.with(|invoked| invoked.set(Some(Invoked::Show)));
+    show(ShowInput::try_from(args)?).await
+}
+
+async fn completions_command(args: CompletionsArgs) -> Result<CompletionScript, Error> {
+    INVOKED.with(|invoked| invoked.set(Some(Invoked::Completions)));
+    Ok(CompletionScript(completions::<App>(args.shell, NAME).stdout))
+}
+
+#[derive(Serialize)]
+#[serde(transparent)]
+struct CompletionScript(Vec<u8>);
+
+impl Render for CompletionScript {
+    fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
+        write!(out, "{}", String::from_utf8_lossy(&self.0))
+    }
 }
 
 // `bin_name` pins usage text to `emery`: Omnia forwards the engine guest's
@@ -243,6 +284,14 @@ enum Verb {
 }
 
 #[derive(Debug, clap::Args)]
+#[command(long_about = COMPLETIONS_DESC)]
+struct CompletionsArgs {
+    /// Shell to generate completions for
+    shell: Shell,
+}
+
+#[derive(Debug, clap::Args)]
+#[command(long_about = SPECIFY_DESC)]
 struct SpecifyArgs {
     /// Workspace-backed source adapters, each an exact package reference
     /// `namespace:name@version`. Each source is named for its adapter's
@@ -282,6 +331,7 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
 }
 
 #[derive(Debug, clap::Args)]
+#[command(long_about = APPLY_DESC)]
 struct ApplyArgs {
     /// The repository the revision is sealed in: a URL, cloned under .emery/vcs/repos/<name>, or `.` for the project checkout; over `--config`, it replaces the `[target] repository`.
     #[arg(long, value_name = "URL|.")]
@@ -302,6 +352,7 @@ impl TryFrom<ApplyArgs> for ApplyInput {
 }
 
 #[derive(Debug, clap::Args)]
+#[command(long_about = AMEND_DESC)]
 struct AmendArgs {
     /// Workspace-backed change source adapters, each an exact package reference
     /// `namespace:name@version`. Each source is named for its adapter's
@@ -337,6 +388,7 @@ impl TryFrom<AmendArgs> for AmendInput {
 }
 
 #[derive(Debug, clap::Args)]
+#[command(long_about = BUILD_DESC)]
 struct BuildArgs {
     /// The target adapter, an exact package reference `namespace:name@version`; over `--config`, it replaces the `[target] adapter`.
     adapter: Option<String>,
@@ -370,6 +422,7 @@ impl TryFrom<BuildArgs> for BuildInput {
 }
 
 #[derive(Debug, clap::Args)]
+#[command(long_about = SHOW_DESC)]
 struct ShowArgs {
     /// Reviewable artifact of the current revision, or the staged amendment.
     #[arg(value_parser = artifacts())]
@@ -423,12 +476,15 @@ enum Invoked {
 impl Invoked {
     fn hint(self, error: &Error) -> Option<Cow<'static, str>> {
         let code = error.code();
-        let hint = match code.as_str() {
+        let hint = match code {
             "bad_gateway" | "bad_request" if self == Self::Build && is_retryable(error) => {
                 "re-run `emery build` to resume from the last verified wave"
             }
             "unsupported-version" => {
                 "update emery: `brew upgrade emery`, or `cargo install --git https://github.com/augentic/emery --locked`"
+            }
+            "conflict" => {
+                "resolve the conflict and re-run, or name a different digest or adapter version"
             }
             "specify-source-required" if self == Self::Amend => {
                 "pass one or more adapters to `emery amend`, or `--config <path>`"
@@ -437,7 +493,7 @@ impl Invoked {
                 "pass one or more adapters to `emery specify`, or add `emery.toml`"
             }
             "build-target-required" => self.target_hint(),
-            "spec-not-generated" => self.not_generated_hint(&error.description()),
+            "spec-not-generated" => self.not_generated_hint(error.description()),
             "spec-mismatch" if error.description().contains("edited or merged by hand") => {
                 "keep one side's `spec/` whole (`git checkout <branch> -- spec/`) and re-run `emery amend`"
             }

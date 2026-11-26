@@ -210,8 +210,7 @@ pub async fn load<'a>(
 pub async fn load_target(
     adapter: &AdapterRef, digest: Option<&str>,
 ) -> Result<Loaded<TargetMetadata>, Error> {
-    let loaded =
-        load_axis(Axis::Target, [(adapter, digest)], target_adapter::metadata).await?;
+    let loaded = load_axis(Axis::Target, [(adapter, digest)], target_adapter::metadata).await?;
     loaded.into_values().next().ok_or_else(|| server_error!("adapter `{adapter}` was not loaded"))
 }
 
