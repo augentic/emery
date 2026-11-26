@@ -16,13 +16,15 @@ struct Adapter;
 
 impl Guest for Adapter {
     fn metadata(id: export::AdapterId) -> export::TargetMetadata {
-        // Metadata is sync on the host poll; rules staged in `state.json` are applied at `Init`.
+        // Metadata is sync on the host poll; reading the script mount here traps on wasip3.
         let rules = if id.starts_with("acme:builder") || id.starts_with("acme:target") {
             vec![MergeRule::union("src/*/mod.rs"), MergeRule::ours("Cargo.lock")]
         } else {
             Vec::new()
         };
-        export::TargetMetadata::from(emery_sdk::target::metadata(&rules, NonZeroU32::new(12)))
+        let mut metadata = emery_sdk::target::metadata(&rules, NonZeroU32::new(12));
+        metadata.emery_version = scripted_emery_version(&id);
+        export::TargetMetadata::from(metadata)
     }
 
     async fn run(
@@ -30,6 +32,10 @@ impl Guest for Adapter {
     ) -> Result<export::Outcome, export::Error> {
         future::ready(dispatch(&id, &workspace, task)).await
     }
+}
+
+fn scripted_emery_version(id: &str) -> Option<String> {
+    if id == "acme:builderv100" { Some("100.0.0".into()) } else { None }
 }
 
 fn dispatch(

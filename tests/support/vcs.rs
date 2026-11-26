@@ -99,6 +99,11 @@ impl VcsScript {
         *self.files.lock().expect("files") = Some(files);
     }
 
+    /// Marks `repo` as initialised so [`head`](Self::head) reads scripted heads for it.
+    pub fn mark_ready(&self, repo: &str) {
+        self.mark_inited(repo);
+    }
+
     /// Returns every call so far, in order.
     pub fn calls(&self) -> Vec<String> {
         self.calls.lock().expect("calls").clone()
@@ -243,7 +248,11 @@ impl VcsClient for VcsScript {
         self.record(format!("add {repo_key} {at_key} {revision}"));
         let answer = self.adds.take(&at_key).unwrap_or(Ok(()));
         if answer.is_ok() {
-            self.cut.lock().expect("cut").insert(at_key, revision);
+            let replant = at_key.contains("integration") || at_key.contains("worktrees");
+            self.cut.lock().expect("cut").insert(at_key.clone(), revision);
+            if replant && let Some(files) = self.files.lock().expect("files").as_ref() {
+                files.replant(&at_key);
+            }
         }
         async move { answer.map_err(Into::into) }.boxed()
     }

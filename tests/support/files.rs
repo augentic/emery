@@ -13,12 +13,15 @@ type BytesSnapshot = BTreeMap<String, Vec<u8>>;
 const REVISION_DIR: &str = ".emery/vcs/revision";
 const INTEGRATION: &str = "./.emery/vcs/integration";
 
+type Preserved = BTreeMap<String, BTreeMap<String, Vec<u8>>>;
+
 /// Tracks revision-tree and working-copy changes across a run.
 #[derive(Clone, Debug, Default)]
 pub struct Files {
     project: Option<PathBuf>,
     before_revision: Arc<Mutex<BytesSnapshot>>,
     before_project: Arc<Mutex<BytesSnapshot>>,
+    preserved: Arc<Mutex<Preserved>>,
 }
 
 impl Files {
@@ -71,6 +74,9 @@ impl Files {
 
     /// Removes `path` beneath working copy `at` when it exists.
     pub fn remove(&self, at: &str, path: &str) {
+        if let Some(paths) = self.preserved.lock().expect("preserved").get_mut(at) {
+            paths.remove(path);
+        }
         let file = self.resolve(at, path);
         let _ = std::fs::remove_file(&file);
     }
@@ -83,6 +89,20 @@ impl Files {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Forgets held files for a working copy so the next cut does not replant them.
+    pub fn clear_preserved(&self, at: &str) {
+        let stripped = at.strip_prefix("./").unwrap_or(at);
+        let mut keys = vec![at.to_owned(), stripped.to_owned()];
+        if !at.starts_with("./") {
+            keys.push(format!("./{stripped}"));
+        }
+        let mut preserved = self.preserved.lock().expect("preserved");
+        for key in keys {
+            preserved.remove(&key);
+        }
+        drop(preserved);
+    }
+
     /// Lays text at `path` beneath working copy `at` on the project mount.
     pub fn holds(&self, at: &str, path: &str, content: &str) {
         self.holds_bytes(at, path, content.as_bytes());
@@ -90,12 +110,33 @@ impl Files {
 
     /// Lays bytes at `path` beneath working copy `at` on the project mount.
     pub fn holds_bytes(&self, at: &str, path: &str, content: &[u8]) {
+        self.preserved
+            .lock()
+            .expect("preserved")
+            .entry(at.to_owned())
+            .or_default()
+            .insert(path.to_owned(), content.to_vec());
         self.ensure_working_copy(at);
         let file = self.resolve(at, path);
         if let Some(parent) = file.parent() {
             std::fs::create_dir_all(parent).expect("mkdir working copy path");
         }
         std::fs::write(file, content).expect("write working copy file");
+    }
+
+    /// Rewrites every path recorded for `at` after a working copy was cut again.
+    pub fn replant(&self, at: &str) {
+        let Some(paths) = self.preserved.lock().expect("preserved").get(at).cloned() else {
+            return;
+        };
+        self.ensure_working_copy(at);
+        for (path, content) in paths {
+            let file = self.resolve(at, &path);
+            if let Some(parent) = file.parent() {
+                std::fs::create_dir_all(parent).expect("mkdir working copy path");
+            }
+            std::fs::write(file, content).expect("replant working copy file");
+        }
     }
 
     /// Lays directory entries beneath `at` so [`list`](emery_engine::files::list) sees them.

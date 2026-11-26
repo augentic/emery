@@ -451,6 +451,20 @@ impl Provider {
         Some(Slice::from(wire))
     }
 
+    /// Clears queued build failures for `slice_id` in memory and on the script mount.
+    pub fn clear_target_failures(&self, slice_id: &str) {
+        self.target.failures.lock().expect("failures").remove(slice_id);
+        let path = self.project.path().join(MOUNT).join(STATE);
+        let Ok(bytes) = fs::read(&path) else {
+            return;
+        };
+        let Ok(mut combined) = serde_json::from_slice::<CombinedScript>(&bytes) else {
+            return;
+        };
+        combined.target.failures.remove(slice_id);
+        fs::write(&path, serde_json::to_vec(&combined).expect("state bytes")).expect("write state");
+    }
+
     fn ingest_target_script(&self) {
         let path = self.project.path().join(MOUNT).join(STATE);
         let Ok(bytes) = fs::read(path) else {
@@ -633,6 +647,7 @@ fn publish_adapters(store: &Scratch, registry: &Scratch, source: &Path, target: 
         "acme:local@1.0.0",
         "acme:builder@1.0.0",
         "acme:builder@2.1.0",
+        "acme:builderv100@2.1.0",
         "acme:target@0.1.0",
         "emery:documentation@1.2.0",
         "emery:intent@1.0.0",
