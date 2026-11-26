@@ -132,3 +132,17 @@ pub async fn staged_at(storage: &Storage, key: &str) -> String {
     assert_eq!(record["kind"], "revision", "{record}");
     record["id"].as_str().expect("staged record id").to_owned()
 }
+
+/// Reads a namespaced staged record at `{project}/{STAGED_KEY}`.
+pub async fn project_staged(storage: &Storage, project: &str) -> String {
+    staged_at(storage, &format!("{project}/{STAGED_KEY}")).await
+}
+
+/// Whether `container` is absent or holds no objects.
+pub async fn container_empty(storage: &Storage, container: &str) -> bool {
+    let store = Arc::clone(&storage.blobstore);
+    if !store.container_exists(container.to_owned()).await.unwrap_or(false) {
+        return true;
+    }
+    storage.list_objects(container).await.is_empty()
+}

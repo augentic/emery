@@ -27,6 +27,7 @@ use test_programs::script::{
 };
 
 use super::guest::engine_guest;
+use super::prefix::{PrefixedBlobStore, PrefixedKeyValue};
 use super::storage::Storage;
 use super::vcs::VcsScript;
 
@@ -184,6 +185,7 @@ pub struct Provider {
     guest: PathBuf,
     script_source: PathBuf,
     script_target: PathBuf,
+    store_scope: Option<String>,
 }
 
 impl Provider {
@@ -199,6 +201,18 @@ impl Provider {
     pub fn over(storage: Storage, answers: impl IntoIterator<Item = impl Into<String>>) -> Self {
         let mut provider = Self::answering(answers);
         provider.storage = storage;
+        provider
+    }
+
+    /// One shared backend bundle with keyvalue and blobstore scoped under `scope`.
+    pub fn scoped(
+        backends: Backends, scope: impl Into<String>,
+        answers: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        let storage = Storage::from_backends(&backends);
+        let mut provider = Self::build_on(backends, ScriptedModel::answering(answers));
+        provider.storage = storage;
+        provider.store_scope = Some(scope.into());
         provider
     }
 
@@ -263,19 +277,20 @@ impl Provider {
             || HostModel::Scripted(self.model.clone()),
             |failing| HostModel::Failing(failing.clone()),
         );
-        let backends = self.backends.clone().model(model).vcs(self.vcs.clone());
         let captured = self.deployment(argv).captured();
-        let run = captured
-            .run(backends, |deployment| {
-                deployment.host::<WasiModel>()?;
-                deployment.host::<WasiKeyValue>()?;
-                deployment.host::<WasiBlobStore>()?;
-                deployment.host::<WasiOtel>()?;
-                deployment.host::<WasiVcs>()?;
-                Ok(())
-            })
-            .await
-            .expect("emery runs");
+        let run = if let Some(scope) = &self.store_scope {
+            let backends = self
+                .backends
+                .clone()
+                .model(model)
+                .vcs(self.vcs.clone())
+                .keyvalue(PrefixedKeyValue::new(scope.clone(), self.backends.keyvalue.clone()))
+                .blobstore(PrefixedBlobStore::new(scope.clone(), self.backends.blobstore.clone()));
+            captured.run(backends, link_stores).await.expect("emery runs")
+        } else {
+            let backends = self.backends.clone().model(model).vcs(self.vcs.clone());
+            captured.run(backends, link_stores).await.expect("emery runs")
+        };
         self.ingest_calls();
         eprintln!(
             "provider cli {:?} {:.3?}",
@@ -288,11 +303,14 @@ impl Provider {
 
 impl Provider {
     fn build(model: ScriptedModel) -> Self {
+        Self::build_on(block_on(Backends::defaults()), model)
+    }
+
+    fn build_on(backends: Backends, model: ScriptedModel) -> Self {
         let project = scratch();
         seed_build_fixtures(project.path());
         let store = scratch();
         let registry = scratch();
-        let backends = block_on(Backends::defaults());
         let storage = Storage::from_backends(&backends);
         let mut files = super::files::Files::default();
         files.bind(&project);
@@ -316,6 +334,7 @@ impl Provider {
             guest,
             script_source,
             script_target,
+            store_scope: None,
         }
     }
 
@@ -539,6 +558,23 @@ pub const fn evidence(claims: Vec<Claim>) -> Evidence {
     Evidence { claims }
 }
 
+fn link_stores<
+    B: omnia::Provides<WasiModel>
+        + omnia::Provides<WasiKeyValue>
+        + omnia::Provides<WasiBlobStore>
+        + omnia::Provides<WasiOtel>
+        + omnia::Provides<WasiVcs>,
+>(
+    deployment: &mut omnia::Deployment<B>,
+) -> anyhow::Result<()> {
+    deployment.host::<WasiModel>()?;
+    deployment.host::<WasiKeyValue>()?;
+    deployment.host::<WasiBlobStore>()?;
+    deployment.host::<WasiOtel>()?;
+    deployment.host::<WasiVcs>()?;
+    Ok(())
+}
+
 fn response_of(run: Run) -> Response {
     Response {
         stdout: run.stdout.into_bytes(),
@@ -575,6 +611,7 @@ fn publish_adapters(store: &Scratch, registry: &Scratch, source: &Path, target: 
         "emery:intent@1.0.0",
         "emery:demo@1.2.0",
         "emery:docs@1.2.0",
+        "acme:ledger@2.1.0",
     ] {
         let wasm = if reference.starts_with("acme:builder") || reference == "acme:target@0.1.0" {
             target

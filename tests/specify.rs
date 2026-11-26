@@ -5,13 +5,17 @@
 mod support;
 
 use emery_adapter::source::{Claim, ClaimKind, Evidence, SourceContent, SourceKind};
+use emery_engine::vcs::{REVISION, RevisionMessage, SPECIFICATION};
 use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::{bad_gateway, bad_request};
 use omnia_test::SeenFormat;
+use omnia_test::host::Backends;
+use omnia_wasi_vcs::Error;
 use serde_json::Value;
-use support::provider::{Provider, Rendezvous, claim, evidence, requirement, retire};
-use support::storage::{Storage, staged};
-use support::store::{revision as revision_id, written};
+use support::provider::{Provider, Rendezvous, claim, digest, evidence, requirement, retire};
+use support::storage::{Storage, container_empty, project_staged, staged};
+use support::store::{revision as revision_id, seed, written};
+use support::vcs::HEAD;
 use support::{cli, cli_ok, envelope_bytes, fail};
 
 const SOURCE: &str = "acme:source@1.0.0";
@@ -3423,7 +3427,718 @@ async fn name_defaulted() {
     provider.model.assert_exhausted();
 }
 
-// --- helpers (lines 1–1314 portion) ---
+// --- repository sources ---
+
+mod repository {
+    use super::*;
+
+    const URL: &str = "https://example.com/acme/shop.git";
+    const CLONE: &str = "./.emery/vcs/repos/f4c82940a714c3c5";
+    const CHECKOUT: &str = "./.emery/vcs/sources/upstream";
+
+    fn upstream(provider: &Provider, body: &str) -> String {
+        provider.write_project(
+            "emery.toml",
+            format!(
+                "[[source]]\nname = \"upstream\"\nadapter = \"emery:documentation@1.2.0\"\n\
+                 repository = \"{URL}\"\n{body}"
+            ),
+        )
+    }
+
+    #[tokio::test]
+    async fn repository_source() {
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        let config = upstream(&provider, "revision = \"v1.2.0\"\npath = \"docs/api\"\n");
+
+        let resp = cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+
+        let stdout = String::from_utf8_lossy(&resp.stdout);
+        assert!(
+            stdout.contains(&format!("\n  upstream read from {URL} at v1.2.0: v1.2.0-commit\n")),
+            "{stdout}"
+        );
+        provider.vcs.assert_subsequence(
+            &[
+                format!("clone {URL} {CLONE}"),
+                format!("resolve {CLONE} v1.2.0"),
+                format!("add {CLONE} {CHECKOUT} v1.2.0-commit"),
+                format!("remove {CHECKOUT}"),
+            ],
+            "repository source lifecycle",
+        );
+        let calls = provider.source.calls();
+        let (_, input) = calls.first().expect("one extract dispatch");
+        assert_eq!(input.name, "upstream");
+        assert_eq!(
+            input.content,
+            SourceContent::Workspace(format!("{CHECKOUT}/docs/api")),
+            "the lend is the path within the working copy"
+        );
+        assert_eq!(calls.len(), 1, "the adapter loads before the repository is touched");
+        drop(calls);
+        provider.model.assert_exhausted();
+
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        let config = upstream(&provider, "revision = \"main\"\n");
+        provider.vcs.clones.script(CLONE, Err(Error::Exists(CLONE.to_owned())));
+        let resp =
+            cli_ok(&provider, &["emery", "--format", "json", "specify", "--config", &config]).await;
+        let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+        assert_eq!(
+            envelope["repositories"],
+            serde_json::json!([
+                {"source": "upstream", "repository": URL, "revision": "main", "commit": "main-commit"}
+            ]),
+            "{envelope}"
+        );
+        provider.vcs.assert_subsequence(
+            &[format!("clone {URL} {CLONE}"), format!("fetch {CLONE} origin")],
+            "found, so fetched",
+        );
+        let calls = provider.source.calls();
+        assert_eq!(calls[0].1.content, SourceContent::Workspace(CHECKOUT.to_owned()));
+        drop(calls);
+        provider.model.assert_exhausted();
+    }
+
+    #[tokio::test]
+    async fn repo_shared_clone() {
+        let provider =
+            Provider::answering([baseline_grouping(2).as_str(), SPEC_ANSWER, DESIGN_ANSWER]);
+        let config = provider.write_project(
+            "emery.toml",
+            "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n\
+             repository = \"https://example.com/acme/shop.git\"\nrevision = \"main\"\n\n\
+             [[source]]\nname = \"api\"\nadapter = \"emery:documentation@1.2.0\"\n\
+             repository = \"HTTPS://Example.com/acme/shop/\"\nrevision = \"v2\"\npath = \"api\"\n",
+        );
+
+        cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
+
+        provider.vcs.assert_subsequence(
+            &[
+                format!("clone {URL} {CLONE}"),
+                format!("resolve {CLONE} main"),
+                format!("add {CLONE} ./.emery/vcs/sources/docs main-commit"),
+                format!("resolve {CLONE} v2"),
+                format!("add {CLONE} ./.emery/vcs/sources/api v2-commit"),
+                "remove ./.emery/vcs/sources/docs".to_owned(),
+                "remove ./.emery/vcs/sources/api".to_owned(),
+            ],
+            "shared clone",
+        );
+        let roots: std::collections::BTreeSet<String> = provider
+            .source
+            .calls()
+            .into_iter()
+            .map(|(_, input)| match input.content {
+                SourceContent::Workspace(ref root) => root.clone(),
+                SourceContent::Value(ref text) => text.clone(),
+            })
+            .collect();
+        assert_eq!(
+            roots,
+            std::collections::BTreeSet::from([
+                "./.emery/vcs/sources/docs".to_owned(),
+                "./.emery/vcs/sources/api/api".to_owned(),
+            ]),
+            "each source reads in its own working copy"
+        );
+        provider.model.assert_exhausted();
+    }
+
+    #[tokio::test]
+    async fn repo_extract_error() {
+        let mut provider = Provider::idle();
+        let config = upstream(&provider, "revision = \"main\"\n");
+        provider
+            .source
+            .evidence
+            .insert("upstream".to_string(), Err(bad_gateway!("the adapter exploded")));
+        provider.vcs.adds.script(CHECKOUT, Err(Error::Exists(CHECKOUT.to_owned())));
+
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 4, "bad_gateway").await;
+
+        assert_message(&envelope, "the adapter exploded");
+        provider.vcs.assert_subsequence(
+            &[
+                format!("clone {URL} {CLONE}"),
+                format!("resolve {CLONE} main"),
+                format!("add {CLONE} {CHECKOUT} main-commit"),
+                format!("remove {CHECKOUT}"),
+                format!("add {CLONE} {CHECKOUT} main-commit"),
+                format!("remove {CHECKOUT}"),
+            ],
+            "extract error cleanup",
+        );
+        provider.vcs.assert_exhausted();
+    }
+
+    #[tokio::test]
+    async fn repo_missing_revision() {
+        let provider = Provider::idle();
+        let config = upstream(&provider, "revision = \"v9\"\n");
+
+        provider.vcs.resolves.script(CLONE, Err(Error::NotFound("v9".to_owned())));
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 2, "revision-not-found")
+                .await;
+        assert_message(&envelope, &format!("repository `{URL}` has no `v9`"));
+        assert!(
+            envelope["hint"].as_str().is_some_and(|hint| hint.contains("`revision`")),
+            "{envelope}"
+        );
+        assert!(provider.source.calls().is_empty(), "no source is asked");
+
+        provider.vcs.clones.script(CLONE, Err(Error::Access("authentication failed".to_owned())));
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 4, "bad_gateway").await;
+        assert_message(&envelope, &format!("repository `{URL}`: authentication failed"));
+        provider.vcs.assert_exhausted();
+    }
+
+    #[tokio::test]
+    async fn repository_config() {
+        let cases: &[(&str, &str)] = &[
+            (
+                "[[source]]\nname = \"upstream\"\nadapter = \"emery:documentation@1.2.0\"\n\
+                 repository = \"https://example.com/acme/shop.git\"\n",
+                "source `upstream` sets `repository` without `revision`",
+            ),
+            (
+                "[[source]]\nname = \"upstream\"\nadapter = \"emery:documentation@1.2.0\"\n\
+                 revision = \"main\"\n",
+                "source `upstream` sets `revision` without `repository`",
+            ),
+            (
+                "[[source]]\nname = \"upstream\"\nadapter = \"emery:intent@1.0.0\"\n\
+                 repository = \"https://example.com/acme/shop.git\"\nrevision = \"main\"\n\
+                 description = \"Ship it.\"\n",
+                "source `upstream` sets both `repository` and `description`",
+            ),
+            (
+                "[[source]]\nname = \"upstream\"\nadapter = \"emery:documentation@1.2.0\"\n\
+                 repository = \"https://example.com/acme/shop.git\"\nrevision = \"main\"\n\
+                 path = \"../sibling\"\n",
+                "source `upstream`: path `../sibling` must lie within the repository",
+            ),
+        ];
+        for (body, fragment) in cases {
+            let provider = Provider::idle();
+            let config = provider.write_project("emery.toml", body);
+            let envelope =
+                fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+            assert_message(&envelope, fragment);
+            assert!(
+                provider.source.metadata.lock().expect("metadata").is_empty(),
+                "a refused list gates nothing: {body}"
+            );
+            assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
+        }
+    }
+}
+
+mod reference {
+    use super::*;
+
+    #[tokio::test]
+    async fn exact_ref() {
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+
+        cli_ok(&provider, &["emery", "specify", "emery:demo@1.2.0"]).await;
+
+        let calls = provider.source.calls();
+        let (id, input) = calls.first().expect("one extract dispatch");
+        assert_eq!(id, "emery:demo", "the package is gated without its version");
+        assert_eq!(input.name, "demo", "the source name is the package name");
+        drop(calls);
+        provider.model.assert_exhausted();
+    }
+
+    #[tokio::test]
+    async fn malformed_ref() {
+        let cases: &[(&str, &str)] = &[
+            ("emery:demo", "adapter `emery:demo` names no version"),
+            ("demo@1.2.0", "adapter `demo@1.2.0` names no namespace"),
+            ("demo", "adapter `demo` names no version"),
+            ("emery:demo@main", "adapter `emery:demo@main` has an invalid version `main`"),
+            ("emery:@1.2.0", "adapter `emery:@1.2.0` is not `namespace:name@version`"),
+            ("Emery:demo@1.2.0", "adapter `Emery:demo@1.2.0` is not `namespace:name@version`"),
+            ("./demo.wasm", "adapter `./demo.wasm` names no version"),
+            ("/tmp/demo.wasm", "adapter `/tmp/demo.wasm` names no version"),
+            ("https://github.com/acme/api", "GitHub URLs are not supported"),
+        ];
+        for (reference, fragment) in cases {
+            let provider = Provider::idle();
+            let envelope =
+                fail(&provider, &["emery", "specify", reference], 1, "adapter-reference").await;
+            assert_message(&envelope, fragment);
+            assert_eq!(
+                envelope["hint"],
+                "an adapter is an exact package reference, `namespace:name@version`",
+                "{envelope}"
+            );
+            assert!(
+                provider.source.metadata.lock().expect("metadata").is_empty(),
+                "a malformed reference loads nothing: {reference}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn registries_table() {
+        let provider = Provider::idle();
+        let config = provider.write_project(
+            "emery.toml",
+            "[[source]]\nname = \"ledger\"\nadapter = \"acme:ledger@2.1.0\"\n\n\
+             [registries]\nacme = \"registry.acme.io\"\n",
+        );
+
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+
+        assert_message(&envelope, "unknown field `registries`");
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a file that does not parse loads nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn version_collision() {
+        let provider = Provider::idle();
+        let config = provider.write_project(
+            "emery.toml",
+            "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\n\n\
+             [[source]]\nname = \"api\"\nadapter = \"emery:documentation@1.3.0\"\n",
+        );
+
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+
+        assert_message(
+            &envelope,
+            "adapters `emery:documentation@1.2.0` and `emery:documentation@1.3.0`",
+        );
+        assert_message(&envelope, "would both register as `emery:documentation`");
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a colliding list loads nothing"
+        );
+
+        let envelope = fail(
+            &provider,
+            &["emery", "specify", "emery:documentation@1.2.0", "emery:documentation@1.3.0"],
+            1,
+            "bad_request",
+        )
+        .await;
+        assert_message(&envelope, "source `documentation` appears twice");
+    }
+
+    #[tokio::test]
+    async fn argv_with_bad_config() {
+        let argv = ["emery", "specify", "acme:ledger@2.1.0"];
+
+        for (entry, refusal) in [
+            (
+                "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\nbranch = \
+                 \"main\"\n",
+                "unknown field `branch`",
+            ),
+            (
+                "[[source]]\nname = \"docs\"\nadapter = \"emery:documentation@1.2.0\"\npath = \
+                 \"../../outside\"\n",
+                "must be relative to the project root",
+            ),
+            ("[[source]]\nname = \"local\"\nadapter = \"/tmp/source.wasm\"\n", "names no version"),
+        ] {
+            let provider = Provider::idle();
+            provider.write_project("emery.toml", entry);
+            let envelope = fail(&provider, &["emery", "specify"], 1, "bad_request").await;
+            assert_message(&envelope, refusal);
+            let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+
+            cli_ok(&provider, &argv).await;
+
+            let ledger = guest("ledger");
+            let calls = provider.source.calls();
+            let (id, _) = calls.first().expect("one extract dispatch");
+            assert_eq!(id, &ledger, "argv names the run's only source: {entry}");
+            assert!(
+                shown(&provider, "spec").await.contains("Sources: [ledger:greeting.behaviour]"),
+                "the file's `[[source]]` entries stay out of an argv run"
+            );
+            provider.model.assert_exhausted();
+        }
+    }
+}
+
+mod digest {
+    use super::*;
+
+    #[tokio::test]
+    async fn conflict() {
+        let provider = Provider::idle();
+        let config = provider.write_project(
+            "emery.toml",
+            format!(
+                "[[source]]\nname = \"docs\"\nadapter = \"{SOURCE}\"\ndigest = \"{}\"\n\n\
+                 [[source]]\nname = \"api\"\nadapter = \"{SOURCE}\"\ndigest = \"{}\"\n",
+                digest("cd"),
+                digest("ab")
+            ),
+        );
+
+        let envelope =
+            fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
+
+        assert_message(&envelope, &format!("adapter `{SOURCE}` is pinned to two digests"));
+        assert!(
+            provider.source.metadata.lock().expect("metadata").is_empty(),
+            "a conflicting pin loads nothing"
+        );
+    }
+}
+
+mod store {
+    use super::*;
+
+    const SPEC: &[u8] = include_bytes!("build/spec.json");
+    const DESIGN: &[u8] = include_bytes!("build/design.json");
+    const PLAN: &[u8] = include_bytes!("build/plan.json");
+    const LABELLED: &str = "e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4";
+    const EARLIER: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+
+    fn lineage() -> Vec<u8> {
+        let spec = std::str::from_utf8(SPEC).expect("spec.json is UTF-8");
+        spec.replace("\"parent\": null", &format!("\"parent\": \"{EARLIER}\"")).into_bytes()
+    }
+
+    #[tokio::test]
+    async fn corrupt_current() {
+        for bytes in [&b"0123456789abcdef"[..], &b"\xff\xfe"[..]] {
+            let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+            provider.storage.insert_state(REVISION_KEY, bytes).await;
+            fail(
+                &provider,
+                &["emery", "show", "spec", "--config", PROJECT_CONFIG],
+                2,
+                "spec-not-generated",
+            )
+            .await;
+
+            let resp = cli_ok(
+                &provider,
+                &["emery", "specify", &reference("docs"), "--config", PROJECT_CONFIG],
+            )
+            .await;
+            let stdout = String::from_utf8_lossy(&resp.stdout);
+            assert!(!stdout.contains("diff vs"), "a corrupt pointer yields no diff: {stdout}");
+            let id = staged(&provider.storage).await;
+            assert!(
+                provider
+                    .storage
+                    .object(STAGED_CONTAINER, &format!("{id}/spec.json"))
+                    .await
+                    .is_some()
+            );
+
+            cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+            assert_eq!(
+                committed(&provider.storage).await,
+                id,
+                "the seal swaps over the corruption"
+            );
+            cli_ok(&provider, &["emery", "show", "spec", "--config", PROJECT_CONFIG]).await;
+            provider.model.assert_exhausted();
+        }
+    }
+
+    #[tokio::test]
+    async fn corrupt_staged() {
+        for bytes in [&b"0123456789abcdef"[..], &b"\xff\xfe"[..]] {
+            let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+            provider.storage.insert_state(STAGED_KEY, bytes).await;
+            fail(&provider, &["emery", "show", "spec", "--staged"], 3, "server_error").await;
+            fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 3, "server_error")
+                .await;
+
+            cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+            let id = staged(&provider.storage).await;
+            assert_ne!(id.as_bytes(), bytes, "the candidate stands in the slot");
+            cli_ok(&provider, &["emery", "show", "spec", "--staged"]).await;
+            provider.model.assert_exhausted();
+        }
+    }
+
+    #[tokio::test]
+    async fn tampered_revision() {
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        cli_ok(
+            &provider,
+            &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+        )
+        .await;
+        let id = committed(&provider.storage).await;
+        let sealed = committed_document(&provider, "spec");
+        provider.write_project(&format!("{REVISION}/{SPECIFICATION}/spec.json"), "{}\n");
+        for _ in 0..3 {
+            provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+        }
+
+        let envelope = fail(
+            &provider,
+            &["emery", "show", "spec", "--config", PROJECT_CONFIG],
+            1,
+            "spec-mismatch",
+        )
+        .await;
+        assert_message(
+            &envelope,
+            &format!("labelled `emery/{id}`, does not match revision `{id}`"),
+        );
+        assert!(
+            envelope["hint"]
+                .as_str()
+                .unwrap_or("")
+                .contains("git checkout emery/<revision> -- spec/"),
+            "{envelope}"
+        );
+        fail(
+            &provider,
+            &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+            1,
+            "spec-mismatch",
+        )
+        .await;
+        assert!(provider.storage.state(STAGED_KEY).await.is_none(), "nothing is staged over it");
+
+        provider.write_project(&format!("{REVISION}/{SPECIFICATION}/spec.json"), &sealed);
+        assert!(shown_sealed(&provider, "spec").await.contains("hello"), "show renders it again");
+        provider.model.assert_exhausted();
+    }
+
+    #[tokio::test]
+    async fn spec_occupied() {
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        provider.write_project(&format!("{REVISION}/{SPECIFICATION}/openapi.yaml"), b"");
+
+        let envelope = fail(
+            &provider,
+            &["emery", "show", "spec", "--config", PROJECT_CONFIG],
+            1,
+            "spec-mismatch",
+        )
+        .await;
+        assert_message(&envelope, "holds `openapi.yaml`, where the three documents");
+        fail(
+            &provider,
+            &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+            1,
+            "spec-mismatch",
+        )
+        .await;
+        assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+        assert!(provider.files.writes().is_empty(), "nothing is written");
+
+        cli_ok(&provider, &["emery", "specify", &reference("docs")]).await;
+        assert!(provider.storage.state(STAGED_KEY).await.is_some());
+        provider.model.assert_exhausted();
+    }
+
+    #[tokio::test]
+    async fn spec_outdated() {
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        let outdated = seed(
+            &provider.files,
+            br#"{"emery": 1, "requirements": []}"#,
+            br#"{"emery": 1, "sections": []}"#,
+            br#"{"emery": 1, "slices": []}"#,
+        );
+
+        let envelope = fail(
+            &provider,
+            &["emery", "show", "spec", "--config", PROJECT_CONFIG],
+            1,
+            "spec-outdated",
+        )
+        .await;
+        assert_message(&envelope, "grammar 1");
+        assert!(
+            envelope["hint"].as_str().unwrap_or("").contains("emery specify"),
+            "the hint names the way out: {envelope}"
+        );
+
+        let resp = cli_ok(
+            &provider,
+            &["emery", "specify", &reference("docs"), "--apply", "--config", PROJECT_CONFIG],
+        )
+        .await;
+        let stdout = String::from_utf8_lossy(&resp.stdout);
+        assert!(
+            !stdout.contains("diff vs"),
+            "an outdated outgoing revision yields no diff: {stdout}"
+        );
+        let id = committed(&provider.storage).await;
+        assert_ne!(id, outdated, "the regenerated revision is current");
+        cli_ok(&provider, &["emery", "show", "spec", "--config", PROJECT_CONFIG]).await;
+        provider.model.assert_exhausted();
+    }
+
+    #[tokio::test]
+    async fn existing_lineage() {
+        let provider = Provider::idle();
+        let held = seed(&provider.files, &lineage(), DESIGN, PLAN);
+
+        for argv in [
+            vec!["emery", "specify", SOURCE, "--config", PROJECT_CONFIG],
+            vec!["emery", "specify", SOURCE, "--apply", "--config", PROJECT_CONFIG],
+        ] {
+            let envelope = fail(&provider, &argv, 1, "lineage-exists").await;
+            assert_message(&envelope, &format!("the current revision `{held}` amends `{EARLIER}`"));
+            let hint = envelope["hint"].as_str().expect("a hint");
+            assert!(hint.contains("emery amend"), "{argv:?}: {envelope}");
+            assert!(hint.contains("emery specify --fresh"), "{argv:?}: {envelope}");
+        }
+        assert!(provider.source.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+        assert!(provider.storage.state(STAGED_KEY).await.is_none(), "nothing is staged");
+
+        let provider = Provider::idle();
+        seed(
+            &provider.files,
+            format!(r#"{{"emery": 1, "parent": "{EARLIER}", "requirements": []}}"#).as_bytes(),
+            br#"{"emery": 1, "sections": []}"#,
+            br#"{"emery": 1, "slices": []}"#,
+        );
+        fail(
+            &provider,
+            &["emery", "specify", SOURCE, "--config", PROJECT_CONFIG],
+            1,
+            "lineage-exists",
+        )
+        .await;
+
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        seed(&provider.files, &lineage(), DESIGN, PLAN);
+        cli_ok(&provider, &["emery", "specify", SOURCE]).await;
+        assert!(provider.vcs.calls().is_empty(), "a run with no target reads no repository");
+        provider.model.assert_exhausted();
+    }
+
+    #[tokio::test]
+    async fn specify_fresh() {
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        let outgoing = seed(&provider.files, &lineage(), DESIGN, PLAN);
+
+        let resp =
+            cli_ok(&provider, &["emery", "specify", SOURCE, "--fresh", "--config", PROJECT_CONFIG])
+                .await;
+
+        let id = staged(&provider.storage).await;
+        let stdout = String::from_utf8_lossy(&resp.stdout);
+        assert!(stdout.starts_with(&format!("staged candidate {id} (fresh)\n")), "{stdout}");
+        assert!(stdout.contains(&format!("  diff vs {outgoing}: ")), "{stdout}");
+        assert!(stdout.ends_with("  nothing sealed; `emery apply` seals it\n"), "{stdout}");
+        let record: Value = serde_json::from_slice(
+            &provider.storage.state(STAGED_KEY).await.expect("staged record"),
+        )
+        .expect("staged record JSON");
+        assert_eq!(record["fresh"], true, "the record marks the candidate fresh: {record}");
+
+        cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+        assert_eq!(committed(&provider.storage).await, id);
+        let message =
+            RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
+        assert_eq!(message.parent, None, "a fresh seal records no parent");
+        assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the head");
+        provider.model.assert_exhausted();
+
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        seed(&provider.files, &lineage(), DESIGN, PLAN);
+        let resp = cli_ok(
+            &provider,
+            &[
+                "emery",
+                "--format",
+                "json",
+                "specify",
+                SOURCE,
+                "--fresh",
+                "--config",
+                PROJECT_CONFIG,
+            ],
+        )
+        .await;
+        let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+        assert_eq!(envelope["revision"], id, "{envelope}");
+        assert_eq!(envelope["fresh"], true, "{envelope}");
+        assert_eq!(envelope["staged"], true, "{envelope}");
+        assert_eq!(envelope["diff"]["from"], outgoing, "{envelope}");
+        provider.model.assert_exhausted();
+
+        let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+        let resp = cli_ok(&provider, &["emery", "specify", SOURCE, "--fresh"]).await;
+        let stdout = String::from_utf8_lossy(&resp.stdout);
+        assert!(stdout.starts_with(&format!("staged candidate {id} (fresh)\n")), "{stdout}");
+        provider.model.assert_exhausted();
+    }
+
+    #[tokio::test]
+    async fn multi_project() {
+        let backends = Backends::defaults().await;
+        let alpha = Provider::scoped(backends.clone(), "alpha", [SPEC_ANSWER, DESIGN_ANSWER]);
+        let beta_spec = SPEC_ANSWER.replace("hello", "howdy");
+        let beta_design = DESIGN_ANSWER.replace("hello", "howdy");
+        let beta = Provider::scoped(backends, "beta", [beta_spec, beta_design]);
+
+        cli_ok(&alpha, &["emery", "specify", SOURCE]).await;
+        cli_ok(&beta, &["emery", "specify", SOURCE]).await;
+
+        let shared = &alpha.storage;
+        assert!(shared.state(STAGED_KEY).await.is_none(), "no unprefixed staged id exists");
+        assert!(container_empty(shared, STAGED_CONTAINER).await, "no unprefixed candidate exists");
+
+        let id_alpha = project_staged(shared, "alpha").await;
+        let id_beta = project_staged(shared, "beta").await;
+        assert_ne!(id_alpha, id_beta, "distinct documents stage distinct candidates");
+
+        let spec_alpha = shared
+            .object(&format!("alpha/{STAGED_CONTAINER}"), &format!("{id_alpha}/spec.json"))
+            .await
+            .expect("spec.json");
+        let spec_beta = shared
+            .object(&format!("beta/{STAGED_CONTAINER}"), &format!("{id_beta}/spec.json"))
+            .await
+            .expect("spec.json");
+        assert_eq!(
+            String::from_utf8_lossy(&spec_alpha),
+            SPEC_REVISION,
+            "alpha staged the revision"
+        );
+        assert!(String::from_utf8_lossy(&spec_beta).contains("howdy"));
+        assert_eq!(
+            shown(&alpha, "spec").await,
+            projection(SPEC_RENDERED, &id_alpha),
+            "alpha shows its own revision"
+        );
+        assert!(shown(&beta, "spec").await.contains("howdy"), "beta shows its own revision");
+
+        cli_ok(&alpha, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
+        assert!(shared.state(REVISION_KEY).await.is_none(), "no unprefixed current id exists");
+        assert_eq!(
+            shared.state(&format!("alpha/{REVISION_KEY}")).await.as_deref(),
+            Some(id_alpha.as_bytes()),
+            "alpha sealed its own candidate"
+        );
+        assert_eq!(project_staged(shared, "beta").await, id_beta, "beta's candidate stands");
+
+        alpha.model.assert_exhausted();
+        beta.model.assert_exhausted();
+    }
+}
 
 fn assert_message(envelope: &Value, fragment: &str) {
     let message = envelope["message"].as_str().unwrap_or("");

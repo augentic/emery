@@ -4,6 +4,7 @@
 
 pub mod files;
 pub mod guest;
+pub mod prefix;
 pub mod provider;
 pub mod scratch;
 pub mod storage;
