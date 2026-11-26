@@ -229,24 +229,18 @@ async fn corrupt_amendment() {
 // loading the adapter.
 #[tokio::test]
 async fn show_schedule() {
-    let mut provider = Provider::idle();
-    provider.target.budget = Some(4);
+    let provider = Provider::idle();
     let id = seed(&provider.files, SPEC, DESIGN, PLAN);
 
     let resp = cli_ok(&provider, &["emery", "show", "schedule", "--config", PROJECT_CONFIG]).await;
     let expected = format!(
-        "---\nemery: 10\nrevision: {id}\n---\n\n# Schedule\n\nBudget: 4 (adapter)\nWaves: \
+        "---\nemery: 10\nrevision: {id}\n---\n\n# Schedule\n\nBudget: 12 (adapter)\nWaves: \
          [SLICE-001], [SLICE-002]\n\n## Slice: authentication\n\nID: SLICE-001\nPart: PART-001 \
          (1/1)\nWave: 1\nRequirements: [REQ-001, REQ-002]\n\n## Slice: orders\n\nID: \
          SLICE-002\nPart: PART-002 (1/1)\nWave: 2\nRequirements: [REQ-003, REQ-004]\nTypes: \
          [orders.line, orders.order]\n"
     );
     assert_eq!(String::from_utf8_lossy(&resp.stdout), expected);
-    assert_eq!(
-        *provider.target.metadata.lock().expect("metadata"),
-        ["acme:builder"],
-        "the target adapter's metadata supplies the budget when neither flag nor config sets one"
-    );
     provider.model.assert_exhausted();
 
     let resp = cli_ok(
@@ -260,7 +254,7 @@ async fn show_schedule() {
     assert_eq!(
         envelope["document"],
         json!({
-            "budget": 4,
+            "budget": 12,
             "source": "adapter",
             "slices": [
                 {

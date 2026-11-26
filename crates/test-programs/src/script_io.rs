@@ -4,9 +4,20 @@ use std::fs;
 use std::io::Write as _;
 use std::path::PathBuf;
 
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::script::{CALLS, MOUNT, STATE, ScriptCall};
+use crate::script::{CALLS, CombinedScript, MOUNT, STATE, ScriptCall};
+use crate::slice_wire::SliceWire;
+
+/// Reads the target budget from `state.json` when the mount is present.
+#[must_use]
+pub fn staged_target_budget() -> Option<u32> {
+    let path = mount(STATE);
+    let bytes = fs::read(path).ok()?;
+    let combined: CombinedScript = serde_json::from_slice(&bytes).ok()?;
+    combined.target.budget
+}
 
 /// Reads and parses `state.json` from the script mount.
 ///
@@ -18,6 +29,46 @@ pub fn read_state<T: DeserializeOwned>() -> T {
     let path = mount(STATE);
     let bytes = fs::read(&path).unwrap_or_else(|err| panic!("reading {}: {err}", path.display()));
     serde_json::from_slice(&bytes).unwrap_or_else(|err| panic!("state JSON: {err}"))
+}
+
+/// Persists updated script state for the next guest dispatch in the same run.
+///
+/// # Panics
+///
+/// Panics when the state file cannot be written.
+pub fn write_state<T: Serialize>(state: &T) {
+    let path = mount(STATE);
+    let bytes = serde_json::to_vec(state).expect("state serialises");
+    fs::write(path, bytes).expect("write state");
+}
+
+/// Writes a slice payload beside the call log for the host to reconstruct dispatches.
+///
+/// # Panics
+///
+/// Panics when the slice file cannot be written.
+pub fn write_slice(slice: &SliceWire) {
+    let relative = format!("slices/{}.json", slice.id);
+    let path = mount(&relative);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).expect("slice log dir");
+    }
+    let bytes = serde_json::to_vec(slice).expect("slice serialises");
+    fs::write(path, bytes).expect("write slice log");
+}
+
+/// Writes only dispatch metadata the host needs without serialising the full slice on the stack.
+///
+/// # Panics
+///
+/// Panics when the slice file cannot be written.
+pub fn write_slice_dispatch(id: &str, base: &str) {
+    let wire = SliceWire {
+        id: id.to_owned(),
+        base: base.to_owned(),
+        ..SliceWire::default()
+    };
+    write_slice(&wire);
 }
 
 /// Appends one dispatch record to `calls.jsonl`.

@@ -10,6 +10,8 @@ use omnia_wasi_vcs::{
     Change, CloneOptions, Entry, Error, FutureResult, Merged, Place, Rule, VcsClient,
 };
 
+use super::files::Files;
+
 /// The commit every unscripted `head` answers.
 pub const HEAD: &str = "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6";
 
@@ -83,12 +85,18 @@ pub struct VcsScript {
     cut: Arc<Mutex<BTreeMap<String, String>>>,
     project: Arc<Mutex<Option<PathBuf>>>,
     inited: Arc<Mutex<BTreeSet<String>>>,
+    files: Arc<Mutex<Option<Files>>>,
 }
 
 impl VcsScript {
     /// Maps absolute deployment paths back to project-relative spellings in call records.
     pub fn bind_project(&self, root: &Path) {
         *self.project.lock().expect("project") = Some(root.to_path_buf());
+    }
+
+    /// Purges physical working copies when [`remove`](Self::remove) succeeds.
+    pub fn bind_files(&self, files: Files) {
+        *self.files.lock().expect("files") = Some(files);
     }
 
     /// Returns every call so far, in order.
@@ -245,6 +253,12 @@ impl VcsClient for VcsScript {
         self.record(format!("remove {key}"));
         let answer = self.removes.take(&key).unwrap_or(Ok(()));
         self.forget(&key);
+        if answer.is_ok()
+            && (key.contains("integration") || key.contains("worktrees"))
+            && let Some(files) = self.files.lock().expect("files").as_ref()
+        {
+            files.purge(&key);
+        }
         async move { answer.map_err(Into::into) }.boxed()
     }
 

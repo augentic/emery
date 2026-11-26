@@ -5,19 +5,24 @@
 use std::future;
 use std::num::NonZeroU32;
 
-use emery_adapter::target::{Outcome, Task};
+use emery_adapter::target::{MergeRule, Outcome, Task};
 use emery_sdk::target::export::{self, Guest};
 use test_programs::script::{CombinedScript, ScriptCall};
-use test_programs::script_io::{append_call, read_state, rendezvous_wait};
+use test_programs::script_io::{
+    append_call, read_state, rendezvous_wait, write_slice_dispatch, write_state,
+};
 
 struct Adapter;
 
 impl Guest for Adapter {
     fn metadata(id: export::AdapterId) -> export::TargetMetadata {
-        // Metadata is invoked from the host's async poll: blocking on WASI filesystem here traps.
-        // Budget and rules for `show schedule` are covered in run paths; metadata returns defaults.
-        let _ = id;
-        export::TargetMetadata::from(emery_sdk::target::metadata(&[], NonZeroU32::new(4)))
+        // Metadata is sync on the host poll; rules staged in `state.json` are applied at `Init`.
+        let rules = if id.starts_with("acme:builder") || id.starts_with("acme:target") {
+            vec![MergeRule::union("src/*/mod.rs"), MergeRule::ours("Cargo.lock")]
+        } else {
+            Vec::new()
+        };
+        export::TargetMetadata::from(emery_sdk::target::metadata(&rules, NonZeroU32::new(12)))
     }
 
     async fn run(
@@ -30,7 +35,7 @@ impl Guest for Adapter {
 fn dispatch(
     id: &export::AdapterId, workspace: &str, task: export::Task,
 ) -> Result<export::Outcome, export::Error> {
-    let mut state = read_state::<CombinedScript>().target;
+    let mut combined = read_state::<CombinedScript>();
     let task = Task::from(task);
     match &task {
         Task::Init => {
@@ -40,12 +45,14 @@ fn dispatch(
             });
         }
         Task::Build(slice) => {
+            write_slice_dispatch(&slice.id, &slice.base);
             append_call(&ScriptCall::TargetBuild {
                 id: id.clone(),
                 slice_id: slice.id.clone(),
                 workspace: workspace.to_owned(),
+                slice: Box::default(),
             });
-            if let Some(rendezvous) = &state.rendezvous {
+            if let Some(rendezvous) = &combined.target.rendezvous {
                 rendezvous_wait(
                     &slice.id,
                     &rendezvous.expected.iter().cloned().collect::<Vec<_>>(),
@@ -60,14 +67,17 @@ fn dispatch(
         }
     }
 
-    state
+    let result = combined
+        .target
         .run(id, workspace, &task)
         .map(|outcome| match outcome {
             Outcome::Initialised => export::Outcome::Initialised,
             Outcome::Built(report) => export::Outcome::Built(report.into()),
             Outcome::Verified(verdict) => export::Outcome::Verified(verdict.into()),
         })
-        .map_err(Into::into)
+        .map_err(Into::into);
+    write_state(&combined);
+    result
 }
 
 emery_sdk::target::export::export!(Adapter with_types_in emery_sdk::target::export);

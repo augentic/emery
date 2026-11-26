@@ -5,6 +5,7 @@
 
 pub mod protocol;
 pub mod script;
+pub mod slice_wire;
 
 #[cfg(target_arch = "wasm32")]
 pub mod helpers;

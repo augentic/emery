@@ -13,6 +13,8 @@ use emery_adapter::target::{MergeRule, MergeStrategy, Report, TargetMetadata, Ta
 use omnia_sdk::Error;
 use serde::{Deserialize, Serialize};
 
+use crate::slice_wire::SliceWire;
+
 /// Combined script staged for both adapter guests.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct CombinedScript {
@@ -194,6 +196,9 @@ pub enum ScriptCall {
         slice_id: String,
         /// Workspace root path.
         workspace: String,
+        /// The slice as the engine lowered it for the target.
+        #[serde(default)]
+        slice: Box<SliceWire>,
     },
     /// A target `run` dispatch for verification.
     TargetVerify {

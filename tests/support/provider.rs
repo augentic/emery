@@ -25,6 +25,7 @@ use test_programs::script::{
     ARRIVED, CALLS, CombinedScript, EvidenceScript, MOUNT, ReportScript, RuleWire, STATE,
     ScriptCall, ScriptError, SourceScriptState, TargetScriptState, VerdictScript,
 };
+use test_programs::slice_wire::SliceWire;
 
 use super::guest::engine_guest;
 use super::prefix::{PrefixedBlobStore, PrefixedKeyValue};
@@ -316,6 +317,7 @@ impl Provider {
         files.bind(&project);
         let vcs = VcsScript::default();
         vcs.bind_project(project.path());
+        vcs.bind_files(files.clone());
         let guest = engine_guest();
         let (script_source, script_target) = adapter_paths();
         publish_adapters(&store, &registry, &script_source, &script_target);
@@ -439,6 +441,13 @@ impl Provider {
         }
     }
 
+    fn read_script_slice(&self, slice_id: &str) -> Option<Slice> {
+        let path = self.project.path().join(MOUNT).join("slices").join(format!("{slice_id}.json"));
+        let bytes = fs::read(path).ok()?;
+        let wire: SliceWire = serde_json::from_slice(&bytes).ok()?;
+        Some(Slice::from(wire))
+    }
+
     fn ingest_calls(&self) {
         let path = self.project.path().join(MOUNT).join(CALLS);
         let Ok(text) = fs::read_to_string(path) else {
@@ -463,28 +472,21 @@ impl Provider {
                         id,
                         slice_id,
                         workspace,
+                        slice,
                     } => {
-                        self.target.calls.lock().expect("calls").push((
-                            id,
-                            Slice {
-                                id: slice_id,
-                                part: String::new(),
-                                name: String::new(),
-                                index: 1,
-                                count: 1,
-                                base: String::new(),
-                                requirements: Vec::new(),
-                                types: Vec::new(),
-                                brief: Vec::new(),
-                                spec: String::new(),
-                                design: String::new(),
-                                plan: String::new(),
-                            },
-                            workspace,
-                        ));
+                        let mut lowered = if slice.id.is_empty() {
+                            self.read_script_slice(&slice_id).unwrap_or_else(|| Slice::from(*slice))
+                        } else {
+                            Slice::from(*slice)
+                        };
+                        if lowered.id.is_empty() {
+                            lowered.id = slice_id;
+                        }
+                        self.target.calls.lock().expect("calls").push((id, lowered, workspace));
                     }
                     ScriptCall::TargetVerify { workspace, .. } => {
                         self.target.verifies.lock().expect("verifies").push(workspace);
+                        let _ = self.target.verdicts.lock().expect("verdicts").pop_front();
                     }
                 }
             }
