@@ -22,7 +22,7 @@ impl Guest for Adapter {
         } else {
             Vec::new()
         };
-        let mut metadata = emery_sdk::target::metadata(&rules, NonZeroU32::new(12));
+        let mut metadata = emery_sdk::target::metadata(&rules, Some(scripted_budget(&id)));
         metadata.emery_version = scripted_emery_version(&id);
         export::TargetMetadata::from(metadata)
     }
@@ -36,6 +36,15 @@ impl Guest for Adapter {
 
 fn scripted_emery_version(id: &str) -> Option<String> {
     if id == "acme:builderv100" { Some("100.0.0".into()) } else { None }
+}
+
+fn scripted_budget(id: &str) -> NonZeroU32 {
+    let default = NonZeroU32::new(12).expect("twelve");
+    let Some(rest) = id.strip_prefix("acme:builderb") else {
+        return default;
+    };
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok().and_then(NonZeroU32::new).unwrap_or(default)
 }
 
 fn dispatch(

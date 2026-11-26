@@ -294,6 +294,7 @@ impl Provider {
             let backends = self.backends.clone().model(model).vcs(self.vcs.clone());
             captured.run(backends, link_stores).await.expect("emery runs")
         };
+        self.files.record_accesses();
         self.ingest_calls();
         self.ingest_target_script();
         eprintln!(
@@ -648,6 +649,8 @@ fn publish_adapters(store: &Scratch, registry: &Scratch, source: &Path, target: 
         "acme:builder@1.0.0",
         "acme:builder@2.1.0",
         "acme:builderv100@2.1.0",
+        "acme:builderb4@2.1.0",
+        "acme:builderb10@2.1.0",
         "acme:target@0.1.0",
         "emery:documentation@1.2.0",
         "emery:intent@1.0.0",

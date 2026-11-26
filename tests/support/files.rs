@@ -1,8 +1,9 @@
 //! Revision trees and working-copy fixtures on the project scratch mount.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use emery_engine::EntryKind;
 use emery_engine::vcs::SPECIFICATION;
@@ -22,6 +23,9 @@ pub struct Files {
     before_revision: Arc<Mutex<BytesSnapshot>>,
     before_project: Arc<Mutex<BytesSnapshot>>,
     preserved: Arc<Mutex<Preserved>>,
+    access_before: Arc<Mutex<HashMap<String, SystemTime>>>,
+    read_order: Arc<Mutex<Vec<(String, String)>>>,
+    list_order: Arc<Mutex<Vec<(String, String)>>>,
 }
 
 impl Files {
@@ -42,6 +46,59 @@ impl Files {
     pub fn mark_run_start(&self) {
         self.before_revision.lock().expect("before revision").clone_from(&self.snapshot_revision());
         self.before_project.lock().expect("before project").clone_from(&self.snapshot_project());
+        self.read_order.lock().expect("reads").clear();
+        self.list_order.lock().expect("lists").clear();
+        self.access_before.lock().expect("access before").clone_from(&self.access_times());
+    }
+
+    /// Derives read and list order from access-time changes since [`mark_run_start`].
+    pub fn record_accesses(&self) {
+        let before = self.access_before.lock().expect("access before").clone();
+        let after = self.access_times();
+        let paths: Vec<String> = after
+            .keys()
+            .chain(before.keys())
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let mut read_batch = Vec::new();
+        let mut list_batch = Vec::new();
+        for rel in paths {
+            let Some(after_time) = after.get(&rel) else {
+                continue;
+            };
+            let before_time = before.get(&rel);
+            if before_time == Some(after_time) {
+                continue;
+            }
+            let Some((at, path)) = working_copy_path(&rel) else {
+                continue;
+            };
+            if path.is_empty() {
+                continue;
+            }
+            let root = self.project.as_ref().expect("project bound");
+            let full = root.join(rel.strip_prefix("./").unwrap_or(&rel));
+            let is_dir = full.is_dir();
+            if is_dir || rel.contains("/.git/") {
+                list_batch.push((at, path));
+            } else {
+                read_batch.push((at, path));
+            }
+        }
+        *self.read_order.lock().expect("reads") = read_batch;
+        *self.list_order.lock().expect("lists") = list_batch;
+    }
+
+    /// Files read during the last CLI run, in discovery order, beyond the revision tree.
+    pub fn accessed_reads(&self) -> Vec<(String, String)> {
+        self.read_order.lock().expect("reads").clone()
+    }
+
+    /// Directories listed during the last CLI run, beyond the revision tree.
+    pub fn accessed_lists(&self) -> Vec<(String, String)> {
+        self.list_order.lock().expect("lists").clone()
     }
 
     /// Returns paths under the revision tree that changed since [`mark_run_start`].
@@ -70,6 +127,14 @@ impl Files {
                 })
             })
             .collect()
+    }
+
+    /// Lays a directory at `path` so a credential read answers as neither file nor link.
+    pub fn unreadable(&self, at: &str, path: &str) {
+        self.remove(at, path);
+        self.ensure_working_copy(at);
+        let dir = self.resolve(at, path);
+        std::fs::create_dir_all(&dir).expect("unreadable directory");
     }
 
     /// Removes `path` beneath working copy `at` when it exists.
@@ -217,6 +282,13 @@ impl Files {
         walk_snapshot(root, root, &mut snap);
         snap
     }
+
+    fn access_times(&self) -> HashMap<String, SystemTime> {
+        let root = self.project.as_ref().expect("project bound");
+        let mut out = HashMap::new();
+        walk_access_times(root, root, &mut out);
+        out
+    }
 }
 
 fn walk_snapshot(base: &Path, at: &Path, snap: &mut BytesSnapshot) {
@@ -238,6 +310,23 @@ fn walk_snapshot(base: &Path, at: &Path, snap: &mut BytesSnapshot) {
     }
 }
 
+fn walk_access_times(base: &Path, at: &Path, out: &mut HashMap<String, SystemTime>) {
+    if !at.exists() {
+        return;
+    }
+    let meta = std::fs::symlink_metadata(at).expect("metadata");
+    let rel = at.strip_prefix(base).expect("under project").display().to_string();
+    if let Ok(accessed) = meta.accessed() {
+        out.insert(rel, accessed);
+    }
+    if meta.file_type().is_dir() {
+        for entry in std::fs::read_dir(at).expect("read dir") {
+            let entry = entry.expect("dir entry");
+            walk_access_times(base, &entry.path(), out);
+        }
+    }
+}
+
 fn working_copy_at(rel: &str) -> Option<String> {
     if rel == ".emery/vcs/integration" || rel.starts_with(".emery/vcs/integration/") {
         return Some(INTEGRATION.to_owned());
@@ -247,6 +336,12 @@ fn working_copy_at(rel: &str) -> Option<String> {
         return Some(format!("./.emery/vcs/worktrees/{slice}"));
     }
     None
+}
+
+fn working_copy_path(rel: &str) -> Option<(String, String)> {
+    let at = working_copy_at(rel)?;
+    let path = strip_working_path(rel, &at);
+    Some((at, path))
 }
 
 fn strip_working_path(rel: &str, at: &str) -> String {

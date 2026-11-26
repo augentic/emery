@@ -1,7 +1,10 @@
 //! Verifies `emery build` over scripted target, file, and version-control capabilities.
 
 #![cfg(not(target_arch = "wasm32"))]
-#![expect(dead_code, reason = "helpers and constants resume in pending remainder")]
+#![expect(
+    dead_code,
+    reason = "fixture constants and typed helpers stay for documentation parity with main"
+)]
 
 mod support;
 
@@ -155,6 +158,16 @@ fn project(base: &str) -> Vec<String> {
     calls
 }
 
+// What the run read through the guest filesystem beyond the revision tree.
+fn reads(provider: &Provider) -> Vec<(String, String)> {
+    provider.files.accessed_reads().into_iter().filter(|(at, _)| at != REVISION).collect()
+}
+
+// What the run listed through the guest filesystem beyond the revision tree.
+fn listed(provider: &Provider) -> Vec<(String, String)> {
+    provider.files.accessed_lists().into_iter().filter(|(at, _)| at != REVISION).collect()
+}
+
 // A requirement as the fixture lowers it: one scenario with no `given` and no `and`.
 fn requirement(
     id: &str, subject: &str, statement: &str, (name, when, then): (&str, &str, &str),
@@ -286,6 +299,13 @@ fn script_verify_repairs(provider: &Provider, pending: impl Fn() -> Result<Vec<C
         provider.files.holds(INTEGRATION, "Cargo.lock", "");
         provider.vcs.pending.script(INTEGRATION, pending());
     }
+}
+
+// One integration `pending` cycle for a run that refuses at the first verify.
+fn script_verify_pending(provider: &Provider, pending: impl Fn() -> Result<Vec<Change>, Error>) {
+    provider.vcs.pending.script(INTEGRATION, Ok(Vec::new()));
+    provider.files.holds(INTEGRATION, "src/orders.rs", "// orders\n");
+    provider.vcs.pending.script(INTEGRATION, pending());
 }
 
 fn initialised(provider: &Provider, paths: &[&str]) {
@@ -3047,4 +3067,850 @@ async fn wave_slice_error() {
         1,
         "the first copy goes, the second stays for inspection: {calls:?}"
     );
+}
+// --- the secret gate ---
+
+const PEM: &str = "const key = `\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA \
+                   PRIVATE KEY-----\n`;\n";
+
+// A file a slice's build left changed that carries a credential refuses the
+// slice before anything of it is sealed: each path is named with what it
+// carries, the copy stays as it was written for inspection, nothing is
+// merged or labelled, and every changed file was read from the copy.
+#[tokio::test]
+async fn build_secret_in_slice() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[
+            ("src/auth.rs", ChangeKind::Added),
+            ("src/session.rs", ChangeKind::Added),
+            ("config/deploy.yaml", ChangeKind::Modified),
+        ],
+    );
+    provider.files.holds(&copy, "src/auth.rs", PEM);
+    provider.files.holds(&copy, "src/session.rs", "pub fn issue() {}\n");
+    provider.files.holds(
+        &copy,
+        "config/deploy.yaml",
+        "aws:\n  access_key_id: AKIAIOSFODNN7EXAMPLE\n  token: ${AWS_TOKEN}\n",
+    );
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "secret-detected")
+            .await;
+
+    assert_message(
+        &envelope,
+        "slice `SLICE-001` (authentication) failed in wave 1: what the build wrote carries a \
+         credential, so none of it is sealed:",
+    );
+    assert_message(&envelope, "- src/auth.rs: a PEM private key block");
+    assert_message(&envelope, "- config/deploy.yaml: an AWS access key id");
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains(".emery/vcs/worktrees/<slice>")),
+        "{envelope}"
+    );
+    let observed = reads(&provider);
+    for path in ["src/auth.rs", "src/session.rs", "config/deploy.yaml"] {
+        assert!(
+            observed.iter().any(|(at, p)| at == &copy && p == path),
+            "every changed file is read: missing `{path}` in {observed:?}"
+        );
+    }
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    assert!(provider.vcs.merged().is_empty(), "nothing is merged");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {copy}")), "{calls:?}");
+    assert!(!calls.contains(&format!("remove {copy}")), "left for inspection: {calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(provider.target.verifies().is_empty(), "a wave that did not integrate is not verified");
+    assert_eq!(provider.target.calls().len(), 1, "the run stops at the first");
+    provider.vcs.assert_exhausted();
+}
+
+// A key pasted into a string literal keeps its header on one line with the
+// escaped newline and the rest of the key after it, and is refused as the
+// block form is; a certificate spelled the same way beside it passes.
+#[tokio::test]
+async fn build_secret_in_literal() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[("src/key.ts", ChangeKind::Added), ("src/cert.ts", ChangeKind::Added)],
+    );
+    provider.files.holds(
+        &copy,
+        "src/key.ts",
+        "const key = \"-----BEGIN RSA PRIVATE KEY-----\\nMIIEowIBAAKCAQEA\\n-----END RSA PRIVATE \
+         KEY-----\\n\";\n",
+    );
+    provider.files.holds(
+        &copy,
+        "src/cert.ts",
+        "const cert = \"-----BEGIN CERTIFICATE-----\\nMIICljCCAX4C\\n-----END \
+         CERTIFICATE-----\\n\";\n",
+    );
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "secret-detected")
+            .await;
+
+    assert_message(&envelope, "so none of it is sealed:\n- src/key.ts: a PEM private key block");
+    assert!(!envelope["message"].as_str().unwrap_or("").contains("src/cert.ts"), "{envelope}");
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    provider.vcs.assert_exhausted();
+}
+
+// A file that carries a credential by name is refused unread, whatever it
+// holds; a public key beside it is read and passes.
+#[tokio::test]
+async fn build_secret_file() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[
+            ("deploy/.npmrc", ChangeKind::Added),
+            ("deploy/id_rsa.pub", ChangeKind::Added),
+            ("ops/.aws/credentials", ChangeKind::Added),
+        ],
+    );
+    provider.files.holds(&copy, "deploy/.npmrc", "registry=https://registry.npmjs.org/\n");
+    provider.files.holds(&copy, "deploy/id_rsa.pub", "ssh-rsa AAAAB3NzaC1yc2E deploy@example\n");
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "secret-detected")
+            .await;
+
+    assert_message(
+        &envelope,
+        "- deploy/.npmrc: a file that carries a credential by name\n- ops/.aws/credentials: a file \
+         that carries a credential by name",
+    );
+    assert!(!envelope["message"].as_str().unwrap_or("").contains("id_rsa.pub"), "{envelope}");
+    let observed = reads(&provider);
+    assert!(
+        !observed.iter().any(|(_, path)| path == "deploy/.npmrc" || path == "ops/.aws/credentials"),
+        "a file refused by name is never read: {observed:?}"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    assert!(!provider.vcs.calls().contains(&format!("remove {copy}")), "left for inspection");
+    provider.vcs.assert_exhausted();
+}
+
+// A credential a verification's repairs leave in the integrated tree refuses
+// the wave before its changes are sealed: the slices merged in it stay
+// committed, the wave's commit is never made, and the label stands where the
+// last verified wave left it.
+#[tokio::test]
+async fn build_secret_in_repair() {
+    let (provider, id) = planned();
+    initialised(&provider, &[]);
+    script_verify_pending(&provider, || {
+        Ok(vec![
+            change("src/orders.rs", ChangeKind::Modified),
+            change(".github/publish.sh", ChangeKind::Added),
+        ])
+    });
+    provider.files.holds(
+        INTEGRATION,
+        ".github/publish.sh",
+        "npm config set //registry.npmjs.org/:_authToken=npm_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8\n",
+    );
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "secret-detected")
+            .await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "wave 1 failed; SLICE-001 merged in it stays committed in `{INTEGRATION}`; \
+             `emery/{id}` is not set: what the verification wrote carries a credential, so none \
+             of it is sealed:\n- .github/publish.sh: an npm token"
+        ),
+    );
+    assert_eq!(provider.vcs.messages().len(), 1, "the slice's commit alone; no wave commit");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {INTEGRATION}")), "{calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection: {calls:?}");
+    assert_eq!(provider.target.calls().len(), 1, "the second wave is never built");
+    provider.vcs.assert_exhausted();
+}
+
+// A credential file the build removed carries nothing: a deleted path is
+// passed over unread, the rest is read, and the slice seals as any other.
+#[tokio::test]
+async fn build_secret_deleted() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[(".env", ChangeKind::Deleted), ("src/auth.rs", ChangeKind::Added)],
+    );
+    provider.files.holds(&copy, "src/auth.rs", "pub fn sign_in() {}\n");
+    wrote(&provider, ORDERS);
+    provider.files.holds(&worktree("SLICE-002"), "src/orders.rs", "pub fn place() {}\n");
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG])
+            .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["slices"][0]["written"], json!([".env", "src/auth.rs"]), "{envelope}");
+    let observed = reads(&provider);
+    assert!(
+        !observed.iter().any(|(_, path)| path == ".env"),
+        "the deleted path is never read: {observed:?}"
+    );
+    assert_eq!(provider.vcs.messages().len(), 2, "one commit per slice");
+    provider.vcs.assert_exhausted();
+}
+
+// A changed path the gate cannot read is never taken as clean: the slice
+// fails as the read did, nothing of it is sealed, and the copy stays for
+// inspection.
+#[tokio::test]
+async fn build_change_unreadable() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[("src/auth.rs", ChangeKind::Added), ("src/hook", ChangeKind::Added)],
+    );
+    provider.files.holds(&copy, "src/auth.rs", "pub fn sign_in() {}\n");
+    provider.files.unreadable(&copy, "src/hook");
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 3, "server_error").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "slice `SLICE-001` (authentication) failed in wave 1: reading `src/hook` under \
+             `{copy}`"
+        ),
+    );
+    let observed = reads(&provider);
+    assert!(
+        observed.iter().any(|(at, path)| at == &copy && path == "src/auth.rs"),
+        "auth is read before the unreadable path: {observed:?}"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {copy}")), "{calls:?}");
+    assert!(!calls.contains(&format!("remove {copy}")), "left for inspection: {calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    provider.vcs.assert_exhausted();
+}
+
+// --- the specification guard ---
+
+// A slice's build that left a path under `spec/` changed — written, or
+// removed — is refused before anything of it is sealed: every such path is
+// named, no file is read for a credential, nothing is merged or labelled,
+// and the copy stays for inspection.
+#[tokio::test]
+async fn slice_rewrites_spec() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    changed(
+        &provider,
+        "SLICE-001",
+        &[
+            ("src/auth.rs", ChangeKind::Added),
+            ("spec/spec.json", ChangeKind::Modified),
+            ("spec/plan.json", ChangeKind::Deleted),
+        ],
+    );
+    provider.files.holds(&copy, "src/auth.rs", PEM);
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-rewritten").await;
+
+    assert_message(
+        &envelope,
+        "slice `SLICE-001` (authentication) failed in wave 1: what the build wrote touches \
+         `spec/`, where the sealed specification lives, so none of it is sealed:",
+    );
+    assert_message(&envelope, "- spec/spec.json");
+    assert_message(&envelope, "- spec/plan.json");
+    assert!(
+        envelope["hint"].as_str().is_some_and(|hint| hint.contains(".emery/vcs/worktrees/<slice>")),
+        "{envelope}"
+    );
+    assert!(
+        !reads(&provider).iter().any(|(at, _)| at.starts_with(WORKTREES) || at == INTEGRATION),
+        "refused before any working copy is read for a credential"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    assert!(provider.vcs.merged().is_empty(), "nothing is merged");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {copy}")), "{calls:?}");
+    assert!(!calls.contains(&format!("remove {copy}")), "left for inspection: {calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(provider.target.verifies().is_empty(), "a wave that did not integrate is not verified");
+    assert_eq!(provider.target.calls().len(), 1, "the run stops at the first");
+    provider.vcs.assert_exhausted();
+}
+
+// A layout the adapter's initialisation scaffolds under `spec/` refuses the
+// build before anything is sealed or any slice dispatched, naming the
+// initialisation.
+#[tokio::test]
+async fn init_rewrites_spec() {
+    let (provider, _) = planned();
+    initialised(&provider, &["spec/design.json", "package.json"]);
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-rewritten").await;
+
+    assert_message(
+        &envelope,
+        "what the initialisation wrote touches `spec/`, where the sealed specification lives, so \
+         none of it is sealed:\n- spec/design.json",
+    );
+    assert_eq!(provider.target.inits(), [INTEGRATION]);
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
+    assert!(
+        !reads(&provider).iter().any(|(at, _)| at.starts_with(WORKTREES) || at == INTEGRATION),
+        "refused before any working copy is read for a credential"
+    );
+    assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {INTEGRATION}")), "{calls:?}");
+    assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection: {calls:?}");
+    provider.vcs.assert_exhausted();
+}
+
+// A merge's resolution that leaves a path under `spec/` changed in the
+// slice's copy is refused before it is sealed, as a build's or a
+// verification's change set is.
+#[tokio::test]
+async fn conflict_rewrites_spec() {
+    let (provider, _) = conflicted_at_lib(&[RESOLVED_LIB]);
+    let copy = worktree("SLICE-003");
+    changed(&provider, "SLICE-003", &[("src/lib.rs", ChangeKind::Modified)]);
+    changed(
+        &provider,
+        "SLICE-003",
+        &[("src/lib.rs", ChangeKind::Modified), ("spec/spec.json", ChangeKind::Modified)],
+    );
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-rewritten").await;
+
+    assert_message(
+        &envelope,
+        "slice `SLICE-003` (orders) failed in wave 1; SLICE-001 merged before it stays committed \
+         in `./.emery/vcs/integration`: what the merge's resolution wrote touches `spec/`, where \
+         the sealed specification lives, so none of it is sealed:\n- spec/spec.json",
+    );
+    assert!(!provider.files.worktree_writes().is_empty(), "the resolution was written");
+    let calls = provider.vcs.calls();
+    assert!(
+        !calls.contains(&format!("commit {copy} SLICE-003 orders resolved at src/lib.rs")),
+        "nothing of it is sealed: {calls:?}"
+    );
+    left_for_inspection(&provider);
+    provider.model.assert_exhausted();
+    provider.vcs.assert_exhausted();
+}
+
+// A path under `spec/` a verification's repairs leave changed refuses the
+// wave before its changes are sealed: the slices merged in it stay
+// committed, the wave's commit is never made, and the label stands where
+// the last verified wave left it.
+#[tokio::test]
+async fn repair_rewrites_spec() {
+    let (provider, id) = planned();
+    initialised(&provider, &[]);
+    script_verify_pending(&provider, || {
+        Ok(vec![
+            change("src/orders.rs", ChangeKind::Modified),
+            change("spec/spec.json", ChangeKind::Modified),
+        ])
+    });
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-rewritten").await;
+
+    assert_message(
+        &envelope,
+        &format!(
+            "wave 1 failed; SLICE-001 merged in it stays committed in `{INTEGRATION}`; \
+             `emery/{id}` is not set: what the verification wrote touches `spec/`, where the \
+             sealed specification lives, so none of it is sealed:"
+        ),
+    );
+    assert_message(&envelope, "- spec/spec.json");
+    assert_eq!(provider.vcs.messages().len(), 1, "the slice's commit alone; no wave commit");
+    let calls = provider.vcs.calls();
+    assert_eq!(calls.last().cloned(), Some(format!("pending {INTEGRATION}")), "{calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection: {calls:?}");
+    assert_eq!(provider.target.calls().len(), 1, "the second wave is never built");
+    provider.vcs.assert_exhausted();
+}
+
+// A merge the rules leave conflicted under `spec/` is nothing the model is
+// handed: the slice is refused as `merge-unresolved` naming the reserved
+// directory, before any side is read or any turn is spent.
+#[tokio::test]
+async fn build_conflict_at_spec() {
+    let (provider, _) = planned();
+    let copy = worktree("SLICE-001");
+    wrote(&provider, AUTHENTICATION);
+    provider.vcs.merges.script(INTEGRATION, Ok(conflicted(&["spec/spec.json"])));
+
+    let envelope =
+        fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "merge-unresolved")
+            .await;
+
+    assert_message(
+        &envelope,
+        "slice `SLICE-001` (authentication) failed in wave 1: its merge conflicts at \
+         spec/spec.json, and the conflict cannot be resolved: `spec/spec.json` is under `spec/`, \
+         where the specification lives",
+    );
+    assert_eq!(provider.target.calls().len(), 1, "the run stops before a merge turn");
+    assert!(provider.files.writes().is_empty(), "nothing is written");
+    let calls = provider.vcs.calls();
+    assert!(!calls.contains(&format!("remove {copy}")), "left for inspection: {calls:?}");
+    assert!(!calls.contains(&format!("remove {INTEGRATION}")), "left for inspection: {calls:?}");
+    assert!(!calls.iter().any(|call| call.starts_with("label ")), "no label: {calls:?}");
+    assert!(provider.target.verifies().is_empty(), "a wave that did not integrate is not verified");
+    provider.model.assert_exhausted();
+    provider.vcs.assert_exhausted();
+}
+
+// --- the schedule and the budget ---
+
+// Builds a revision whose `authentication` part holds one requirement and
+// whose `orders` part holds `subs`, each `(sub, count, trigger)` under
+// `orders.<sub>-*`, owning `orders.line` and `orders.order` and depending
+// on `PART-001`.
+fn budgeted_revision(subs: &[(&str, usize, Option<Trigger>)]) -> (Provider, String) {
+    let mut spec: Value = serde_json::from_slice(SPEC).expect("spec fixture");
+    let mut requirements = vec![spec["requirements"][0].clone()];
+    let mut order_ids = Vec::new();
+    let mut req_num = 1usize;
+    for &(sub, count, ref trigger) in subs {
+        for index in 1..=count {
+            req_num += 1;
+            let id = format!("REQ-{req_num:03}");
+            order_ids.push(id.clone());
+            let subject = if count == 1 {
+                format!("orders.{sub}")
+            } else {
+                format!("orders.{sub}.item-{index}")
+            };
+            let trigger_val = serde_json::to_value(trigger).expect("trigger serialises");
+            requirements.push(json!({
+                "id": id,
+                "subject": subject,
+                "status": "unknown",
+                "covered": false,
+                "trigger": trigger_val,
+                "sources": [{"source": "docs", "claim": subject, "path": null}],
+                "body": [format!("Statement for {id}.")],
+                "losers": [],
+                "scenarios": [{
+                    "name": format!("Scenario {req_num}"),
+                    "given": [],
+                    "when": "invoked",
+                    "then": "succeeds",
+                    "and": []
+                }]
+            }));
+        }
+    }
+    spec["requirements"] = Value::Array(requirements);
+    let mut plan: Value = serde_json::from_slice(WIDE_PLAN).expect("wide-plan fixture");
+    plan["parts"] = json!([
+        {
+            "id": "PART-001",
+            "name": "authentication",
+            "requirements": ["REQ-001"],
+            "types": [],
+            "uses": [],
+            "depends-on": [],
+            "brief": ["Delivers sign-in."]
+        },
+        {
+            "id": "PART-002",
+            "name": "orders",
+            "requirements": order_ids,
+            "types": ["orders.line", "orders.order"],
+            "uses": [],
+            "depends-on": ["PART-001"],
+            "brief": ["Delivers orders over sign-in."]
+        }
+    ]);
+    let provider = Provider::idle();
+    let id = seed(
+        &provider.files,
+        &serde_json::to_vec(&spec).expect("spec"),
+        DESIGN,
+        &serde_json::to_vec(&plan).expect("plan"),
+    );
+    (provider, id)
+}
+
+// A 20-requirement part at `--budget 8` cuts into 3 serial slices in
+// waves 2, 3, and 4 after `authentication`; the part's owned data types
+// travel with its first slice alone, and each slice carries its `index` of
+// `count` and the part's name and brief.
+#[tokio::test]
+async fn build_budget_cut() {
+    let post = Some(Trigger::Http(Route {
+        method: "POST".to_owned(),
+        path: "/orders".to_owned(),
+    }));
+    let get = Some(Trigger::Http(Route {
+        method: "GET".to_owned(),
+        path: "/orders".to_owned(),
+    }));
+    let cancel = Some(Trigger::Message("orders.cancel".to_owned()));
+    let (provider, id) =
+        budgeted_revision(&[("create", 8, post), ("list", 7, get), ("cancel", 5, cancel)]);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "8"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["budget"], 8, "{envelope}");
+    assert_eq!(envelope["budget-source"], "flag", "{envelope}");
+    assert_eq!(envelope["parts"], json!([["PART-001"], ["PART-002"]]), "{envelope}");
+    assert_eq!(
+        envelope["waves"],
+        json!([["SLICE-001"], ["SLICE-002"], ["SLICE-003"], ["SLICE-004"]]),
+        "the three slices of `orders` build in serial waves: {envelope}"
+    );
+    let schedule = envelope["schedule"].as_array().expect("schedule");
+    assert_eq!(schedule.len(), 4);
+    assert_eq!(schedule[0]["id"], "SLICE-001");
+    assert_eq!(schedule[0]["part"], "PART-001");
+    assert_eq!(schedule[0]["index"], 1);
+    assert_eq!(schedule[0]["count"], 1);
+    assert_eq!(schedule[1]["id"], "SLICE-002");
+    assert_eq!(schedule[1]["name"], "orders");
+    assert_eq!(schedule[1]["index"], 1);
+    assert_eq!(schedule[1]["count"], 3);
+    assert_eq!(schedule[2]["index"], 2);
+    assert_eq!(schedule[3]["index"], 3);
+    assert_eq!(schedule[1]["requirements"].as_array().map(Vec::len), Some(8));
+    assert_eq!(schedule[2]["requirements"].as_array().map(Vec::len), Some(7));
+    assert_eq!(schedule[3]["requirements"].as_array().map(Vec::len), Some(5));
+    assert_eq!(schedule[1]["types"].as_array().map(Vec::len), Some(2));
+    assert!(
+        schedule[2].get("types").is_none_or(|types| types.as_array().is_none_or(Vec::is_empty)),
+        "{envelope}"
+    );
+    assert!(
+        schedule[3].get("types").is_none_or(|types| types.as_array().is_none_or(Vec::is_empty)),
+        "{envelope}"
+    );
+    assert_eq!(schedule[1]["brief"], schedule[2]["brief"]);
+    assert_eq!(provider.target.calls().len(), 4);
+
+    // text output shows the plan summary, the budget and its source, and `(index/count)` per slice
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    let resp = cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG, "-b", "8"]).await;
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(
+        stdout.contains(
+            "  plan: 2 parts in 2 waves; budget 8 (flag): 4 slices in 4 waves, widest 1\n"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("    SLICE-002 orders (1/3): covered 8/8"), "{stdout}");
+    assert!(stdout.contains("    SLICE-003 orders (2/3): covered 7/7"), "{stdout}");
+    assert!(stdout.contains("    SLICE-004 orders (3/3): covered 5/5"), "{stdout}");
+    assert!(!stdout.contains("over budget:"), "{stdout}");
+    assert_eq!(
+        provider.vcs.messages()[1],
+        format!(
+            "SLICE-002 orders\n\nSlice: SLICE-002\nPart: PART-002\nRevision: {id}\nBudget: \
+             8\nRequirements: REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-007, REQ-008, \
+             REQ-009\nCovered: REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-007, REQ-008, \
+             REQ-009\nAdapter: {BUILDER}\nBase: {HEAD}\nWave: 2"
+        )
+    );
+}
+
+// Requirements sharing one trigger stay in one slice even when they span
+// sub-stems and exceed the budget; the slice is flagged `over-budget` and
+// warned in text output rather than refused.
+#[tokio::test]
+async fn budget_trigger_group() {
+    let route = Some(Trigger::Http(Route {
+        method: "POST".to_owned(),
+        path: "/orders".to_owned(),
+    }));
+    let other = Some(Trigger::Http(Route {
+        method: "GET".to_owned(),
+        path: "/orders".to_owned(),
+    }));
+    let (provider, _) = budgeted_revision(&[
+        ("validate", 6, route.clone()),
+        ("persist", 4, route),
+        ("list", 3, other),
+    ]);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "6"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["schedule"].as_array().map(Vec::len), Some(3), "{envelope}");
+    assert_eq!(envelope["schedule"][1]["id"], "SLICE-002");
+    assert_eq!(envelope["schedule"][1]["requirements"].as_array().map(Vec::len), Some(10));
+    assert_eq!(envelope["schedule"][1]["over-budget"], true, "{envelope}");
+    assert_eq!(envelope["schedule"][2]["id"], "SLICE-003");
+    assert_eq!(envelope["schedule"][2]["requirements"].as_array().map(Vec::len), Some(3));
+    assert_eq!(envelope["schedule"][2]["over-budget"], false, "{envelope}");
+
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    let resp =
+        cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG, "--budget", "6"]).await;
+    let stdout = String::from_utf8_lossy(&resp.stdout);
+    assert!(stdout.contains("  over budget: SLICE-002 orders (10 requirements)\n"), "{stdout}");
+}
+
+// Untriggered sub-stems (pipeline stages and helpers) pack ahead of
+// triggered sub-stems (routes and consumers), regardless of where their
+// requirement ids sit in the part.
+#[tokio::test]
+async fn budget_first_slice() {
+    let route = Some(Trigger::Http(Route {
+        method: "POST".to_owned(),
+        path: "/orders".to_owned(),
+    }));
+    let (provider, _) =
+        budgeted_revision(&[("entry", 4, route), ("stage-one", 3, None), ("stage-two", 3, None)]);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "6"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(
+        envelope["schedule"][1]["requirements"],
+        json!(["REQ-006", "REQ-007", "REQ-008", "REQ-009", "REQ-010", "REQ-011"]),
+        "the two untriggered stages pack into the first slice of the part: {envelope}"
+    );
+    assert_eq!(
+        envelope["schedule"][2]["requirements"],
+        json!(["REQ-002", "REQ-003", "REQ-004", "REQ-005"]),
+        "the triggered entry follows in the second slice: {envelope}"
+    );
+}
+
+// When neither `--budget` nor `[target] budget` is given, the target
+// adapter's `metadata.budget` is used and reported as `adapter`.
+#[tokio::test]
+async fn budget_from_metadata() {
+    let (provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    let config = provider.write_project(
+        "tests/build/budget-metadata.toml",
+        "[target]\nadapter = \"acme:builderb4@2.1.0\"\nrepository = \".\"\n",
+    );
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", &config]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["budget"], 4, "{envelope}");
+    assert_eq!(envelope["budget-source"], "adapter", "{envelope}");
+    assert_eq!(envelope["schedule"].as_array().map(Vec::len), Some(3), "{envelope}");
+}
+
+// `[target] budget` in `emery.toml` overrides the adapter's metadata and is
+// reported as `config`.
+#[tokio::test]
+async fn build_budget_from_config() {
+    let (mut provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
+    provider.target.budget = Some(10);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    let config = provider.write_project(
+        "tests/build/budget-target.toml",
+        format!("[target]\nadapter = \"{BUILDER}\"\nrepository = \".\"\nbudget = 3\n"),
+    );
+
+    let resp =
+        cli_ok(&provider, &["emery", "--format", "json", "build", "--config", &config]).await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["budget"], 3, "{envelope}");
+    assert_eq!(envelope["budget-source"], "config", "{envelope}");
+    assert_eq!(envelope["schedule"].as_array().map(Vec::len), Some(3), "{envelope}");
+}
+
+// `--budget` overrides `[target] budget` and the adapter's metadata, and is
+// reported as `flag`; `--budget 0` is refused at the CLI boundary.
+#[tokio::test]
+async fn budget_flag_precedence() {
+    let (mut provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
+    provider.target.budget = Some(12);
+    provider.vcs.heads.script(".", Ok(BASE.to_owned()));
+    let config = provider.write_project(
+        "tests/build/budget-precedence.toml",
+        format!("[target]\nadapter = \"{BUILDER}\"\nrepository = \".\"\nbudget = 10\n"),
+    );
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", &config, "--budget", "3"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["budget"], 3, "{envelope}");
+    assert_eq!(envelope["budget-source"], "flag", "{envelope}");
+    assert_eq!(envelope["schedule"].as_array().map(Vec::len), Some(3), "{envelope}");
+
+    let zero = cli(&provider, &["emery", "build", "--config", &config, "--budget", "0"]).await;
+    assert_eq!(zero.exit, USAGE_EXIT);
+}
+
+// Resuming a multi-slice part reads the committed `Requirements:` from the
+// label chain: the slices whose requirements are on the label are reported
+// in `resumed`, the remaining slice builds with `types` empty (since the
+// first slice already laid them), and its `index`/`count` stay `3` of `3`.
+#[tokio::test]
+async fn resume_requirements() {
+    let (provider, id) = budgeted_revision(&[("a", 3, None), ("b", 3, None), ("c", 3, None)]);
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry(
+                "m:SLICE-003",
+                &message(
+                    &id,
+                    ("SLICE-003", "orders"),
+                    "REQ-005, REQ-006, REQ-007",
+                    "REQ-005, REQ-006, REQ-007",
+                    HEAD,
+                    2,
+                ),
+            ),
+            entry(
+                "m:SLICE-002",
+                &message(
+                    &id,
+                    ("SLICE-002", "orders"),
+                    "REQ-002, REQ-003, REQ-004",
+                    "REQ-002, REQ-003, REQ-004",
+                    HEAD,
+                    2,
+                ),
+            ),
+            entry("m:SLICE-001", &message(&id, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+        ]),
+    );
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "3"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["resumed"], json!(["SLICE-001", "SLICE-002", "SLICE-003"]), "{envelope}");
+    assert_eq!(provider.target.calls().len(), 1, "only the third slice of orders remains");
+    let built = envelope["slices"].as_array().expect("slices");
+    assert_eq!(built.len(), 1);
+    assert_eq!(built[0]["id"], "SLICE-004");
+    assert_eq!(built[0]["part"], "PART-002");
+    assert_eq!(built[0]["index"], 3);
+    assert_eq!(built[0]["count"], 3);
+    assert_eq!(
+        built[0]["covered"],
+        json!(["REQ-008", "REQ-009", "REQ-010"]),
+        "types were laid in the first slice"
+    );
+}
+
+// Changing `--budget` mid-build (from 6 on the first run to 3 on the resume)
+// keeps every requirement committed on the label chain as resumed and re-cuts
+// only the remaining uncovered requirements under the new budget.
+#[tokio::test]
+async fn resume_budget_change() {
+    let (provider, id) = budgeted_revision(&[
+        ("a", 1, None),
+        ("b", 1, None),
+        ("c", 1, None),
+        ("d", 1, None),
+        ("e", 1, None),
+        ("f", 1, None),
+        ("g", 1, None),
+        ("h", 1, None),
+        ("i", 1, None),
+        ("j", 1, None),
+    ]);
+    provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
+    provider.vcs.logs.script(
+        ".",
+        Ok(vec![
+            entry(
+                "m:SLICE-002",
+                &message(
+                    &id,
+                    ("SLICE-002", "orders"),
+                    "REQ-002, REQ-003, REQ-004, REQ-005, REQ-006",
+                    "REQ-002, REQ-003, REQ-004, REQ-005, REQ-006",
+                    HEAD,
+                    2,
+                ),
+            ),
+            entry("m:SLICE-001", &message(&id, AUTHENTICATION, "REQ-001", "REQ-001", HEAD, 1)),
+        ]),
+    );
+
+    let resp = cli_ok(
+        &provider,
+        &["emery", "--format", "json", "build", "--config", PROJECT_CONFIG, "--budget", "3"],
+    )
+    .await;
+
+    let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
+    assert_eq!(envelope["budget"], 3, "{envelope}");
+    assert_eq!(envelope["resumed"], json!(["SLICE-001", "SLICE-002"]), "{envelope}");
+    assert_eq!(
+        provider.target.calls().len(),
+        2,
+        "the remaining 5 requirements cut into two slices"
+    );
+    let built = envelope["slices"].as_array().expect("slices");
+    assert_eq!(built.len(), 2);
+    assert_eq!(built[0]["id"], "SLICE-003");
+    assert_eq!(built[0]["index"], 2);
+    assert_eq!(built[0]["count"], 3);
+    assert_eq!(built[0]["covered"], json!(["REQ-007", "REQ-008", "REQ-009"]));
+    assert_eq!(built[1]["id"], "SLICE-004");
+    assert_eq!(built[1]["index"], 3);
+    assert_eq!(built[1]["count"], 3);
+    assert_eq!(built[1]["covered"], json!(["REQ-010", "REQ-011"]));
 }
