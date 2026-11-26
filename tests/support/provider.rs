@@ -125,6 +125,13 @@ impl Provider {
         Self::answering(Vec::<String>::new())
     }
 
+    /// Reuses staging storage from a prior run with a fresh deployment shell.
+    pub fn over(storage: Storage, answers: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        let mut provider = Self::answering(answers);
+        provider.storage = storage;
+        provider
+    }
+
     /// Writes `contents` under the deployment project mount and returns its relative path.
     pub fn write_project(&self, relative: &str, contents: impl AsRef<[u8]>) -> String {
         self.project.write(relative, contents);
@@ -175,6 +182,8 @@ impl Provider {
         let storage = Storage::from_backends(&backends);
         let mut files = super::files::Files::default();
         files.bind(&project);
+        let vcs = VcsScript::default();
+        vcs.bind_project(project.path());
         let guest = engine_guest();
         let (script_source, script_target) = adapter_paths();
         publish_adapters(&store, &registry, &script_source, &script_target);
@@ -182,7 +191,7 @@ impl Provider {
             model,
             source: SourceScript::default(),
             target: TargetScript::default(),
-            vcs: VcsScript::default(),
+            vcs,
             files,
             storage,
             backends,

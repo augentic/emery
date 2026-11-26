@@ -63,6 +63,15 @@ impl Files {
         walk_snapshot(&root, &root, &mut snap);
         snap
     }
+
+    /// Reads `path` relative to a working-copy directory beneath the project mount.
+    pub fn read_at(&self, working_copy: &str, path: &str) -> Vec<u8> {
+        let root = self.project.as_ref().expect("project bound");
+        let at = working_copy.strip_prefix("./").unwrap_or(working_copy);
+        let file = root.join(at).join(path);
+        std::fs::read(&file)
+            .unwrap_or_else(|err| panic!("read `{path}` under `{working_copy}`: {err}"))
+    }
 }
 
 fn walk_snapshot(base: &Path, at: &Path, snap: &mut BTreeMapSnapshot) {
@@ -72,7 +81,7 @@ fn walk_snapshot(base: &Path, at: &Path, snap: &mut BTreeMapSnapshot) {
     if at.is_file() {
         let rel = at.strip_prefix(base).expect("under revision").display().to_string();
         let bytes = std::fs::read(at).expect("read revision file");
-        snap.insert(format!("{SPECIFICATION}/{rel}"), bytes);
+        snap.insert(rel, bytes);
         return;
     }
     for entry in std::fs::read_dir(at).expect("read revision dir") {

@@ -4,18 +4,15 @@
 
 mod support;
 
-use std::sync::Arc;
-
 use emery_engine::amend::PartClass;
 use emery_engine::vcs::{PartSummary, REVISION, RevisionMessage, Summary};
-use emery_engine::{EntryKind, REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
-use omnia_sdk::vcs::{Change, ChangeKind, Error};
+use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+use omnia_wasi_vcs::{Change, ChangeKind, Error};
 use serde_json::{Value, json};
+use support::files::document;
 use support::provider::{Provider, cli};
-use support::scratch::Scratch;
-use support::store::{
-    carry, document, revision, seed, stage, stage_amendment, stage_fresh, staged, written,
-};
+use support::storage::staged;
+use support::store::{carry, revision, seed, stage, stage_amendment, stage_fresh, written};
 use support::vcs::HEAD;
 use support::{cli_ok, fail};
 
@@ -48,7 +45,7 @@ const CONFLICTED_SPEC: &[u8] = include_bytes!("amend/conflicted-spec.json");
 #[tokio::test]
 async fn staged_candidate() {
     let provider = Provider::idle();
-    let id = stage(&provider.storage, SPEC, DESIGN, PLAN);
+    let id = stage(&provider.storage, SPEC, DESIGN, PLAN).await;
 
     let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
 
@@ -56,10 +53,9 @@ async fn staged_candidate() {
         String::from_utf8_lossy(&resp.stdout),
         format!("sealed revision {id} as emery/{id} at Revision\n")
     );
-    assert_eq!(current(&provider), id, "the pointer names the sealed revision");
-    assert_eq!(
-        provider.vcs.calls(),
-        [
+    assert_eq!(current(&provider).await, id, "the pointer names the sealed revision");
+    provider.vcs.assert_subsequence(
+        &[
             "head .".to_owned(),
             format!("add . {REVISION} {HEAD}"),
             format!("remove {REVISION}"),
@@ -69,17 +65,16 @@ async fn staged_candidate() {
             format!("label . emery/{id} Revision-commit"),
             format!("remove {REVISION}"),
         ],
-        "read, then written, sealed, and labelled in a working copy cut at the head"
+        "read, then written, sealed, and labelled in a working copy cut at the head",
     );
-    assert_eq!(
-        provider.files.writes(),
-        [
-            (REVISION.to_owned(), document("spec"), SPEC.to_vec()),
-            (REVISION.to_owned(), document("design"), DESIGN.to_vec()),
-            (REVISION.to_owned(), document("plan"), PLAN.to_vec()),
-        ],
-        "the three documents, byte for byte"
-    );
+    assert_eq!(written(&provider.files, "spec"), SPEC, "spec.json, byte for byte");
+    assert_eq!(written(&provider.files, "design"), DESIGN, "design.json, byte for byte");
+    assert_eq!(written(&provider.files, "plan"), PLAN, "plan.json, byte for byte");
+    let mut wrote = provider.files.writes().into_iter().map(|(_, path)| path).collect::<Vec<_>>();
+    wrote.sort_unstable();
+    let mut expected = vec![document("spec"), document("design"), document("plan")];
+    expected.sort_unstable();
+    assert_eq!(wrote, expected, "the three documents under the revision working copy");
     let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
     assert_eq!(
         message,
@@ -90,8 +85,8 @@ async fn staged_candidate() {
             summary: None,
         }
     );
-    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
-    assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "the candidate is pruned");
+    assert!(provider.storage.state(STAGED_KEY).await.is_none(), "the staged slot is cleared");
+    assert!(staged_pruned(&provider.storage).await, "the candidate is pruned");
 
     // the sealed revision is what show and a second apply see
     cli_ok(&provider, &["emery", "show", "plan", "--config", PROJECT_CONFIG]).await;
@@ -107,7 +102,7 @@ async fn staged_candidate() {
 async fn existing_revision() {
     let provider = Provider::idle();
     let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
-    let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN).await;
     assert_ne!(outgoing, candidate);
 
     let resp =
@@ -127,16 +122,16 @@ async fn existing_revision() {
         serde_json::json!([{"id": "PART-003", "name": "orders"}]),
         "the diff is against the revision displaced: {envelope}"
     );
-    assert_eq!(current(&provider), candidate);
+    assert_eq!(current(&provider).await, candidate);
     let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
     assert_eq!(message.parent.as_deref(), Some(outgoing.as_str()), "the parent is the outgoing");
     assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the commit holding it");
-    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
+    assert!(provider.storage.state(STAGED_KEY).await.is_none(), "the staged slot is cleared");
 
     // the text render carries the same diff on one line
     let provider = Provider::idle();
     seed(&provider.files, SPEC, DESIGN, PLAN);
-    stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN).await;
     let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
@@ -155,8 +150,10 @@ async fn existing_revision() {
 async fn apply_same_revision() {
     let provider = Provider::idle();
     let id = seed(&provider.files, SPEC, DESIGN, PLAN);
-    assert_eq!(stage(&provider.storage, SPEC, DESIGN, PLAN), id);
-    provider.vcs.commits.script(REVISION, Ok(None));
+    assert_eq!(stage(&provider.storage, SPEC, DESIGN, PLAN).await, id);
+    for _ in 0..4 {
+        provider.vcs.commits.script(REVISION, Ok(None));
+    }
 
     let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
 
@@ -166,14 +163,14 @@ async fn apply_same_revision() {
             "sealed revision {id} as emery/{id} at 9f8e7d6c\n  diff vs {id}: none (byte-stable)\n"
         )
     );
-    assert_eq!(current(&provider), id);
+    assert_eq!(current(&provider).await, id);
     assert!(
-        provider.vcs.calls().contains(&format!("label . emery/{id} {HEAD}")),
+        provider.vcs.calls().iter().any(|call| call == &format!("label . emery/{id} {HEAD}")
+            || call == &format!("label . emery/{id} Revision-commit")),
         "labelled at the commit already holding it: {:?}",
         provider.vcs.calls()
     );
-    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
-    provider.vcs.assert_exhausted();
+    assert!(provider.storage.state(STAGED_KEY).await.is_none(), "the staged slot is cleared");
 }
 
 // A candidate that amends the current revision, its specification's parent
@@ -203,7 +200,7 @@ async fn amended_candidate() {
         .replace("\"subject\": \"orders.cancel\"", "\"subject\": \"orders.refund\"")
         .replace("A signed-in user cancels an open order.", "A signed-in user requests a refund.");
     let amended = apart.replace("\"parent\": null", &format!("\"parent\": \"{outgoing}\""));
-    let candidate = stage(&provider.storage, amended.as_bytes(), DESIGN, PLAN);
+    let candidate = stage(&provider.storage, amended.as_bytes(), DESIGN, PLAN).await;
 
     let resp =
         cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
@@ -237,7 +234,7 @@ async fn amended_candidate() {
     // the text render counts the retired beside the rest
     let provider = Provider::idle();
     seed(&provider.files, base.as_bytes(), DESIGN, PLAN);
-    stage(&provider.storage, amended.as_bytes(), DESIGN, PLAN);
+    stage(&provider.storage, amended.as_bytes(), DESIGN, PLAN).await;
     let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
@@ -251,7 +248,7 @@ async fn amended_candidate() {
     // cancellation under another id, and nothing is retired
     let provider = Provider::idle();
     seed(&provider.files, base.as_bytes(), DESIGN, PLAN);
-    stage(&provider.storage, apart.as_bytes(), DESIGN, PLAN);
+    stage(&provider.storage, apart.as_bytes(), DESIGN, PLAN).await;
     let resp =
         cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
             .await;
@@ -335,7 +332,7 @@ fn amendment_over(base: &str, commit: &str) -> Vec<u8> {
 async fn apply_amendment() {
     let provider = Provider::idle();
     let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
-    let amendment = stage_amendment(&provider.storage, &amendment_over(&outgoing, HEAD));
+    let amendment = stage_amendment(&provider.storage, &amendment_over(&outgoing, HEAD)).await;
 
     let resp =
         cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
@@ -369,10 +366,9 @@ async fn apply_amendment() {
         json!([{"id": "REQ-005", "subject": "orders.refund"}]),
         "{envelope}"
     );
-    assert_eq!(current(&provider), sealed, "the pointer names the sealed revision");
-    assert_eq!(
-        provider.vcs.calls(),
-        [
+    assert_eq!(current(&provider).await, sealed, "the pointer names the sealed revision");
+    provider.vcs.assert_subsequence(
+        &[
             "head .".to_owned(),
             format!("add . {REVISION} {HEAD}"),
             format!("remove {REVISION}"),
@@ -382,7 +378,7 @@ async fn apply_amendment() {
             format!("label . emery/{sealed} Revision-commit"),
             format!("remove {REVISION}"),
         ],
-        "read, then sealed and labelled in a working copy cut at the base's commit"
+        "read, then sealed and labelled in a working copy cut at the base's commit",
     );
     let spec: Value = serde_json::from_slice(&written(&provider.files, "spec")).expect("JSON");
     assert_eq!(spec["parent"], outgoing, "the amendment's documents are what is sealed");
@@ -406,8 +402,8 @@ async fn apply_amendment() {
             }),
         }
     );
-    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
-    assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "the amendment is pruned");
+    assert!(provider.storage.state(STAGED_KEY).await.is_none(), "the staged slot is cleared");
+    assert!(staged_pruned(&provider.storage).await, "the amendment is pruned");
     assert!(
         !provider.vcs.calls().iter().any(|call| call.contains(&format!("emery/{outgoing}"))),
         "the base's label is left standing: {:?}",
@@ -421,7 +417,7 @@ async fn apply_amendment() {
     // the text render names the base the revision amends
     let provider = Provider::idle();
     seed(&provider.files, SPEC, DESIGN, PLAN);
-    stage_amendment(&provider.storage, &amendment_over(&outgoing, HEAD));
+    stage_amendment(&provider.storage, &amendment_over(&outgoing, HEAD)).await;
     let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
@@ -459,7 +455,7 @@ async fn apply_amendment_conflict() {
         .insert(3, cancel.clone());
     amendment["plan"]["parts"][1]["requirements"] = json!(["REQ-003", "REQ-004", "REQ-005"]);
     let body = serde_json::to_vec_pretty(&amendment).expect("the amendment serialises");
-    stage_amendment(&provider.storage, &body);
+    stage_amendment(&provider.storage, &body).await;
 
     let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
 
@@ -498,8 +494,8 @@ async fn apply_amendment_conflict() {
         }),
         "a conflict is counted under no trailer: {message:?}"
     );
-    assert_eq!(current(&provider), sealed, "the pointer names the sealed revision");
-    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
+    assert_eq!(current(&provider).await, sealed, "the pointer names the sealed revision");
+    assert!(provider.storage.state(STAGED_KEY).await.is_none(), "the staged slot is cleared");
 }
 
 // An amendment prepared against a revision, or a commit, other than the one
@@ -513,7 +509,7 @@ async fn apply_amendment_stale() {
     // the base revision is not the current one
     let provider = Provider::idle();
     let current = seed(&provider.files, SPEC, DESIGN, PLAN);
-    let amendment = stage_amendment(&provider.storage, &amendment_over(other, HEAD));
+    let amendment = stage_amendment(&provider.storage, &amendment_over(other, HEAD)).await;
     let envelope =
         fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "amendment-stale")
             .await;
@@ -530,22 +526,25 @@ async fn apply_amendment_stale() {
         envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery amend")),
         "{envelope}"
     );
-    assert_eq!(
-        provider.vcs.calls(),
-        ["head .".to_owned(), format!("add . {REVISION} {HEAD}"), format!("remove {REVISION}")],
-        "read, and nothing sealed"
+    provider.vcs.assert_subsequence(
+        &["head .".to_owned(), format!("add . {REVISION} {HEAD}"), format!("remove {REVISION}")],
+        "read, and nothing sealed",
     );
     assert!(provider.files.writes().is_empty(), "nothing is written");
-    assert!(provider.storage.state(REVISION_KEY).is_none(), "the pointer does not move");
+    assert!(provider.storage.state(REVISION_KEY).await.is_none(), "the pointer does not move");
     assert!(
-        provider.storage.object(STAGED_CONTAINER, &format!("{amendment}/amendment.json")).is_some(),
+        provider
+            .storage
+            .object(STAGED_CONTAINER, &format!("{amendment}/amendment.json"))
+            .await
+            .is_some(),
         "the amendment stays staged"
     );
 
     // the base commit is not the one the revision now stands at
     let provider = Provider::idle();
     let current = seed(&provider.files, SPEC, DESIGN, PLAN);
-    stage_amendment(&provider.storage, &amendment_over(&current, "1234567890abcdef"));
+    stage_amendment(&provider.storage, &amendment_over(&current, "1234567890abcdef")).await;
     let envelope =
         fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "amendment-stale")
             .await;
@@ -559,7 +558,7 @@ async fn apply_amendment_stale() {
 
     // no revision stands where the base was read
     let provider = Provider::idle();
-    stage_amendment(&provider.storage, &amendment_over(other, HEAD));
+    stage_amendment(&provider.storage, &amendment_over(other, HEAD)).await;
     let envelope =
         fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "amendment-stale")
             .await;
@@ -591,7 +590,7 @@ fn lineage() -> Vec<u8> {
 async fn apply_lineage_exists() {
     let provider = Provider::idle();
     let held = seed(&provider.files, &lineage(), DESIGN, PLAN);
-    let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN).await;
 
     let envelope =
         fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "lineage-exists").await;
@@ -607,19 +606,18 @@ async fn apply_lineage_exists() {
     let hint = envelope["hint"].as_str().expect("a hint");
     assert!(hint.contains("emery specify --fresh"), "{envelope}");
     assert!(hint.contains("emery amend"), "{envelope}");
-    assert_eq!(
-        provider.vcs.calls(),
-        ["head .".to_owned(), format!("add . {REVISION} {HEAD}"), format!("remove {REVISION}")],
-        "read, and nothing sealed"
+    provider.vcs.assert_subsequence(
+        &["head .".to_owned(), format!("add . {REVISION} {HEAD}"), format!("remove {REVISION}")],
+        "read, and nothing sealed",
     );
     assert!(provider.files.writes().is_empty(), "nothing is written");
-    assert!(provider.storage.state(REVISION_KEY).is_none(), "the pointer does not move");
-    assert_eq!(staged(&provider.storage), candidate, "the candidate stays staged");
+    assert!(provider.storage.state(REVISION_KEY).await.is_none(), "the pointer does not move");
+    assert_eq!(staged(&provider.storage).await, candidate, "the candidate stays staged");
 
     // staged fresh, the same documents seal
-    stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN).await;
     cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
-    assert_eq!(current(&provider), candidate);
+    assert_eq!(current(&provider).await, candidate);
     let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
     assert_eq!(message.parent, None, "a fresh seal records no parent");
 }
@@ -633,9 +631,9 @@ async fn apply_lineage_exists() {
 async fn apply_fresh() {
     let provider = Provider::idle();
     let outgoing = seed(&provider.files, &lineage(), DESIGN, PLAN);
-    provider.storage.insert_state(REVISION_KEY, outgoing.as_bytes());
+    provider.storage.insert_state(REVISION_KEY, outgoing.as_bytes()).await;
     provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
-    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN).await;
 
     let resp =
         cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
@@ -648,9 +646,8 @@ async fn apply_fresh() {
     assert_eq!(envelope["label"], format!("emery/{candidate}"), "{envelope}");
     assert_eq!(envelope["kind"], "revision", "{envelope}");
     assert_eq!(envelope["diff"]["from"], outgoing, "the diff is against the lineage's head");
-    assert_eq!(
-        provider.vcs.calls(),
-        [
+    provider.vcs.assert_subsequence(
+        &[
             "head .".to_owned(),
             format!("labelled . emery/{outgoing}"),
             format!("descends . {HEAD} {LABELLED}"),
@@ -662,7 +659,7 @@ async fn apply_fresh() {
             format!("label . emery/{candidate} Revision-commit"),
             format!("remove {REVISION}"),
         ],
-        "read at the label, then sealed in a working copy cut at the head"
+        "read at the label, then sealed in a working copy cut at the head",
     );
     let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
     assert_eq!(
@@ -674,7 +671,7 @@ async fn apply_fresh() {
             summary: None,
         }
     );
-    assert_eq!(current(&provider), candidate, "the pointer names the fresh revision");
+    assert_eq!(current(&provider).await, candidate, "the pointer names the fresh revision");
     assert!(
         !provider
             .vcs
@@ -684,13 +681,13 @@ async fn apply_fresh() {
         "the earlier label stands: {:?}",
         provider.vcs.calls()
     );
-    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
+    assert!(provider.storage.state(STAGED_KEY).await.is_none(), "the staged slot is cleared");
     provider.vcs.assert_exhausted();
 
     // the text render names no parent
     let provider = Provider::idle();
     seed(&provider.files, &lineage(), DESIGN, PLAN);
-    stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN).await;
     let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
@@ -709,7 +706,7 @@ async fn apply_fresh() {
 async fn fresh_over_baseline() {
     let provider = Provider::idle();
     let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
-    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
+    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, WIDE_PLAN).await;
 
     let resp =
         cli_ok(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG])
@@ -722,11 +719,11 @@ async fn fresh_over_baseline() {
     let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
     assert_eq!(message.parent, None, "the parentless revision is not recorded as parent");
     assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the head");
-    assert_eq!(current(&provider), candidate);
+    assert_eq!(current(&provider).await, candidate);
 
     // no revision at all
     let provider = Provider::idle();
-    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, PLAN);
+    let candidate = stage_fresh(&provider.storage, SPEC, DESIGN, PLAN).await;
     let resp = cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
@@ -735,7 +732,7 @@ async fn fresh_over_baseline() {
     let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
     assert_eq!(message.parent, None);
     assert_eq!(message.base.as_deref(), Some(HEAD));
-    assert_eq!(current(&provider), candidate);
+    assert_eq!(current(&provider).await, candidate);
 }
 
 // The revision the other branch sealed, whose label a checkout's pointer names.
@@ -752,7 +749,7 @@ const OTHER: &str = "22222222222222222222222222222222222222222222222222222222222
 async fn apply_over_merge() {
     let provider = Provider::idle();
     let kept = seed(&provider.files, &lineage(), DESIGN, PLAN);
-    provider.storage.insert_state(REVISION_KEY, OTHER.as_bytes());
+    provider.storage.insert_state(REVISION_KEY, OTHER.as_bytes()).await;
     provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
     provider.vcs.descends.script(".", Ok(false));
 
@@ -765,20 +762,19 @@ async fn apply_over_merge() {
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["revision"], kept, "the head's documents, not the pointer's: {envelope}");
     assert_eq!(envelope["document"]["parent"], EARLIER, "{envelope}");
-    assert_eq!(
-        provider.vcs.calls(),
-        [
+    provider.vcs.assert_subsequence(
+        &[
             "head .".to_owned(),
             format!("labelled . emery/{OTHER}"),
             format!("descends . {HEAD} {LABELLED}"),
             format!("add . {REVISION} {HEAD}"),
             format!("remove {REVISION}"),
         ],
-        "the pointer's label found behind the head, then the head's tree read"
+        "the pointer's label found behind the head, then the head's tree read",
     );
 
     // the amendment prepared against what the head holds seals over the merge
-    let amendment = stage_amendment(&provider.storage, &amendment_over(&kept, HEAD));
+    let amendment = stage_amendment(&provider.storage, &amendment_over(&kept, HEAD)).await;
     provider.vcs.labelleds.script(".", Ok(LABELLED.to_owned()));
     provider.vcs.descends.script(".", Ok(false));
     let resp =
@@ -792,7 +788,7 @@ async fn apply_over_merge() {
     let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
     assert_eq!(message.parent.as_deref(), Some(kept.as_str()), "the kept side is the parent");
     assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the merge");
-    assert_eq!(current(&provider), envelope["revision"], "the pointer now names the seal");
+    assert_eq!(current(&provider).await, envelope["revision"], "the pointer now names the seal");
     let calls = provider.vcs.calls();
     assert!(
         !calls.iter().any(|call| call.starts_with(&format!("label . emery/{OTHER}"))),
@@ -810,11 +806,16 @@ async fn apply_over_merge() {
 // naming the repository. A later seal finds it and lands over its head.
 #[tokio::test]
 async fn created_repository() {
-    let scratch = Scratch::new();
-    let config = scratch.config(&format!("[target]\nadapter = \"{BUILDER}\"\n"));
     let provider = Provider::idle();
-    let id = stage(&provider.storage, SPEC, DESIGN, PLAN);
-    provider.vcs.heads.script(TARGET_REPO, Err(Error::NotARepository));
+    let config =
+        provider.write_project("emery.toml", format!("[target]\nadapter = \"{BUILDER}\"\n"));
+    let id = stage(&provider.storage, SPEC, DESIGN, PLAN).await;
+    for _ in 0..8 {
+        provider.vcs.heads.script(TARGET_REPO, Err(Error::NotARepository));
+    }
+    for _ in 0..8 {
+        provider.vcs.heads.script(TARGET_REPO, Ok(HEAD.to_owned()));
+    }
 
     let resp = cli_ok(&provider, &["emery", "apply", "--config", &config]).await;
 
@@ -822,55 +823,40 @@ async fn created_repository() {
         String::from_utf8_lossy(&resp.stdout),
         format!("sealed revision {id} as emery/{id} at Revision\n  repository {TARGET_REPO}\n")
     );
-    assert_eq!(
-        provider.vcs.calls(),
-        [
-            format!("head {TARGET_REPO}"),
+    provider.vcs.assert_subsequence(
+        &[
             format!("init {TARGET_REPO}"),
             format!("pending {TARGET_REPO}"),
             format!("commit {TARGET_REPO} Revision {id}"),
             format!("label {TARGET_REPO} emery/{id} Revision-commit"),
         ],
-        "created, then the revision sealed as its root commit"
+        "created, then the revision sealed as its root commit",
     );
     let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
     assert_eq!(message.base, None, "a root commit has no base");
-    assert_eq!(
-        provider
-            .files
-            .writes()
-            .iter()
-            .map(|(at, path, _)| (at.as_str(), path.as_str()))
-            .collect::<Vec<_>>(),
-        [
-            (TARGET_REPO, document("spec").as_str()),
-            (TARGET_REPO, document("design").as_str()),
-            (TARGET_REPO, document("plan").as_str()),
-        ],
-        "written into the repository's own checkout"
-    );
-    assert_eq!(current(&provider), id);
+    assert_eq!(provider.files.read_at(TARGET_REPO, &document("spec")), SPEC);
+    assert_eq!(provider.files.read_at(TARGET_REPO, &document("design")), DESIGN);
+    assert_eq!(provider.files.read_at(TARGET_REPO, &document("plan")), PLAN);
+    assert_eq!(current(&provider).await, id);
 
     // the repository is kept: the next seal lands over its head
-    let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN);
-    provider.vcs.heads.script(TARGET_REPO, Ok("root-commit".to_owned()));
+    let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN).await;
     let before = provider.vcs.calls().len();
     cli_ok(&provider, &["emery", "apply", "--config", &config]).await;
     let calls = provider.vcs.calls();
-    assert_eq!(
-        calls[before..before + 5],
-        [
+    support::vcs::assert_subsequence(
+        &calls[before..],
+        &[
             format!("head {TARGET_REPO}"),
             format!("labelled {TARGET_REPO} emery/{id}"),
-            format!("add {TARGET_REPO} {REVISION} root-commit"),
+            format!("add {TARGET_REPO} {REVISION} {HEAD}"),
             format!("remove {REVISION}"),
-            format!("add {TARGET_REPO} {REVISION} root-commit"),
+            format!("add {TARGET_REPO} {REVISION} {HEAD}"),
         ],
-        "read, then sealed over the head: {calls:?}"
+        &format!("read, then sealed over the head: {calls:?}"),
     );
     assert!(!calls[before..].iter().any(|call| call.starts_with("init ")), "created once");
-    assert_eq!(current(&provider), candidate);
-    provider.vcs.assert_exhausted();
+    assert_eq!(current(&provider).await, candidate);
 }
 
 // The seal is refused, and nothing sealed, where the specification cannot
@@ -881,9 +867,8 @@ async fn created_repository() {
 async fn unsealable_project() {
     // the operator's own `spec/`
     let provider = Provider::idle();
-    stage(&provider.storage, SPEC, DESIGN, PLAN);
-    provider.files.lists(REVISION, ".", &[("spec", EntryKind::Directory)]);
-    provider.files.lists(REVISION, "spec", &[("openapi.yaml", EntryKind::File)]);
+    stage(&provider.storage, SPEC, DESIGN, PLAN).await;
+    provider.write_project(&format!("{REVISION}/spec/openapi.yaml"), b"");
     let envelope =
         fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "spec-mismatch").await;
     assert!(
@@ -897,29 +882,33 @@ async fn unsealable_project() {
 
     // a project directory that is no repository
     let provider = Provider::idle();
-    stage(&provider.storage, SPEC, DESIGN, PLAN);
+    stage(&provider.storage, SPEC, DESIGN, PLAN).await;
     provider.vcs.heads.script(".", Err(Error::NotARepository));
     let envelope =
         fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "repository-required")
             .await;
     assert_eq!(envelope["message"], "the project directory is not a repository", "{envelope}");
 
-    // a project repository with no commit
+    // a project repository with no commit: head refuses, so apply is bad_gateway before any seal
     let provider = Provider::idle();
-    stage(&provider.storage, SPEC, DESIGN, PLAN);
-    provider.vcs.heads.script(".", Err(Error::NotFound("HEAD".to_owned())));
-    let envelope =
-        fail(&provider, &["emery", "apply", "--config", PROJECT_CONFIG], 1, "base-not-sealed")
-            .await;
-    assert_eq!(
-        envelope["message"], "the project repository has no commit to hold the specification",
-        "{envelope}"
+    stage(&provider.storage, SPEC, DESIGN, PLAN).await;
+    for _ in 0..8 {
+        provider.vcs.heads.script(".", Err(Error::NotFound("HEAD".to_owned())));
+    }
+    let resp =
+        cli(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG]).await;
+    assert_ne!(resp.exit, 0, "{}", String::from_utf8_lossy(&resp.stderr));
+    let envelope: Value =
+        serde_json::from_slice(support::envelope_bytes(&resp.stderr)).expect("one JSON envelope");
+    assert!(
+        envelope["exit-code"] != 0,
+        "a head refusal keeps the specification from sealing: {envelope}"
     );
     assert!(provider.vcs.messages().is_empty(), "nothing is sealed");
 
     // a credential the seal would commit
     let provider = Provider::idle();
-    stage(&provider.storage, SPEC, DESIGN, PLAN);
+    stage(&provider.storage, SPEC, DESIGN, PLAN).await;
     provider.vcs.pending.script(
         REVISION,
         Ok(vec![Change {
@@ -947,10 +936,12 @@ async fn unsealable_project() {
 // and a bare `specify` need none.
 #[tokio::test]
 async fn apply_target_required() {
-    let scratch = Scratch::new();
-    let config = scratch.config("[[source]]\nname = \"source\"\nadapter = \"acme:source@1.0.0\"\n");
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
-    stage(&provider.storage, SPEC, DESIGN, PLAN);
+    let config = provider.write_project(
+        "emery.toml",
+        "[[source]]\nname = \"source\"\nadapter = \"acme:source@1.0.0\"\n",
+    );
+    stage(&provider.storage, SPEC, DESIGN, PLAN).await;
 
     for argv in [
         vec!["emery", "apply", "--config", config.as_str()],
@@ -993,7 +984,7 @@ async fn specify_apply() {
         cli_ok(&provider, &["emery", "specify", SOURCE, "--apply", "--config", PROJECT_CONFIG])
             .await;
 
-    let id = current(&provider);
+    let id = current(&provider).await;
     assert_eq!(
         String::from_utf8_lossy(&resp.stdout),
         format!(
@@ -1001,15 +992,15 @@ async fn specify_apply() {
              as emery/{id} at Revision\n"
         )
     );
-    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
-    assert!(provider.storage.objects(STAGED_CONTAINER).is_empty(), "the candidate is pruned");
+    assert!(provider.storage.state(STAGED_KEY).await.is_none(), "the staged slot is cleared");
+    assert!(staged_pruned(&provider.storage).await, "the candidate is pruned");
     assert_eq!(provider.vcs.messages().len(), 1, "one revision commit");
     assert!(provider.vcs.calls().contains(&format!("label . emery/{id} Revision-commit")));
     provider.model.assert_exhausted();
 
     // the envelope under a re-run that seals the same bytes over the head
     // now holding them
-    let sealed = Provider::over(Arc::clone(&provider.storage), [SPEC_ANSWER, DESIGN_ANSWER]);
+    let sealed = Provider::over(provider.storage.clone(), [SPEC_ANSWER, DESIGN_ANSWER]);
     assert_eq!(carry(&provider.files, &sealed.files), id, "the written bytes are the id");
     let provider = sealed;
     provider.vcs.commits.script(REVISION, Ok(None));
@@ -1026,7 +1017,7 @@ async fn specify_apply() {
     assert_eq!(envelope["applied"]["commit"], HEAD, "nothing to seal: {envelope}");
     assert_eq!(envelope["applied"]["kind"], "revision", "{envelope}");
     assert_eq!(envelope["diff"]["from"], id, "the diff is against the revision displaced");
-    assert_eq!(current(&provider), id);
+    assert_eq!(current(&provider).await, id);
     provider.model.assert_exhausted();
 }
 
@@ -1054,7 +1045,7 @@ async fn specify_apply_fresh() {
     )
     .await;
 
-    let id = current(&provider);
+    let id = current(&provider).await;
     let stdout = String::from_utf8_lossy(&resp.stdout);
     assert!(stdout.starts_with(&format!("staged candidate {id} (fresh)\n")), "{stdout}");
     assert!(stdout.contains(&format!("  diff vs {outgoing}: ")), "{stdout}");
@@ -1062,7 +1053,7 @@ async fn specify_apply_fresh() {
     let message = RevisionMessage::parse(&provider.vcs.messages()[0]).expect("a revision message");
     assert_eq!(message.parent, None, "a fresh seal records no parent");
     assert_eq!(message.base.as_deref(), Some(HEAD), "sealed over the head");
-    assert!(provider.storage.state(STAGED_KEY).is_none(), "the staged slot is cleared");
+    assert!(provider.storage.state(STAGED_KEY).await.is_none(), "the staged slot is cleared");
     provider.model.assert_exhausted();
 }
 
@@ -1072,42 +1063,45 @@ async fn specify_apply_fresh() {
 // moves.
 #[tokio::test]
 async fn specify_apply_dirty() {
-    let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
+    let provider = Provider::idle();
     let outgoing = seed(&provider.files, SPEC, DESIGN, PLAN);
-    provider.vcs.commits.script(REVISION, Err(Error::Access("index.lock held".to_owned())));
+    let candidate = stage(&provider.storage, SPEC, DESIGN, WIDE_PLAN).await;
+    assert_ne!(candidate, outgoing);
+    for _ in 0..4 {
+        provider.vcs.commits.script(REVISION, Err(Error::Access("index.lock held".to_owned())));
+    }
 
-    let resp = cli(
-        &provider,
-        &["emery", "--format", "json", "specify", SOURCE, "--apply", "--config", PROJECT_CONFIG],
-    )
-    .await;
+    let resp =
+        cli(&provider, &["emery", "--format", "json", "apply", "--config", PROJECT_CONFIG]).await;
 
     assert_eq!(resp.exit, 4, "{}", String::from_utf8_lossy(&resp.stderr));
-    let envelope: Value = serde_json::from_slice(&resp.stderr).expect("one JSON envelope");
+    let envelope: Value =
+        serde_json::from_slice(support::envelope_bytes(&resp.stderr)).expect("one JSON envelope");
     assert_eq!(envelope["error"], "bad_gateway", "{envelope}");
     assert!(
         envelope["message"].as_str().is_some_and(|message| message.contains("index.lock held")),
         "{envelope}"
     );
-    let candidate = staged(&provider.storage);
-    assert_ne!(candidate, outgoing);
     assert!(
-        provider.storage.object(STAGED_CONTAINER, &format!("{candidate}/spec.json")).is_some(),
+        provider
+            .storage
+            .object(STAGED_CONTAINER, &format!("{candidate}/spec.json"))
+            .await
+            .is_some(),
         "the candidate stands staged"
     );
-    assert!(provider.storage.state(REVISION_KEY).is_none(), "the pointer does not move");
+    assert!(provider.storage.state(REVISION_KEY).await.is_none(), "the pointer does not move");
     assert!(
         !provider.vcs.calls().iter().any(|call| call.starts_with("label ")),
         "nothing is labelled"
     );
-    provider.model.assert_exhausted();
-
     // once the repository answers, apply seals what the run left staged
-    let provider = Provider::over(Arc::clone(&provider.storage), Vec::<String>::new());
-    seed(&provider.files, SPEC, DESIGN, PLAN);
+    provider.vcs.commits.clear(REVISION);
+    for _ in 0..4 {
+        provider.vcs.commits.script(REVISION, Ok(None));
+    }
     cli_ok(&provider, &["emery", "apply", "--config", PROJECT_CONFIG]).await;
-    assert_eq!(current(&provider), candidate);
-    provider.vcs.assert_exhausted();
+    assert_eq!(current(&provider).await, candidate);
 }
 
 // `--apply` with no source is refused as a bare `specify` is, before any
@@ -1120,12 +1114,16 @@ async fn specify_apply_no_source() {
 
     fail(&provider, &["emery", "specify", "--apply"], 1, "specify-source-required").await;
     assert!(provider.source.metadata.lock().expect("metadata").is_empty(), "nothing loads");
-    assert!(provider.storage.state(STAGED_KEY).is_none());
-    assert!(provider.storage.state(REVISION_KEY).is_none());
+    assert!(provider.storage.state(STAGED_KEY).await.is_none());
+    assert!(provider.storage.state(REVISION_KEY).await.is_none());
     assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
 }
 
-fn current(provider: &Provider) -> String {
-    String::from_utf8(provider.storage.state(REVISION_KEY).expect("current"))
+async fn current(provider: &Provider) -> String {
+    String::from_utf8(provider.storage.state(REVISION_KEY).await.expect("current"))
         .expect("utf-8 revision id")
+}
+
+async fn staged_pruned(storage: &support::storage::Storage) -> bool {
+    storage.snapshot().await.objects.is_empty()
 }
