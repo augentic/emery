@@ -77,8 +77,8 @@ emery --version
 The repository root is a Rust workspace producing the `emery` binary. The root `Makefile` forwards every task to [mise](mise.toml), which runs the shared Augentic Rust tasks. Install `mise` before running local checks:
 
 ```bash
-make test    # native integration suite via cargo nextest
-make ci      # full CI gate: fmt-check, lint (host + wasm32), tests, doctests, docs, vet, deny
+make test    # integration suites via cargo nextest (root scenarios boot the engine guest through omnia_test::host)
+make ci      # full CI gate: fmt-check, lint (host + wasm32-wasip3), tests, doctests, docs, vet, deny
 make check   # local advisories: audit, fmt (rewrites), lint, outdated, deps
 ```
 

@@ -33,7 +33,7 @@ When you modify files under `plugins/emery/`, bump the version in both `.cursor-
 ### Rust workspace
 
 - Format code with nightly rustfmt: `make fmt`
-- Run host and WebAssembly (`wasm32-wasip2`) clippy passes: `make lint`
+- Run host and WebAssembly (`wasm32-wasip3`) clippy passes: `make lint`
 - Run the full CI gate before submitting: `make ci`
 
 ### Documentation and Cursor skills
@@ -104,7 +104,8 @@ Target all pull requests at the `main` branch:
 
 Every pull request requires at least one maintainer review and passing CI before merge. Include tests at the public boundary for any behavioral change:
 
-- **End-to-end CLI scenarios** live in `tests/` (driving `emery_cli::run` over scripted capabilities or `tests/runtime.rs` over the compiled Wasm guest).
+- **End-to-end CLI scenarios** live in `tests/` (driving `tests/support::Provider` over a precompiled engine guest and scripted adapter components, or `tests/runtime.rs` over the shipped runtime).
+- **`emery-sdk` integration tests** live in `crates/sdk/tests/` and run through `crates/test-programs` guest drivers on the same host rung.
 - **Crate integration tests** live in `crates/*/tests/` for standalone library contracts (`emery-sdk`, `emery-prose`).
 - **Documentation changes** under `docs/` must pass `mdbook build docs`.
 
