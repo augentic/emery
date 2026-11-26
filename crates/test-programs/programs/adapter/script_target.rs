@@ -2,14 +2,14 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use std::future;
 use std::num::NonZeroU32;
 
 use emery_adapter::target::{MergeRule, Outcome, Task};
 use emery_sdk::target::export::{self, Guest};
 use test_programs::script::{CombinedScript, ScriptCall};
 use test_programs::script_io::{
-    append_call, read_state, rendezvous_wait, write_slice_dispatch, write_state,
+    append_call, claim_build_attempt, claim_verify_attempt, read_state, rendezvous_wait,
+    write_slice_dispatch,
 };
 
 struct Adapter;
@@ -30,7 +30,7 @@ impl Guest for Adapter {
     async fn run(
         id: export::AdapterId, workspace: String, task: export::Task,
     ) -> Result<export::Outcome, export::Error> {
-        future::ready(dispatch(&id, &workspace, task)).await
+        dispatch(&id, &workspace, task).await
     }
 }
 
@@ -47,17 +47,18 @@ fn scripted_budget(id: &str) -> NonZeroU32 {
     digits.parse().ok().and_then(NonZeroU32::new).unwrap_or(default)
 }
 
-fn dispatch(
+async fn dispatch(
     id: &export::AdapterId, workspace: &str, task: export::Task,
 ) -> Result<export::Outcome, export::Error> {
-    let mut combined = read_state::<CombinedScript>();
+    let combined = read_state::<CombinedScript>();
     let task = Task::from(task);
-    match &task {
+    let attempt = match &task {
         Task::Init => {
             append_call(&ScriptCall::TargetInit {
                 id: id.clone(),
                 workspace: workspace.to_owned(),
             });
+            0
         }
         Task::Build(slice) => {
             write_slice_dispatch(&slice.id, &slice.base);
@@ -68,31 +69,29 @@ fn dispatch(
                 slice: Box::default(),
             });
             if let Some(rendezvous) = &combined.target.rendezvous {
-                rendezvous_wait(
-                    &slice.id,
-                    &rendezvous.expected.iter().cloned().collect::<Vec<_>>(),
-                );
+                let expected: Vec<_> = rendezvous.expected.iter().cloned().collect();
+                rendezvous_wait(&slice.id, &expected).await;
             }
+            claim_build_attempt(&slice.id)
         }
         Task::Verify => {
             append_call(&ScriptCall::TargetVerify {
                 id: id.clone(),
                 workspace: workspace.to_owned(),
             });
+            claim_verify_attempt()
         }
-    }
+    };
 
-    let result = combined
+    combined
         .target
-        .run(id, workspace, &task)
+        .run_at(&task, attempt)
         .map(|outcome| match outcome {
             Outcome::Initialised => export::Outcome::Initialised,
             Outcome::Built(report) => export::Outcome::Built(report.into()),
             Outcome::Verified(verdict) => export::Outcome::Verified(verdict.into()),
         })
-        .map_err(Into::into);
-    write_state(&combined);
-    result
+        .map_err(Into::into)
 }
 
 emery_sdk::target::export::export!(Adapter with_types_in emery_sdk::target::export);

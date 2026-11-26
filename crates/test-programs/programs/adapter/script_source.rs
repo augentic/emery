@@ -2,7 +2,7 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use std::future::{self, pending};
+use std::future::pending;
 
 use emery_adapter::source::{Evidence, SourceKind, SourceMetadata};
 use emery_sdk::SourceInput;
@@ -29,7 +29,7 @@ impl Guest for Adapter {
         if state.held.contains(&source.name) {
             pending::<()>().await;
         }
-        future::ready(extract_scripted(&id, &source, &state)).await
+        extract_scripted(&id, &source, &state).await
     }
 }
 
@@ -47,7 +47,7 @@ fn kind_for_adapter(id: &str) -> SourceKind {
     }
 }
 
-fn extract_scripted(
+async fn extract_scripted(
     id: &export::AdapterId, source: &SourceInput, state: &SourceScriptState,
 ) -> Result<export::Evidence, export::Error> {
     append_call(&ScriptCall::SourceExtract {
@@ -56,7 +56,8 @@ fn extract_scripted(
     });
 
     if let Some(rendezvous) = &state.rendezvous {
-        rendezvous_wait(&source.name, &rendezvous.expected.iter().cloned().collect::<Vec<_>>());
+        let expected: Vec<_> = rendezvous.expected.iter().cloned().collect();
+        rendezvous_wait(&source.name, &expected).await;
     }
 
     let outcome: Result<Evidence, omnia_sdk::Error> = match state.evidence.get(&source.name) {

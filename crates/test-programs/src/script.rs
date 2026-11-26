@@ -1,7 +1,8 @@
 //! Script protocol for the scripted source and target adapter guests.
 //!
 //! The host writes `state.json` under the `script` mount before each engine
-//! run; guests read it and append one JSON line per dispatch to `calls.jsonl`.
+//! run; guests read it without modifying it and record dispatches and queue
+//! consumption as separate files beneath per-purpose subdirectories.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -27,12 +28,28 @@ pub struct CombinedScript {
 /// Directory beneath the workspace mount (`.`) holding script state and call logs.
 pub const MOUNT: &str = ".emery/script";
 
-/// Relative paths beneath [`MOUNT`].
+/// Relative path of the immutable script state file beneath [`MOUNT`].
 pub const STATE: &str = "state.json";
-/// Filename for append-only dispatch records beneath [`MOUNT`].
-pub const CALLS: &str = "calls.jsonl";
+/// Directory holding one JSON file per recorded adapter dispatch beneath [`MOUNT`].
+pub const CALLS_DIR: &str = "calls";
+/// Directory holding per-slice dispatch metadata beneath [`MOUNT`].
+pub const SLICES_DIR: &str = "slices";
+/// Directory holding per-slice failure-queue slot markers beneath [`MOUNT`].
+pub const FAILURES_DIR: &str = "failures";
+/// Directory holding wave verify-queue slot markers beneath [`MOUNT`].
+pub const VERIFIES_DIR: &str = "verifies";
 /// Directory guests mark so parallel barriers can rendezvous.
 pub const ARRIVED: &str = "arrived";
+
+/// Maps a source or slice identifier onto a filesystem-safe path component.
+#[must_use]
+pub fn sanitise_id(id: &str) -> String {
+    id.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' { ch } else { '_' }
+        })
+        .collect()
+}
 
 /// One rendezvous barrier: every `expected` source or slice id must arrive before any proceeds.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -284,23 +301,21 @@ impl TargetScriptState {
         }
     }
 
-    /// Resolves one `run` task against this script.
+    /// Resolves the `attempt`-th dispatch of `task` against this immutable script.
     ///
     /// # Errors
     ///
     /// Returns [`ScriptError`] converted to [`Error`] when the script refuses the task.
-    pub fn run(
-        &mut self, _id: &str, _workspace: &str, task: &Task,
+    pub fn run_at(
+        &self, task: &Task, attempt: usize,
     ) -> Result<emery_adapter::target::Outcome, Error> {
         use emery_adapter::target::Outcome;
         match task {
             Task::Init => Ok(Outcome::Initialised),
             Task::Build(slice) => {
-                if let Some(queue) = self.failures.get_mut(&slice.id)
-                    && let Some(err) = queue.first().cloned()
+                if let Some(err) = self.failures.get(&slice.id).and_then(|queue| queue.get(attempt))
                 {
-                    queue.remove(0);
-                    return Err(err.into());
+                    return Err(err.clone().into());
                 }
                 let outcome = self.reports.get(&slice.id).cloned().unwrap_or_else(|| {
                     ReportScript::Ok(Report {
@@ -316,12 +331,9 @@ impl TargetScriptState {
             Task::Verify => {
                 let outcome = self
                     .verdicts
-                    .first()
+                    .get(attempt)
                     .cloned()
                     .unwrap_or_else(|| VerdictScript::Ok(Verdict::passed()));
-                if !self.verdicts.is_empty() {
-                    self.verdicts.remove(0);
-                }
                 match outcome {
                     VerdictScript::Ok(verdict) => Ok(Outcome::Verified(verdict)),
                     VerdictScript::Err(err) => Err(err.into()),

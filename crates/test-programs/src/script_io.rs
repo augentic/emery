@@ -1,23 +1,20 @@
 //! Script mount helpers for adapter guests.
 
 use std::fs;
-use std::io::Write as _;
+use std::io::ErrorKind;
 use std::path::PathBuf;
 
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use wasip3::clocks::monotonic_clock;
 
-use crate::script::{CALLS, CombinedScript, MOUNT, STATE, ScriptCall};
+use crate::script::{
+    ARRIVED, CALLS_DIR, FAILURES_DIR, MOUNT, SLICES_DIR, STATE, ScriptCall, VERIFIES_DIR,
+    sanitise_id,
+};
 use crate::slice_wire::SliceWire;
 
-/// Reads the target budget from `state.json` when the mount is present.
-#[must_use]
-pub fn staged_target_budget() -> Option<u32> {
-    let path = mount(STATE);
-    let bytes = fs::read(path).ok()?;
-    let combined: CombinedScript = serde_json::from_slice(&bytes).ok()?;
-    combined.target.budget
-}
+const POLL_NS: u64 = 2_000_000;
+const TIMEOUT_NS: u64 = 15_000_000_000;
 
 /// Reads and parses `state.json` from the script mount.
 ///
@@ -31,30 +28,20 @@ pub fn read_state<T: DeserializeOwned>() -> T {
     serde_json::from_slice(&bytes).unwrap_or_else(|err| panic!("state JSON: {err}"))
 }
 
-/// Persists updated script state for the next guest dispatch in the same run.
-///
-/// # Panics
-///
-/// Panics when the state file cannot be written.
-pub fn write_state<T: Serialize>(state: &T) {
-    let path = mount(STATE);
-    let bytes = serde_json::to_vec(state).expect("state serialises");
-    fs::write(path, bytes).expect("write state");
-}
-
 /// Writes a slice payload beside the call log for the host to reconstruct dispatches.
 ///
 /// # Panics
 ///
 /// Panics when the slice file cannot be written.
 pub fn write_slice(slice: &SliceWire) {
-    let relative = format!("slices/{}.json", slice.id);
-    let path = mount(&relative);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).expect("slice log dir");
-    }
+    let dir = mount(SLICES_DIR);
+    let _ = fs::create_dir_all(&dir);
+    let key = sanitise_id(&slice.id);
+    let staged = dir.join(format!("{key}.tmp"));
+    let path = dir.join(format!("{key}.json"));
     let bytes = serde_json::to_vec(slice).expect("slice serialises");
-    fs::write(path, bytes).expect("write slice log");
+    fs::write(&staged, bytes).expect("write slice log");
+    fs::rename(&staged, path).expect("place slice log");
 }
 
 /// Writes only dispatch metadata the host needs without serialising the full slice on the stack.
@@ -71,17 +58,39 @@ pub fn write_slice_dispatch(id: &str, base: &str) {
     write_slice(&wire);
 }
 
-/// Appends one dispatch record to `calls.jsonl`.
+/// Records one adapter dispatch under its own numbered JSON file in `calls/`.
 ///
 /// # Panics
 ///
-/// Panics when the calls log cannot be opened or written.
+/// Panics when the dispatch record cannot be written.
 pub fn append_call(call: &ScriptCall) {
-    let path = mount(CALLS);
-    let line = serde_json::to_string(call).expect("call serialises");
-    let mut file =
-        fs::OpenOptions::new().create(true).append(true).open(path).expect("open calls log");
-    writeln!(file, "{line}").expect("append call");
+    let index = claim_slot(CALLS_DIR);
+    let dir = mount(CALLS_DIR);
+    let staged = dir.join(format!("{index:06}.tmp"));
+    let path = dir.join(format!("{index:06}.json"));
+    let bytes = serde_json::to_vec(call).expect("call serialises");
+    fs::write(&staged, bytes).expect("write call log");
+    fs::rename(&staged, path).expect("place call log");
+}
+
+/// Claims the zero-based dispatch index for `slice_id` within the current run.
+///
+/// # Panics
+///
+/// Panics when the failure-slot directory cannot be updated.
+#[must_use]
+pub fn claim_build_attempt(slice_id: &str) -> usize {
+    claim_slot(&format!("{FAILURES_DIR}/{}", sanitise_id(slice_id)))
+}
+
+/// Claims the zero-based verify index within the current run.
+///
+/// # Panics
+///
+/// Panics when the verify-slot directory cannot be updated.
+#[must_use]
+pub fn claim_verify_attempt() -> usize {
+    claim_slot(VERIFIES_DIR)
 }
 
 /// Waits until every id in `expected` has touched the arrived directory, or times out.
@@ -89,38 +98,50 @@ pub fn append_call(call: &ScriptCall) {
 /// # Panics
 ///
 /// Panics when the arrived directory cannot be written or the barrier times out.
-pub fn rendezvous_wait(key: &str, expected: &[String]) {
+pub async fn rendezvous_wait(key: &str, expected: &[String]) {
     if !expected.iter().any(|id| id == key) {
         return;
     }
-    let arrived = mount("arrived");
-    fs::create_dir_all(&arrived).expect("arrived dir");
-    fs::write(arrived.join(sanitise(key)), []).expect("mark arrived");
-    if expected.iter().all(|id| arrived.join(sanitise(id)).is_file()) {
+    let arrived = mount(ARRIVED);
+    let _ = fs::create_dir_all(&arrived);
+    fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(arrived.join(sanitise_id(key)))
+        .expect("mark arrived");
+    if expected.iter().all(|id| arrived.join(sanitise_id(id)).is_file()) {
         return;
     }
-    for _ in 0..500_000 {
-        if expected.iter().all(|id| arrived.join(sanitise(id)).is_file()) {
+    let deadline = monotonic_clock::now().saturating_add(TIMEOUT_NS);
+    while monotonic_clock::now() < deadline {
+        monotonic_clock::wait_for(POLL_NS).await;
+        if expected.iter().all(|id| arrived.join(sanitise_id(id)).is_file()) {
             return;
         }
-        std::hint::spin_loop();
     }
     let missing: Vec<_> =
-        expected.iter().filter(|id| !arrived.join(sanitise(id)).is_file()).cloned().collect();
+        expected.iter().filter(|id| !arrived.join(sanitise_id(id)).is_file()).cloned().collect();
     panic!(
-        "`{key}` spun for parallel dispatches {missing:?} never arrived: the engine is running \
-         them one at a time"
+        "`{key}` waited for parallel dispatches {missing:?} that never arrived: the engine is \
+         running them one at a time"
     );
+}
+
+fn claim_slot(relative_dir: &str) -> usize {
+    let dir = mount(relative_dir);
+    let _ = fs::create_dir_all(&dir);
+    for index in 0usize.. {
+        let slot = dir.join(format!("{index:06}.slot"));
+        match fs::OpenOptions::new().write(true).create_new(true).open(&slot) {
+            Ok(_) => return index,
+            Err(err) if err.kind() == ErrorKind::AlreadyExists => {}
+            Err(err) => panic!("claiming slot {}: {err}", slot.display()),
+        }
+    }
+    unreachable!("slot sequence is unbounded")
 }
 
 fn mount(relative: &str) -> PathBuf {
     PathBuf::from(MOUNT).join(relative)
-}
-
-fn sanitise(id: &str) -> String {
-    id.chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' { ch } else { '_' }
-        })
-        .collect()
 }

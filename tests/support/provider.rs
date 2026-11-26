@@ -24,8 +24,9 @@ use omnia_wasi_otel::WasiOtel;
 use omnia_wasi_vcs::WasiVcs;
 use sha2::{Digest, Sha256};
 use test_programs::script::{
-    ARRIVED, CALLS, CombinedScript, EvidenceScript, MOUNT, ReportScript, RuleWire, STATE,
-    ScriptCall, ScriptError, SourceScriptState, TargetScriptState, VerdictScript,
+    ARRIVED, CALLS_DIR, CombinedScript, EvidenceScript, FAILURES_DIR, MOUNT, ReportScript,
+    RuleWire, SLICES_DIR, STATE, ScriptCall, ScriptError, SourceScriptState, TargetScriptState,
+    VERIFIES_DIR, VerdictScript, sanitise_id,
 };
 use test_programs::slice_wire::SliceWire;
 
@@ -361,11 +362,13 @@ impl Provider {
             target: self.host_target_state(),
         };
         let dir = self.project.path().join(MOUNT);
-        fs::create_dir_all(&dir).expect("script dir");
+        for subdir in [ARRIVED, CALLS_DIR, SLICES_DIR, FAILURES_DIR, VERIFIES_DIR] {
+            let sub = dir.join(subdir);
+            let _ = fs::remove_dir_all(&sub);
+            fs::create_dir_all(&sub).expect("script subdir");
+        }
         fs::write(dir.join(STATE), serde_json::to_vec_pretty(&script).expect("script JSON"))
             .expect("script state");
-        let _ = fs::remove_file(dir.join(CALLS));
-        let _ = fs::remove_dir_all(dir.join(ARRIVED));
     }
 
     fn host_source_state(&self) -> SourceScriptState {
@@ -446,124 +449,94 @@ impl Provider {
     }
 
     fn read_script_slice(&self, slice_id: &str) -> Option<Slice> {
-        let path = self.project.path().join(MOUNT).join("slices").join(format!("{slice_id}.json"));
+        let path = self
+            .project
+            .path()
+            .join(MOUNT)
+            .join(SLICES_DIR)
+            .join(format!("{}.json", sanitise_id(slice_id)));
         let bytes = fs::read(path).ok()?;
         let wire: SliceWire = serde_json::from_slice(&bytes).ok()?;
         Some(Slice::from(wire))
     }
 
-    /// Clears queued build failures for `slice_id` in memory and on the script mount.
+    /// Clears queued build failures for `slice_id`.
     pub fn clear_target_failures(&self, slice_id: &str) {
         self.target.failures.lock().expect("failures").remove(slice_id);
-        let path = self.project.path().join(MOUNT).join(STATE);
-        let Ok(bytes) = fs::read(&path) else {
-            return;
-        };
-        let Ok(mut combined) = serde_json::from_slice::<CombinedScript>(&bytes) else {
-            return;
-        };
-        combined.target.failures.remove(slice_id);
-        fs::write(&path, serde_json::to_vec(&combined).expect("state bytes")).expect("write state");
     }
 
     fn ingest_target_script(&self) {
-        let path = self.project.path().join(MOUNT).join(STATE);
-        let Ok(bytes) = fs::read(path) else {
-            return;
-        };
-        let Ok(combined) = serde_json::from_slice::<CombinedScript>(&bytes) else {
-            return;
-        };
-        let staged = combined.target;
+        let base = self.project.path().join(MOUNT).join(FAILURES_DIR);
         let mut failures = self.target.failures.lock().expect("failures");
-        failures.clear();
-        for (key, errs) in staged.failures {
-            failures.insert(key, errs.into_iter().map(Error::from).collect());
+        for (slice_id, queue) in failures.iter_mut() {
+            let dir = base.join(sanitise_id(slice_id));
+            let Ok(entries) = fs::read_dir(dir) else {
+                continue;
+            };
+            let attempts = entries
+                .filter_map(Result::ok)
+                .filter(|entry| {
+                    entry.path().extension().and_then(|ext| ext.to_str()) == Some("slot")
+                })
+                .count();
+            let consumed = attempts.min(queue.len());
+            drop(queue.drain(..consumed));
         }
+        failures.retain(|_, queue| !queue.is_empty());
     }
 
     fn ingest_calls(&self) {
-        let path = self.project.path().join(MOUNT).join(CALLS);
-        let Ok(text) = fs::read_to_string(path) else {
+        let dir = self.project.path().join(MOUNT).join(CALLS_DIR);
+        let Ok(entries) = fs::read_dir(dir) else {
             return;
         };
-        for line in text.lines().filter(|line| !line.trim().is_empty()) {
-            for call in parse_script_calls(line) {
-                match call {
-                    ScriptCall::SourceMetadata { id } => {
-                        self.source.metadata.lock().expect("metadata").push(id);
+        let mut files: Vec<PathBuf> = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("json"))
+            .collect();
+        files.sort();
+        for file in files {
+            let bytes =
+                fs::read(&file).unwrap_or_else(|err| panic!("reading {}: {err}", file.display()));
+            let call: ScriptCall = serde_json::from_slice(&bytes)
+                .unwrap_or_else(|err| panic!("call JSON {}: {err}", file.display()));
+            match call {
+                ScriptCall::SourceMetadata { id } => {
+                    self.source.metadata.lock().expect("metadata").push(id);
+                }
+                ScriptCall::SourceExtract { id, input } => {
+                    self.source.calls.lock().expect("calls").push((id, input));
+                }
+                ScriptCall::TargetMetadata { id } => {
+                    self.target.metadata.lock().expect("metadata").push(id);
+                }
+                ScriptCall::TargetInit { workspace, .. } => {
+                    self.target.inits.lock().expect("inits").push(workspace);
+                }
+                ScriptCall::TargetBuild {
+                    id,
+                    slice_id,
+                    workspace,
+                    slice,
+                } => {
+                    let mut lowered = if slice.id.is_empty() {
+                        self.read_script_slice(&slice_id).unwrap_or_else(|| Slice::from(*slice))
+                    } else {
+                        Slice::from(*slice)
+                    };
+                    if lowered.id.is_empty() {
+                        lowered.id = slice_id;
                     }
-                    ScriptCall::SourceExtract { id, input } => {
-                        self.source.calls.lock().expect("calls").push((id, input));
-                    }
-                    ScriptCall::TargetMetadata { id } => {
-                        self.target.metadata.lock().expect("metadata").push(id);
-                    }
-                    ScriptCall::TargetInit { workspace, .. } => {
-                        self.target.inits.lock().expect("inits").push(workspace);
-                    }
-                    ScriptCall::TargetBuild {
-                        id,
-                        slice_id,
-                        workspace,
-                        slice,
-                    } => {
-                        let mut lowered = if slice.id.is_empty() {
-                            self.read_script_slice(&slice_id).unwrap_or_else(|| Slice::from(*slice))
-                        } else {
-                            Slice::from(*slice)
-                        };
-                        if lowered.id.is_empty() {
-                            lowered.id = slice_id;
-                        }
-                        self.target.calls.lock().expect("calls").push((id, lowered, workspace));
-                    }
-                    ScriptCall::TargetVerify { workspace, .. } => {
-                        self.target.verifies.lock().expect("verifies").push(workspace);
-                        let _ = self.target.verdicts.lock().expect("verdicts").pop_front();
-                    }
+                    self.target.calls.lock().expect("calls").push((id, lowered, workspace));
+                }
+                ScriptCall::TargetVerify { workspace, .. } => {
+                    self.target.verifies.lock().expect("verifies").push(workspace);
+                    let _ = self.target.verdicts.lock().expect("verdicts").pop_front();
                 }
             }
         }
     }
-}
-
-fn parse_script_calls(line: &str) -> Vec<ScriptCall> {
-    let trimmed = line.trim();
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
-    if let Ok(call) = serde_json::from_str::<ScriptCall>(trimmed) {
-        return vec![call];
-    }
-    let mut calls = Vec::new();
-    let mut depth = 0usize;
-    let mut open = None::<usize>;
-    for (index, ch) in trimmed.char_indices() {
-        match ch {
-            '{' => {
-                if depth == 0 {
-                    open = Some(index);
-                }
-                depth += 1;
-            }
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    let begin = open.unwrap_or(0);
-                    let slice = &trimmed[begin..=index];
-                    calls.push(
-                        serde_json::from_str(slice)
-                            .unwrap_or_else(|err| panic!("call fragment: {err}: {slice}")),
-                    );
-                    open = None;
-                }
-            }
-            _ => {}
-        }
-    }
-    assert!(!calls.is_empty(), "call line: {trimmed}");
-    calls
 }
 
 /// Runs one CLI invocation, returning the raw response.
