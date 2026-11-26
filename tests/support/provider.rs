@@ -10,6 +10,7 @@ use emery_adapter::source::{Backing, Claim, ClaimKind, Evidence, SourceInput, So
 use emery_adapter::target::{MergeRule, Report, Slice, Verdict};
 use futures::FutureExt as _;
 use futures::executor::block_on;
+use hex;
 use omnia::RegistryConfig;
 use omnia_sdk::Error;
 use omnia_sdk::command::Response;
@@ -21,6 +22,7 @@ use omnia_wasi_model::{
 };
 use omnia_wasi_otel::WasiOtel;
 use omnia_wasi_vcs::WasiVcs;
+use sha2::{Digest, Sha256};
 use test_programs::script::{
     ARRIVED, CALLS, CombinedScript, EvidenceScript, MOUNT, ReportScript, RuleWire, STATE,
     ScriptCall, ScriptError, SourceScriptState, TargetScriptState, VerdictScript,
@@ -293,6 +295,7 @@ impl Provider {
             captured.run(backends, link_stores).await.expect("emery runs")
         };
         self.ingest_calls();
+        self.ingest_target_script();
         eprintln!(
             "provider cli {:?} {:.3?}",
             argv.first().copied().unwrap_or("emery"),
@@ -448,6 +451,22 @@ impl Provider {
         Some(Slice::from(wire))
     }
 
+    fn ingest_target_script(&self) {
+        let path = self.project.path().join(MOUNT).join(STATE);
+        let Ok(bytes) = fs::read(path) else {
+            return;
+        };
+        let Ok(combined) = serde_json::from_slice::<CombinedScript>(&bytes) else {
+            return;
+        };
+        let staged = combined.target;
+        let mut failures = self.target.failures.lock().expect("failures");
+        failures.clear();
+        for (key, errs) in staged.failures {
+            failures.insert(key, errs.into_iter().map(Error::from).collect());
+        }
+    }
+
     fn ingest_calls(&self) {
         let path = self.project.path().join(MOUNT).join(CALLS);
         let Ok(text) = fs::read_to_string(path) else {
@@ -590,6 +609,12 @@ fn adapter_paths() -> (PathBuf, PathBuf) {
         PathBuf::from(test_programs::ADAPTER_SCRIPT_SOURCE),
         PathBuf::from(test_programs::ADAPTER_SCRIPT_TARGET),
     )
+}
+
+/// Digest of the bytes the suite publishes for `acme:builder`.
+pub fn builder_digest() -> String {
+    let bytes = fs::read(adapter_paths().1).expect("the scripted target adapter");
+    format!("sha256:{}", hex::encode(Sha256::digest(bytes)))
 }
 
 fn publish_adapters(store: &Scratch, registry: &Scratch, source: &Path, target: &Path) {
