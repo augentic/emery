@@ -25,13 +25,13 @@ pub const CONFIG_FILE: &str = "emery.toml";
 // project-root file. The `[target]` table of the file read is the run's
 // target, the repository the specification lives in, so a run naming its
 // sources on the command line knows it only under `--config`.
-pub struct SourceCarriers<'a> {
-    pub adapters: &'a [String],
-    pub descriptions: &'a [String],
-    pub config: Option<&'a Path>,
+pub struct SourceCarriers {
+    pub adapters: Vec<String>,
+    pub descriptions: Vec<String>,
+    pub config: Option<PathBuf>,
 }
 
-impl SourceCarriers<'_> {
+impl SourceCarriers {
     pub fn resolve(self) -> Result<(Vec<SourceConfig>, Option<TargetRef>), Error> {
         let Self {
             adapters,
@@ -41,20 +41,23 @@ impl SourceCarriers<'_> {
         let argv = !adapters.is_empty() || !descriptions.is_empty();
 
         // the file, named or discovered, and the sources and target it states
-        let file = if config.is_none() && argv { None } else { ConfigFile::load(config)? };
-        let path = file.as_ref().map(|file| file.path.clone());
-        let (mut sources, target) = match file {
-            Some(file) => file.into_parts()?,
-            None => (Vec::new(), None),
+        let file =
+            if config.is_none() && argv { None } else { ConfigFile::load(config.as_deref())? };
+        let (path, mut sources, target) = match file {
+            Some(file) => {
+                let (path, sources, target) = file.into_parts()?;
+                (Some(path), sources, target)
+            }
+            None => (None, Vec::new(), None),
         };
         let held = sources.len();
 
         // the argv sources, each in the place of the file source of its name
         let mut over = Vec::with_capacity(adapters.len() + descriptions.len());
-        for reference in adapters {
+        for reference in &adapters {
             over.push(argv_source(reference, SourceContent::Workspace(".".to_owned()))?);
         }
-        for entry in descriptions {
+        for entry in &descriptions {
             let (reference, text) = description(entry)?;
             over.push(argv_source(reference, SourceContent::Value(text.to_owned()))?);
         }
@@ -124,15 +127,17 @@ fn carrier_label(path: Option<&Path>) -> impl fmt::Display {
 // file when `config` names none; `repository` takes the place of its
 // `repository`. Answers `None` when no file states a target, so the verb
 // decides whether it needs one.
-pub fn target(config: Option<&Path>, repository: Option<&str>) -> Result<Option<TargetRef>, Error> {
+pub fn target(
+    config: Option<&Path>, repository: Option<String>,
+) -> Result<Option<TargetRef>, Error> {
     let Some(file) = ConfigFile::load(config)? else {
         return Ok(None);
     };
     let Some(mut entry) = file.target else {
         return Ok(None);
     };
-    if let Some(repository) = repository {
-        entry.repository = Some(repository.to_owned());
+    if repository.is_some() {
+        entry.repository = repository;
     }
     Ok(Some(entry.into_ref()))
 }
@@ -159,15 +164,7 @@ pub fn show(
     })
 }
 
-// The `build-target-required` refusal of `verb`, which reads or seals the current revision and was handed no `[target]`.
-pub fn missing_target(verb: &str) -> Error {
-    target_required(format!(
-        "the specification has no repository to live in: {verb} needs a `[target]` table \
-         naming one"
-    ))
-}
-
-fn target_required(description: impl Into<String>) -> Error {
+fn build_target_required(description: impl Into<String>) -> Error {
     Error::bad_request("build-target-required", description)
 }
 
@@ -180,15 +177,15 @@ fn target_required(description: impl Into<String>) -> Error {
 // `--repository` takes the place of its `repository`, and `--budget` takes
 // the place of its `budget`. A run naming an adapter and no file reads none;
 // one naming no adapter discovers the project-root file.
-pub struct TargetCarriers<'a> {
-    pub adapter: Option<&'a str>,
-    pub repository: Option<&'a str>,
-    pub config: Option<&'a Path>,
+pub struct TargetCarriers {
+    pub adapter: Option<String>,
+    pub repository: Option<String>,
+    pub config: Option<PathBuf>,
     pub jobs: Option<NonZeroUsize>,
     pub budget: Option<NonZeroUsize>,
 }
 
-impl TargetCarriers<'_> {
+impl TargetCarriers {
     pub fn resolve(self) -> Result<BuildInput, Error> {
         let Self {
             adapter,
@@ -199,22 +196,22 @@ impl TargetCarriers<'_> {
         } = self;
 
         // the file, named or discovered, and the target it states
-        let (path, mut target) = if let (None, Some(reference)) = (config, adapter) {
+        let (path, mut target) = if let (None, Some(reference)) = (&config, &adapter) {
             (None, TargetEntry::argv(reference)?)
         } else {
-            let file =
-                ConfigFile::load(config)?.ok_or_else(|| target_required("no target adapter"))?;
-            let path = file.path.clone();
-            (Some(path), file.require_target()?)
+            let file = ConfigFile::load(config.as_deref())?
+                .ok_or_else(|| build_target_required("no target adapter"))?;
+            let (path, target) = file.require_target()?;
+            (Some(path), target)
         };
 
         // the flags, each in the place of the file's key
-        if let Some(reference) = adapter {
+        if let Some(reference) = &adapter {
             target.adapter = AdapterRef::from_str(reference)?;
             target.digest = None;
         }
-        if let Some(repository) = repository {
-            target.repository = Some(repository.to_owned());
+        if repository.is_some() {
+            target.repository = repository;
         }
 
         let input = target.into_input(jobs, budget);
@@ -256,7 +253,7 @@ impl ConfigFile {
         Ok(file)
     }
 
-    fn into_parts(self) -> Result<(Vec<SourceConfig>, Option<TargetRef>), Error> {
+    fn into_parts(self) -> Result<(PathBuf, Vec<SourceConfig>, Option<TargetRef>), Error> {
         let base = self
             .path
             .parent()
@@ -267,13 +264,15 @@ impl ConfigFile {
             .into_iter()
             .map(|entry| entry.into_config(base))
             .collect::<Result<_, _>>()?;
-        Ok((sources, self.target.map(TargetEntry::into_ref)))
+        Ok((self.path, sources, self.target.map(TargetEntry::into_ref)))
     }
 
-    fn require_target(self) -> Result<TargetEntry, Error> {
+    fn require_target(self) -> Result<(PathBuf, TargetEntry), Error> {
         let path = self.path;
-        self.target
-            .ok_or_else(|| target_required(format!("{} has no `[target]` table", path.display())))
+        let target = self.target.ok_or_else(|| {
+            build_target_required(format!("{} has no `[target]` table", path.display()))
+        })?;
+        Ok((path, target))
     }
 }
 

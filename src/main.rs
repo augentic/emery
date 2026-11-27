@@ -17,7 +17,6 @@ cfg_select! {
 
         const STORAGE_ROOT: &str = ".emery/storage";
 
-        // select model backend
         cfg_select! {
             feature = "genai" => {
                 use omnia_genai::{Client as Model, ConnectOptions as ModelOptions};
@@ -32,6 +31,13 @@ cfg_select! {
                 root: STORAGE_ROOT.into(),
                 buckets: vec!["default".into()],
             }
+        }
+
+        fn model() -> omnia::anyhow::Result<ModelOptions> {
+            Ok(ModelOptions {
+                shell_roots: vec![".emery/vcs/worktrees".into(), ".emery/vcs/integration".into()],
+                ..ModelOptions::load_env()?
+            })
         }
 
         omnia::runtime!({
@@ -67,12 +73,7 @@ cfg_select! {
             },
             hosts: {
                 WasiOtel: OtelDefault,
-                WasiModel: Model({
-                    let mut options = ModelOptions::load_env().expect("loading model options from the environment");
-                    options.shell_roots =
-                        vec![".emery/vcs/worktrees".into(), ".emery/vcs/integration".into()];
-                    options
-                }),
+                WasiModel: Model(model()?),
                 WasiKeyValue: Filesystem(storage()),
                 WasiBlobStore: Filesystem(storage()),
                 WasiVcs: Git,
@@ -80,6 +81,7 @@ cfg_select! {
         });
     }
     _ => {
+        // Host-only; empty so the workspace wasm32 lint pass compiles this binary.
         fn main() {}
     }
 }

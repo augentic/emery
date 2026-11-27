@@ -13,12 +13,10 @@ fn main() {
         return;
     }
 
-    let manifest_dir = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("cargo env"));
-    let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("cargo env"));
-    let release = std::env::var("PROFILE").as_deref() == Ok("release");
+    let build = Build::from_env();
 
     for tracked in ["src", "crates", "examples", "wit", "Cargo.toml", "Cargo.lock"] {
-        println!("cargo::rerun-if-changed={}", manifest_dir.join(tracked).display());
+        println!("cargo::rerun-if-changed={}", build.manifest_dir.join(tracked).display());
     }
     for var in ["EMERY_SKIP_GUEST", "RUSTC_WORKSPACE_WRAPPER", "RA_RUSTC_WRAPPER"] {
         println!("cargo::rerun-if-env-changed={var}");
@@ -26,40 +24,21 @@ fn main() {
 
     // a check-only invocation embeds an empty stand-in for every guest
     if check_only() {
-        let skipped = out_dir.join("emery-guest-skipped.wasm");
+        let skipped = build.out_dir.join("emery-guest-skipped.wasm");
         std::fs::write(&skipped, [])
             .unwrap_or_else(|err| panic!("failed to write {}: {err}", skipped.display()));
         for name in ["EMERY_GUEST", "EMERY_MOCK_SOURCE", "EMERY_MOCK_TARGET"] {
-            println!("cargo:rustc-env={name}={}", skipped.display());
+            println!("cargo::rustc-env={name}={}", skipped.display());
         }
         return;
     }
 
-    let target_dir = nested_dir(&out_dir);
-    let built = target_dir.join("wasm32-wasip3").join(if release { "release" } else { "debug" });
+    let guest = build.engine_guest();
+    println!("cargo::rustc-env=EMERY_GUEST={}", guest.display());
 
-    // the engine: the lib as a cdylib, which the manifest's `rlib` is not
-    nested(
-        &manifest_dir,
-        &target_dir,
-        Nested::Wasm32 { release },
-        &["rustc", "--lib", "--crate-type", "cdylib"],
-    );
-    let wasm = built.join("emery.wasm");
-    let guest =
-        if release { precompile(&manifest_dir, &target_dir, &wasm, &out_dir) } else { wasm };
-    println!("cargo:rustc-env=EMERY_GUEST={}", guest.display());
-
-    // the mocks
-    nested(
-        &manifest_dir,
-        &target_dir,
-        Nested::Wasm32 { release },
-        &["build", "--example", "source", "--example", "target"],
-    );
-    let examples = built.join("examples");
-    println!("cargo:rustc-env=EMERY_MOCK_SOURCE={}", examples.join("source.wasm").display());
-    println!("cargo:rustc-env=EMERY_MOCK_TARGET={}", examples.join("target.wasm").display());
+    let examples = build.mock_adapters();
+    println!("cargo::rustc-env=EMERY_MOCK_SOURCE={}", examples.join("source.wasm").display());
+    println!("cargo::rustc-env=EMERY_MOCK_TARGET={}", examples.join("target.wasm").display());
 }
 
 // A check never runs what it compiles, so the guests it embeds may be empty:
@@ -75,55 +54,98 @@ fn check_only() -> bool {
     skipped || clippy || analyzer
 }
 
-// Compiles the engine guest for the binary's own target through the
-// `emery-precompile` member, so the compiler is built once in the dev profile
-// (its Cranelift at the `[profile.dev.package]` opt-level) and never under
-// the release profile's LTO.
-fn precompile(manifest_dir: &Path, target_dir: &Path, wasm: &Path, out_dir: &Path) -> PathBuf {
-    let target = std::env::var("TARGET").expect("cargo env");
-    let compiled = out_dir.join("emery.cwasm");
-
-    nested(manifest_dir, target_dir, Nested::Host, &["build", "-p", "emery-precompile"]);
-    let tool = target_dir.join("debug").join("emery-precompile");
-    let status = Command::new(&tool)
-        .arg(wasm)
-        .arg(&compiled)
-        .args(["--target", &target])
-        .status()
-        .unwrap_or_else(|err| panic!("failed to spawn {}: {err}", tool.display()));
-    assert!(status.success(), "precompiling {} for `{target}` failed: {status}", wasm.display());
-
-    compiled
+struct Build {
+    manifest_dir: PathBuf,
+    out_dir: PathBuf,
+    target_dir: PathBuf,
+    release: bool,
 }
 
-// One build of this workspace spawned with the parent's cargo: for
-// `wasm32-wasip3` in the parent's profile, or for the host in the dev profile.
 #[derive(Clone, Copy)]
-enum Nested {
-    Wasm32 { release: bool },
+enum Target {
+    Wasm32,
     Host,
 }
 
-fn nested(manifest_dir: &Path, target_dir: &Path, build: Nested, args: &[&str]) {
-    let cargo = std::env::var_os("CARGO").expect("cargo env");
-
-    let mut child = Command::new(cargo);
-    child.current_dir(manifest_dir).args(args).arg("--locked");
-    if let Nested::Wasm32 { release } = build {
-        child.args(["--target", "wasm32-wasip3"]);
-        if release {
-            child.arg("--release");
+impl Build {
+    fn from_env() -> Self {
+        let manifest_dir =
+            PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("cargo env"));
+        let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("cargo env"));
+        let target_dir = nested_dir(&out_dir);
+        let release = std::env::var("PROFILE").as_deref() == Ok("release");
+        Self {
+            manifest_dir,
+            out_dir,
+            target_dir,
+            release,
         }
     }
 
-    // engine build environment
-    child = sanitize(child);
-    child.env("CARGO_TARGET_DIR", target_dir);
-    child.env("CARGO_PROFILE_DEV_DEBUG", "0");
-    child.env("CARGO_PROFILE_DEV_OPT_LEVEL", "1");
+    fn wasm_out_dir(&self) -> PathBuf {
+        self.target_dir.join("wasm32-wasip3").join(if self.release { "release" } else { "debug" })
+    }
 
-    let status = child.status().unwrap_or_else(|err| panic!("failed to spawn nested build: {err}"));
-    assert!(status.success(), "nested build `cargo {}` failed: {status}", args.join(" "));
+    // Builds the engine lib as a `cdylib`, which the manifest's `rlib` is not,
+    // and precompiles it in release builds.
+    fn engine_guest(&self) -> PathBuf {
+        self.cargo(Target::Wasm32, &["rustc", "--lib", "--crate-type", "cdylib"]);
+        let wasm = self.wasm_out_dir().join("emery.wasm");
+        if self.release { self.precompile(&wasm) } else { wasm }
+    }
+
+    fn mock_adapters(&self) -> PathBuf {
+        self.cargo(Target::Wasm32, &["build", "--example", "source", "--example", "target"]);
+        self.wasm_out_dir().join("examples")
+    }
+
+    // Compiles the engine guest for the binary's own target through
+    // `emery-precompile`, so the compiler is built once in the dev profile
+    // (its Cranelift at the `[profile.dev.package]` opt-level) and never under
+    // the release profile's LTO.
+    fn precompile(&self, wasm: &Path) -> PathBuf {
+        let target = std::env::var("TARGET").expect("cargo env");
+        let compiled = self.out_dir.join("emery.cwasm");
+
+        self.cargo(Target::Host, &["build", "-p", "emery-precompile"]);
+        let tool = self.target_dir.join("debug").join("emery-precompile");
+        let status = Command::new(&tool)
+            .arg(wasm)
+            .arg(&compiled)
+            .args(["--target", &target])
+            .status()
+            .unwrap_or_else(|err| panic!("failed to spawn {}: {err}", tool.display()));
+        assert!(
+            status.success(),
+            "precompiling {} for `{target}` failed: {status}",
+            wasm.display()
+        );
+
+        compiled
+    }
+
+    fn cargo(&self, target: Target, args: &[&str]) {
+        let cargo = std::env::var_os("CARGO").expect("cargo env");
+
+        let mut child = Command::new(cargo);
+        child.current_dir(&self.manifest_dir).args(args).arg("--locked");
+        if matches!(target, Target::Wasm32) {
+            child.args(["--target", "wasm32-wasip3"]);
+            if self.release {
+                child.arg("--release");
+            }
+        }
+
+        // engine build environment
+        sanitize(&mut child);
+        child.env("CARGO_TARGET_DIR", &self.target_dir);
+        child.env("CARGO_PROFILE_DEV_DEBUG", "0");
+        child.env("CARGO_PROFILE_DEV_OPT_LEVEL", "1");
+
+        let status =
+            child.status().unwrap_or_else(|err| panic!("failed to spawn nested build: {err}"));
+        assert!(status.success(), "nested build `cargo {}` failed: {status}", args.join(" "));
+    }
 }
 
 fn nested_dir(out_dir: &Path) -> PathBuf {
@@ -135,7 +157,7 @@ fn nested_dir(out_dir: &Path) -> PathBuf {
         .map_or_else(|| out_dir.join("engine"), |target| target.join("engine"))
 }
 
-fn sanitize(mut child: Command) -> Command {
+fn sanitize(child: &mut Command) {
     for (key, _) in std::env::vars_os() {
         let Some(key) = key.to_str() else { continue };
 
@@ -149,5 +171,4 @@ fn sanitize(mut child: Command) -> Command {
             child.env_remove(key);
         }
     }
-    child
 }

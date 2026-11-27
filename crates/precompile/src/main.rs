@@ -6,7 +6,7 @@
 
 cfg_select! {
     not(target_arch = "wasm32") => {
-        use std::path::{Path, PathBuf};
+        use std::path::PathBuf;
 
         use anyhow::{Context as _, Result, bail};
         use omnia_compile::CompileOptions;
@@ -22,17 +22,17 @@ cfg_select! {
             let (wasm, output, target) = match args.as_slice() {
                 [wasm, output, flag, target] if flag == "--target" => {
                     let target = target.to_str().context("the target is not UTF-8")?;
-                    (Path::new(wasm), PathBuf::from(output), target)
+                    (PathBuf::from(wasm), PathBuf::from(output), target.to_owned())
                 }
                 _ => bail!("{USAGE}"),
             };
 
-            omnia_compile::compile(wasm, Some(output), Some(target), &CompileOptions::default())
+            omnia_compile::compile(&wasm, Some(output), Some(&target), &CompileOptions::default())
                 .with_context(|| format!("compiling {} for `{target}`", wasm.display()))
         }
     }
     _ => {
-        // host-only; empty so the workspace wasm32 clippy pass can compile this member
+        // Host-only; empty so the workspace wasm32 lint pass compiles this member.
         fn main() {}
     }
 }

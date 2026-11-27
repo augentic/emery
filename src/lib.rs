@@ -1,7 +1,6 @@
 //! Implements the WebAssembly engine guest the shipped runtime embeds.
 //!
-//! The host binds `emery_cli::router` as the `wasi:cli/run` export; engine
-//! verbs call WASI host imports directly with no capability provider.
+//! Exports `emery_cli::router` as the `wasi:cli/run` entrypoint.
 
 #![cfg(target_arch = "wasm32")]
 

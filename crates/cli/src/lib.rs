@@ -1,8 +1,9 @@
 //! Implements Emery's command-line interface.
 //!
-//! [`run`] returns a buffered response, leaving process I/O and exit handling
-//! to the caller. The crate installs no subscriber of its own; tracing follows
-//! the `RUST_LOG` the runtime sets from its verbosity flags, which the grammar
+//! [`router`] registers every verb on omnia's command façade, and [`run`]
+//! returns a buffered response, leaving process I/O and exit handling to the
+//! caller. The crate installs no subscriber of its own; tracing follows the
+//! `RUST_LOG` the runtime sets from its verbosity flags, which the grammar
 //! declares (`-v`, `-q`) and never reads.
 
 mod config;
@@ -14,14 +15,15 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
+use anyhow::Context as _;
 use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use clap::{Parser, Subcommand};
 use emery_engine::amend::{AmendInput, AmendOutput, amend};
 use emery_engine::apply::{ApplyInput, ApplyOutput, apply};
 use emery_engine::build::{BuildInput, BuildOutput, build};
-use emery_engine::is_retryable;
 use emery_engine::show::{Artifact, ShowInput, ShowOutput, show};
 use emery_engine::specify::{SpecifyInput, SpecifyOutput, specify};
+use emery_engine::{is_retryable, target_required};
 use omnia_sdk::command::{Format, Render, Response, Shell, Verbosity, completions};
 use omnia_sdk::{Error, Handlers, Router};
 use serde::Serialize;
@@ -34,7 +36,7 @@ thread_local! {
     static INVOKED: Cell<Option<Invoked>> = const { Cell::new(None) };
 }
 
-/// Command router every verb is registered on.
+/// Builds the command [`Router`] with every verb registered.
 pub fn router() -> Router {
     Handlers::new()
         .command("specify", specify_command)
@@ -59,15 +61,16 @@ pub fn router() -> Router {
 pub async fn run<I, T>(argv: I) -> Response
 where
     I: IntoIterator<Item = T>,
-    T: Into<OsString> + Clone,
+    T: Into<OsString>,
 {
+    INVOKED.set(None);
     router().run(prepare_argv(argv)).await
 }
 
 fn prepare_argv<I, T>(input: I) -> Vec<OsString>
 where
     I: IntoIterator<Item = T>,
-    T: Into<OsString> + Clone,
+    T: Into<OsString>,
 {
     let mut args: Vec<OsString> = input.into_iter().map(Into::into).collect();
     let has_format = args.iter().any(|arg| {
@@ -86,46 +89,48 @@ where
 }
 
 fn hint(error: &Error) -> Option<Cow<'static, str>> {
-    INVOKED.with(|invoked| invoked.get().and_then(|verb| verb.hint(error)))
+    INVOKED.get().and_then(|verb| verb.hint(error)).map(Cow::Borrowed)
 }
 
 async fn specify_command(args: SpecifyArgs) -> Result<SpecifyOutput, Error> {
-    INVOKED.with(|invoked| invoked.set(Some(Invoked::Specify)));
+    INVOKED.set(Some(Invoked::Specify));
     specify(SpecifyInput::try_from(args)?).await
 }
 
 async fn apply_command(args: ApplyArgs) -> Result<ApplyOutput, Error> {
-    INVOKED.with(|invoked| invoked.set(Some(Invoked::Apply)));
+    INVOKED.set(Some(Invoked::Apply));
     apply(ApplyInput::try_from(args)?).await
 }
 
 async fn amend_command(args: AmendArgs) -> Result<AmendOutput, Error> {
-    INVOKED.with(|invoked| invoked.set(Some(Invoked::Amend)));
+    INVOKED.set(Some(Invoked::Amend));
     amend(AmendInput::try_from(args)?).await
 }
 
 async fn build_command(args: BuildArgs) -> Result<BuildOutput, Error> {
-    INVOKED.with(|invoked| invoked.set(Some(Invoked::Build)));
+    INVOKED.set(Some(Invoked::Build));
     build(BuildInput::try_from(args)?).await
 }
 
 async fn show_command(args: ShowArgs) -> Result<ShowOutput, Error> {
-    INVOKED.with(|invoked| invoked.set(Some(Invoked::Show)));
+    INVOKED.set(Some(Invoked::Show));
     show(ShowInput::try_from(args)?).await
 }
 
 async fn completions_command(args: CompletionsArgs) -> Result<CompletionScript, Error> {
-    INVOKED.with(|invoked| invoked.set(Some(Invoked::Completions)));
-    Ok(CompletionScript(completions::<App>(args.shell, NAME).stdout))
+    INVOKED.set(Some(Invoked::Completions));
+    let script = String::from_utf8(completions::<App>(args.shell, NAME).stdout)
+        .context("decoding generated shell completion script")?;
+    Ok(CompletionScript(script))
 }
 
 #[derive(Serialize)]
 #[serde(transparent)]
-struct CompletionScript(Vec<u8>);
+struct CompletionScript(String);
 
 impl Render for CompletionScript {
     fn render(&self, out: &mut dyn fmt::Write) -> fmt::Result {
-        write!(out, "{}", String::from_utf8_lossy(&self.0))
+        out.write_str(&self.0)
     }
 }
 
@@ -260,38 +265,29 @@ const SHOW_DESC: &str = "Print an artifact from the current revision.\n\n\
 
 #[derive(Debug, Subcommand)]
 enum Verb {
-    /// Stage spec.md, design.md, and plan.md from the named sources as a candidate
-    #[command(long_about = SPECIFY_DESC)]
     Specify(SpecifyArgs),
-    /// Seal the staged candidate or amendment as the current revision
-    #[command(long_about = APPLY_DESC)]
     Apply(ApplyArgs),
-    /// Stage an amendment against the current revision from the named sources
-    #[command(long_about = AMEND_DESC)]
     Amend(AmendArgs),
-    /// Build every slice of the current plan through a target adapter
-    #[command(long_about = BUILD_DESC)]
     Build(BuildArgs),
-    /// Print a reviewable artifact of the current revision, the staged candidate, or the staged amendment to stdout
-    #[command(long_about = SHOW_DESC)]
     Show(ShowArgs),
-    /// Print a shell-completion script for `<shell>` to stdout
-    #[command(long_about = COMPLETIONS_DESC)]
-    Completions {
-        /// Shell to generate completions for
-        shell: Shell,
-    },
+    Completions(CompletionsArgs),
 }
 
 #[derive(Debug, clap::Args)]
-#[command(long_about = COMPLETIONS_DESC)]
+#[command(
+    about = "Print a shell-completion script for `<shell>` to stdout",
+    long_about = COMPLETIONS_DESC
+)]
 struct CompletionsArgs {
     /// Shell to generate completions for
     shell: Shell,
 }
 
 #[derive(Debug, clap::Args)]
-#[command(long_about = SPECIFY_DESC)]
+#[command(
+    about = "Stage spec.md, design.md, and plan.md from the named sources as a candidate",
+    long_about = SPECIFY_DESC
+)]
 struct SpecifyArgs {
     /// Workspace-backed source adapters, each an exact package reference
     /// `namespace:name@version`. Each source is named for its adapter's
@@ -316,9 +312,9 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
 
     fn try_from(args: SpecifyArgs) -> Result<Self, Error> {
         let (sources, target) = config::SourceCarriers {
-            adapters: &args.adapters,
-            descriptions: &args.descriptions,
-            config: args.config.as_deref(),
+            adapters: args.adapters,
+            descriptions: args.descriptions,
+            config: args.config,
         }
         .resolve()?;
         Ok(Self {
@@ -331,7 +327,10 @@ impl TryFrom<SpecifyArgs> for SpecifyInput {
 }
 
 #[derive(Debug, clap::Args)]
-#[command(long_about = APPLY_DESC)]
+#[command(
+    about = "Seal the staged candidate or amendment as the current revision",
+    long_about = APPLY_DESC
+)]
 struct ApplyArgs {
     /// The repository the revision is sealed in: a URL, cloned under .emery/vcs/repos/<name>, or `.` for the project checkout; over `--config`, it replaces the `[target] repository`.
     #[arg(long, value_name = "URL|.")]
@@ -345,14 +344,17 @@ impl TryFrom<ApplyArgs> for ApplyInput {
     type Error = Error;
 
     fn try_from(args: ApplyArgs) -> Result<Self, Error> {
-        let target = config::target(args.config.as_deref(), args.repository.as_deref())?
-            .ok_or_else(|| config::missing_target("`emery apply`"))?;
+        let target = config::target(args.config.as_deref(), args.repository)?
+            .ok_or_else(|| target_required("`emery apply`"))?;
         Ok(Self { target })
     }
 }
 
 #[derive(Debug, clap::Args)]
-#[command(long_about = AMEND_DESC)]
+#[command(
+    about = "Stage an amendment against the current revision from the named sources",
+    long_about = AMEND_DESC
+)]
 struct AmendArgs {
     /// Workspace-backed change source adapters, each an exact package reference
     /// `namespace:name@version`. Each source is named for its adapter's
@@ -374,9 +376,9 @@ impl TryFrom<AmendArgs> for AmendInput {
 
     fn try_from(args: AmendArgs) -> Result<Self, Error> {
         let (sources, target) = config::SourceCarriers {
-            adapters: &args.adapters,
-            descriptions: &args.descriptions,
-            config: args.config.as_deref(),
+            adapters: args.adapters,
+            descriptions: args.descriptions,
+            config: args.config,
         }
         .resolve_amend()?;
         Ok(Self {
@@ -388,7 +390,10 @@ impl TryFrom<AmendArgs> for AmendInput {
 }
 
 #[derive(Debug, clap::Args)]
-#[command(long_about = BUILD_DESC)]
+#[command(
+    about = "Build every slice of the current plan through a target adapter",
+    long_about = BUILD_DESC
+)]
 struct BuildArgs {
     /// The target adapter, an exact package reference `namespace:name@version`; over `--config`, it replaces the `[target] adapter`.
     adapter: Option<String>,
@@ -411,9 +416,9 @@ impl TryFrom<BuildArgs> for BuildInput {
 
     fn try_from(args: BuildArgs) -> Result<Self, Error> {
         config::TargetCarriers {
-            adapter: args.adapter.as_deref(),
-            repository: args.repository.as_deref(),
-            config: args.config.as_deref(),
+            adapter: args.adapter,
+            repository: args.repository,
+            config: args.config,
             jobs: args.jobs,
             budget: args.budget,
         }
@@ -422,7 +427,10 @@ impl TryFrom<BuildArgs> for BuildInput {
 }
 
 #[derive(Debug, clap::Args)]
-#[command(long_about = SHOW_DESC)]
+#[command(
+    about = "Print a reviewable artifact of the current revision, the staged candidate, or the staged amendment to stdout",
+    long_about = SHOW_DESC
+)]
 struct ShowArgs {
     /// Reviewable artifact of the current revision, or the staged amendment.
     #[arg(value_parser = artifacts())]
@@ -474,10 +482,11 @@ enum Invoked {
 }
 
 impl Invoked {
-    fn hint(self, error: &Error) -> Option<Cow<'static, str>> {
-        let code = error.code();
-        let hint = match code {
-            "bad_gateway" | "bad_request" if self == Self::Build && is_retryable(error) => {
+    fn hint(self, error: &Error) -> Option<&'static str> {
+        let hint = match error.code() {
+            "bad_gateway" | "unavailable" | "bad_request" | "exhausted"
+                if self == Self::Build && !is_adapter_error(error) && is_retryable(error) =>
+            {
                 "re-run `emery build` to resume from the last verified wave"
             }
             "unsupported-version" => {
@@ -547,14 +556,23 @@ impl Invoked {
                 "an adapter is an exact package reference, `namespace:name@version`"
             }
             "refused" => {
-                "rebuild or update the adapter in `~/.emery/adapters/`, or fetch it with `wkg get <reference> -o ~/.emery/adapters/`"
+                "verify `digest` in `emery.toml`, or update the adapter in `~/.emery/adapters/`"
             }
-            "unavailable" => {
+            "not-found" if is_adapter_error(error) => {
+                "fetch the adapter with `wkg get <reference> -o ~/.emery/adapters/`, or place `<namespace>_<name>@<version>.wasm` in `~/.emery/adapters/`"
+            }
+            "invalid" if is_adapter_error(error) => {
+                "replace the file in `~/.emery/adapters/` with a raw `.wasm` component, or verify `digest` in `emery.toml`"
+            }
+            "denied" if is_adapter_error(error) => {
+                "rebuild the adapter against the `emery:adapter` world within `[plugins.grants]`"
+            }
+            "unavailable" if is_adapter_error(error) => {
                 "check the network and version, or place `<namespace>_<name>@<version>.wasm` in `~/.emery/adapters/`"
             }
             _ => return None,
         };
-        Some(Cow::Borrowed(hint))
+        Some(hint)
     }
 
     // The description says where the revision stands: a label behind its head,
@@ -597,15 +615,8 @@ impl Invoked {
     }
 }
 
-impl From<&Verb> for Invoked {
-    fn from(verb: &Verb) -> Self {
-        match verb {
-            Verb::Specify(_) => Self::Specify,
-            Verb::Apply(_) => Self::Apply,
-            Verb::Amend(_) => Self::Amend,
-            Verb::Build(_) => Self::Build,
-            Verb::Show(_) => Self::Show,
-            Verb::Completions { .. } => Self::Completions,
-        }
-    }
+// Distinguishes plugin loader errors (`adapter `<ref>`: ...`) from model or
+// storage capability errors sharing the same `omnia_sdk::Error` code.
+fn is_adapter_error(error: &Error) -> bool {
+    error.description().starts_with("adapter `")
 }
