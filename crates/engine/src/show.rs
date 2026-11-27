@@ -52,24 +52,30 @@ use crate::vcs::TargetRef;
 /// - Returns [`omnia_sdk::ErrorKind::ServerError`] when storage, validation, or serialisation
 ///   fails.
 pub async fn show(input: ShowInput) -> Result<ShowOutput, Error> {
-    if input.artifact == Artifact::Amendment {
-        let staged = store::staged_amendment().await?.ok_or_else(store::no_amendment_staged)?;
-        tracing::debug!(amendment = %staged.id, "amendment read");
-        return ShowOutput::new(&staged.amendment, staged.id);
-    }
-    if input.artifact == Artifact::Schedule && input.staged {
-        return Err(bad_request!(
+    match input.artifact {
+        Artifact::Amendment => {
+            let staged = store::staged_amendment().await?.ok_or_else(store::no_amendment_staged)?;
+            tracing::debug!(amendment = %staged.id, "amendment read");
+            ShowOutput::new(&staged.amendment, staged.id)
+        }
+        Artifact::Spec => {
+            let (id, revision) = input.revision().await?;
+            ShowOutput::new(&revision.spec, id)
+        }
+        Artifact::Design => {
+            let (id, revision) = input.revision().await?;
+            ShowOutput::new(&revision.design, id)
+        }
+        Artifact::Plan => {
+            let (id, revision) = input.revision().await?;
+            ShowOutput::new(&revision.plan, id)
+        }
+        Artifact::Schedule if input.staged => Err(bad_request!(
             "`emery show schedule` cuts the sealed plan `emery build` reads, not the staged \
              candidate; inspect the staged parts with `emery show plan --staged`"
-        ));
-    }
-
-    let (id, revision) = input.revision().await?;
-    match input.artifact {
-        Artifact::Spec => ShowOutput::new(&revision.spec, id),
-        Artifact::Design => ShowOutput::new(&revision.design, id),
-        Artifact::Plan => ShowOutput::new(&revision.plan, id),
+        )),
         Artifact::Schedule => {
+            let (id, revision) = input.revision().await?;
             let (budget, source) = BudgetSource::resolve_with(
                 input.budget,
                 input.budget_source,
@@ -80,7 +86,6 @@ pub async fn show(input: ShowInput) -> Result<ShowOutput, Error> {
             let schedule = Schedule::new(&revision, budget, source);
             ShowOutput::new(&schedule, id)
         }
-        Artifact::Amendment => unreachable!("handled above"),
     }
 }
 

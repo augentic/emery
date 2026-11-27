@@ -36,7 +36,6 @@ pub struct PartBrief<'a> {
 }
 
 impl<'a> PartBrief<'a> {
-    // Returns a slicing brief for `bases` and the design's data `types`.
     #[must_use]
     pub fn new(bases: &'a [Basis<'a>], types: Types) -> Self {
         let floors = Floors::new(
@@ -45,17 +44,9 @@ impl<'a> PartBrief<'a> {
         Self { bases, types, floors }
     }
 
-    // Derives the build plan.
-    //
     // A specification whose requirements span two or more stems asks the
-    // model to slice it. Otherwise the one stem is the one part and no
-    // call is spent.
-    //
-    // - Returns `Error::BadRequest` when the model cannot produce a valid
-    //   plan within the available rounds.
-    // - Returns `Error::ServerError` when required prose is missing or a
-    //   plan cannot be reconciled with the specification.
-    // - Returns `Error::BadGateway` when the model operation fails.
+    // model to slice it; otherwise the one stem is the one part and no call
+    // is spent.
     pub async fn derive(self) -> Result<Plan, Error> {
         if self.floors.len() < 2 {
             return Ok(self.whole());
@@ -69,21 +60,23 @@ impl<'a> PartBrief<'a> {
         let parts = floors
             .stems
             .into_iter()
+            .next()
             .map(|stem| Part {
                 id: PartId::FIRST,
                 name: stem.label.to_owned(),
                 requirements: stem.requirements,
-                types: types.keys.clone(),
-                uses: vec![],
-                depends_on: vec![],
-                brief: vec![],
+                types: types.keys,
+                uses: Vec::new(),
+                depends_on: Vec::new(),
+                brief: Vec::new(),
             })
+            .into_iter()
             .collect();
 
         Plan {
             emery: EMERY,
             parent: None,
-            preamble: vec![],
+            preamble: Vec::new(),
             parts,
         }
     }
@@ -466,9 +459,9 @@ fn listed(ids: &[ReqId]) -> String {
 #[schemars(title = "Emery slicing answer")]
 pub struct PartAnswer {
     /// Markdown paragraphs before the first part.
-    pub preamble: Vec<String>,
+    preamble: Vec<String>,
     /// One draft per part, in any order.
-    pub parts: Vec<Draft>,
+    parts: Vec<Draft>,
 }
 
 /// The drafted content of one part, before the engine numbers and orders it.

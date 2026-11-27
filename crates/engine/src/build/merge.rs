@@ -5,7 +5,7 @@
 //! wrote them, and seals and merges the resolutions; the brief holds every
 //! answer to one whole file per path, free of conflict markers.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Formatter};
 
 use emery_adapter::beneath;
@@ -216,13 +216,13 @@ const MARKERS: [&str; 2] = ["<<<<<<< ", ">>>>>>> "];
 // The brief that resolves the paths a slice's merge left conflicted.
 pub struct MergeBrief<'a> {
     // The slice being merged.
-    pub slice: crate::revision::SliceId,
+    slice: crate::revision::SliceId,
     // The plan entry of the slice being merged.
-    pub part: &'a Part,
+    part: &'a Part,
     // The plan entries of the slices merged before it in the wave that wrote a conflicted path.
-    pub merged: Vec<&'a Part>,
+    merged: Vec<&'a Part>,
     // Each conflicted path with both of its sides.
-    pub conflicts: Vec<Conflict>,
+    conflicts: Vec<Conflict>,
 }
 
 impl Brief for MergeBrief<'_> {
@@ -249,13 +249,13 @@ impl Brief for MergeBrief<'_> {
     fn verify(&self, answer: &MergeAnswer, review: &mut Review) {
         let expected: BTreeMap<&str, &Conflict> =
             self.conflicts.iter().map(|conflict| (conflict.path.as_str(), conflict)).collect();
-        let mut seen = BTreeMap::new();
+        let mut seen = BTreeSet::new();
         for file in &answer.files {
             let Some(conflict) = expected.get(file.path.as_str()) else {
                 review.note(format_args!("`{}` is not one of the conflicted paths", file.path));
                 continue;
             };
-            if seen.insert(file.path.as_str(), ()).is_some() {
+            if !seen.insert(file.path.as_str()) {
                 review.note(format_args!("`{}` is answered more than once", file.path));
                 continue;
             }
@@ -267,7 +267,7 @@ impl Brief for MergeBrief<'_> {
                 review.note(format_args!("`{}` is empty, so both sides are lost", file.path));
             }
         }
-        for path in expected.keys().filter(|path| !seen.contains_key(*path)) {
+        for path in expected.keys().filter(|path| !seen.contains(*path)) {
             review.note(format_args!("`{path}` is not answered"));
         }
     }
@@ -307,13 +307,13 @@ fn fenced(f: &mut Formatter<'_>, heading: &str, content: &str) -> fmt::Result {
 }
 
 // One path a slice's merge left conflicted, as each side holds it.
-pub struct Conflict {
+struct Conflict {
     // The path, relative to the tree root.
-    pub path: String,
+    path: String,
     // The file as the integrated tree holds it.
-    pub integrated: String,
+    integrated: String,
     // The file as the slice wrote it.
-    pub slice: String,
+    slice: String,
 }
 
 /// One conflicted path as the model resolved it.

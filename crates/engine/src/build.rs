@@ -7,7 +7,7 @@
 //! wave, and labels the verified head `emery/<revision>`. Interrupted runs
 //! resume from the existing label and integration working copy.
 
-pub(crate) mod merge;
+mod merge;
 mod schedule;
 
 use std::collections::BTreeSet;
@@ -22,6 +22,8 @@ use omnia_sdk::vcs::{Change, ChangeKind, Rule, Strategy};
 use omnia_sdk::{Error, server_error};
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+pub(crate) use self::merge::MergeBrief;
 use self::merge::UnresolvedMerge;
 pub(crate) use self::schedule::Schedule;
 pub use self::schedule::{BudgetSource, DEFAULT_BUDGET, ScheduledSlice};
@@ -182,10 +184,6 @@ pub async fn build(input: BuildInput) -> Result<BuildOutput, Error> {
         "building"
     );
 
-    // every slice carries the whole design, rendered once, and every merge
-    // the adapter's rules
-    let rendered = revision.design.to_string();
-    let policy = vcs::rules(&metadata.merge_rules);
     let run = Run {
         adapter: &adapter,
         reference: &input.adapter,
@@ -193,12 +191,12 @@ pub async fn build(input: BuildInput) -> Result<BuildOutput, Error> {
         label: &label,
         spec: &revision.spec,
         design: &revision.design,
-        rendered: &rendered,
+        rendered: revision.design.to_string(),
         schedule: &schedule,
         budget: budget.get(),
         repo: &repo,
         integration: &integration,
-        policy: &policy,
+        policy: vcs::rules(&metadata.merge_rules),
         jobs: input.jobs,
     };
 
@@ -424,7 +422,7 @@ pub struct Seal {
 }
 
 // What every wave of one build shares.
-pub(crate) struct Run<'a> {
+struct Run<'a> {
     adapter: &'a str,
     reference: &'a AdapterRef,
     revision: &'a str,
@@ -432,13 +430,13 @@ pub(crate) struct Run<'a> {
     spec: &'a Spec,
     design: &'a Design,
     // the design as every slice carries it
-    rendered: &'a str,
+    rendered: String,
     schedule: &'a Schedule<'a>,
     budget: usize,
     repo: &'a BuildRepo,
     integration: &'a WorkingCopy,
     // the adapter's merge rules, in the capability's reading
-    policy: &'a [Rule],
+    policy: Vec<Rule>,
     jobs: Option<NonZeroUsize>,
 }
 
@@ -515,7 +513,7 @@ impl<'a> Run<'a> {
             match outcome {
                 Ok(built) => match self.integrate(progress, built, wave).await {
                     Ok(()) => merged.push(slice.id),
-                    Err(error) => return Err(at_slice(&error, slice, wave, &progress.built)),
+                    Err(error) => return Err(progress.at_slice(&error, slice, wave)),
                 },
                 Err(error) => {
                     failed.get_or_insert((slice, error));
@@ -523,7 +521,7 @@ impl<'a> Run<'a> {
             }
         }
         if let Some((slice, error)) = failed {
-            return Err(at_slice(&error, slice, wave, &progress.built));
+            return Err(progress.at_slice(&error, slice, wave));
         }
         if merged.is_empty() {
             tracing::info!("nothing merged; the wave leaves the integrated head as it was");
@@ -533,7 +531,7 @@ impl<'a> Run<'a> {
         // the integrated tree, verified by the adapter and labelled
         merged.sort_unstable();
         if let Err(error) = self.verify(progress, wave, &merged).await {
-            return Err(at_wave(&error, wave, &merged, self.label, progress.labelled.as_deref()));
+            return Err(self.at_wave(&error, progress, wave, &merged));
         }
         Ok(())
     }
@@ -570,7 +568,7 @@ impl<'a> Run<'a> {
                 .collect(),
             brief: part.brief.clone(),
             spec: self.spec.cut(&slice.requirements),
-            design: self.rendered.to_owned(),
+            design: self.rendered.clone(),
             plan: part.to_string(),
             base: head.to_owned(),
         };
@@ -677,7 +675,7 @@ impl<'a> Run<'a> {
         let (commit, resolved) = match built.worktree.commit(&message).await? {
             None => (None, Vec::new()),
             Some(commit) => {
-                let merged = self.integration.merge(&commit, &message, self.policy).await?;
+                let merged = self.integration.merge(&commit, &message, &self.policy).await?;
                 if let Some(commit) = merged.commit {
                     (Some(commit), Vec::new())
                 } else {
@@ -785,7 +783,7 @@ impl<'a> Run<'a> {
             // a path a check regenerates under `ours`, a lockfile, is no repair
             let repaired = paths
                 .iter()
-                .any(|path| vcs::strategy_for(self.policy, path) != Some(Strategy::Ours));
+                .any(|path| vcs::strategy_for(&self.policy, path) != Some(Strategy::Ours));
             tracing::info!(changed = paths.len(), %commit, repaired, "verification changes sealed");
             if repaired {
                 progress.repaired.push(wave);
@@ -804,6 +802,22 @@ impl<'a> Run<'a> {
         progress.labelled = Some(head.clone());
         progress.head = head;
         Ok(())
+    }
+
+    // A wave's failure keeps its class and code; the description gains the
+    // wave, the slices merged in it, and where the label stands.
+    fn at_wave(
+        &self, error: &Error, progress: &Progress, wave: usize, merged: &[SliceId],
+    ) -> Error {
+        let ids: Vec<String> = merged.iter().map(ToString::to_string).collect();
+        let merged = committed_clause(&ids, "in it");
+        let standing = progress.labelled.as_deref().map_or_else(
+            || format!("`{}` is not set", self.label),
+            |head| format!("`{}` stays at `{head}`", self.label),
+        );
+        describe(error, |description| {
+            format!("wave {wave} failed{merged}; {standing}: {description}")
+        })
     }
 }
 
@@ -879,7 +893,7 @@ fn gated(at: &str, wrote: &str, pending: &[Change]) -> Result<(), Error> {
 const IGNORE: (&str, &[u8]) = (".gitignore", b".emery/\n");
 
 // Where a build stands between waves.
-pub(crate) struct Progress {
+struct Progress {
     // the integrated head the next wave builds over
     head: String,
     // where the label stands; `None` until a wave of a fresh build verifies
@@ -968,10 +982,24 @@ impl Progress {
         self.head.clone_from(&commit);
         Ok(Some(Initialised { commit, paths }))
     }
+
+    // A slice's failure keeps its class and code; the description gains the
+    // slice it failed at, its wave, and the slices merged before it, which
+    // stay committed in the integration working copy.
+    fn at_slice(&self, error: &Error, slice: &ScheduledSlice, wave: usize) -> Error {
+        let ids: Vec<String> = self.built.iter().map(|built| built.id.to_string()).collect();
+        let before = committed_clause(&ids, "before it");
+        describe(error, |description| {
+            format!(
+                "slice `{}` ({}) failed in wave {wave}{before}: {description}",
+                slice.id, slice.name
+            )
+        })
+    }
 }
 
 // One slice built in its working copy, not yet merged.
-pub(crate) struct Built<'a> {
+struct Built<'a> {
     slice: &'a ScheduledSlice,
     part: &'a Part,
     worktree: WorkingCopy,
@@ -979,40 +1007,12 @@ pub(crate) struct Built<'a> {
     uncovered: Vec<ReqId>,
 }
 
-// A slice's failure keeps its class and code; the description gains the
-// slice it failed at, its wave, and the slices merged before it, which
-// stay committed in the integration working copy.
-fn at_slice(error: &Error, slice: &ScheduledSlice, wave: usize, built: &[BuiltSlice]) -> Error {
-    let ids: Vec<String> = built.iter().map(|built| built.id.to_string()).collect();
-    let before = match ids.as_slice() {
+fn committed_clause(ids: &[String], relation: &str) -> String {
+    match ids {
         [] => String::new(),
-        [one] => format!("; {one} merged before it stays committed in `{INTEGRATION}`"),
+        [one] => format!("; {one} merged {relation} stays committed in `{INTEGRATION}`"),
         many => {
-            format!("; {} merged before it stay committed in `{INTEGRATION}`", many.join(", "))
+            format!("; {} merged {relation} stay committed in `{INTEGRATION}`", many.join(", "))
         }
-    };
-    describe(error, |description| {
-        format!(
-            "slice `{}` ({}) failed in wave {wave}{before}: {description}",
-            slice.id, slice.name
-        )
-    })
-}
-
-// A wave's failure keeps its class and code; the description gains the
-// wave, the slices merged in it, and where the label stands.
-fn at_wave(
-    error: &Error, wave: usize, merged: &[SliceId], label: &str, labelled: Option<&str>,
-) -> Error {
-    let ids: Vec<String> = merged.iter().map(ToString::to_string).collect();
-    let merged = match ids.as_slice() {
-        [] => String::new(),
-        [one] => format!("; {one} merged in it stays committed in `{INTEGRATION}`"),
-        many => format!("; {} merged in it stay committed in `{INTEGRATION}`", many.join(", ")),
-    };
-    let standing = labelled.map_or_else(
-        || format!("`{label}` is not set"),
-        |head| format!("`{label}` stays at `{head}`"),
-    );
-    describe(error, |description| format!("wave {wave} failed{merged}; {standing}: {description}"))
+    }
 }

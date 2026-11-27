@@ -1,12 +1,10 @@
 //! Version-control paths, repositories, working copies, and commit trailers.
 //!
-//! Opens [`omnia_sdk::vcs::Workspace`] handles over deployment-local paths
-//! beneath [`ROOT`]: [`SourceClone`] manages cached source clones, [`BuildRepo`]
-//! resolves the target repository a specification lives in and a build lands in,
-//! [`WorkingCopy`] manages isolated worktrees, and [`Message`] and
-//! [`RevisionMessage`] format and parse the trailers of a slice's commit and
-//! a revision's. Emery's vocabulary stays "label"; at the omnia boundary that
-//! is a bookmark.
+//! [`SourceClone`] manages cached source clones beneath [`ROOT`],
+//! [`BuildRepo`] resolves the target repository a specification lives in and a
+//! build lands in, [`WorkingCopy`] manages isolated worktrees, and [`Message`]
+//! and [`RevisionMessage`] format and parse the trailers of a slice's commit
+//! and a revision's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -103,8 +101,8 @@ fn is_not_found(error: &Error) -> bool {
     matches!(error.kind(), ErrorKind::NotFound) || error.code() == "not-found"
 }
 
-async fn workspace_at(at: &str, subject: Subject<'_>) -> Result<Workspace, Error> {
-    vcs::open(at).await.map_err(|error| subject.refusal(error))
+fn parse_trailers<'a>(lines: impl Iterator<Item = &'a str>) -> BTreeMap<&'a str, &'a str> {
+    lines.filter_map(|line| line.split_once(':')).map(|(key, value)| (key, value.trim())).collect()
 }
 
 fn matches(pattern: &str, path: &str) -> bool {
@@ -184,10 +182,7 @@ impl Message {
         let mut lines = text.lines();
         let (id, name) = lines.next()?.split_once(' ')?;
         let slice: SliceId = id.parse().ok()?;
-        let trailers: BTreeMap<&str, &str> = lines
-            .filter_map(|line| line.split_once(':'))
-            .map(|(key, value)| (key, value.trim()))
-            .collect();
+        let trailers = parse_trailers(lines);
         let ids = |key: &str| -> Option<Vec<ReqId>> {
             let listed = trailers.get(key)?;
             if listed.is_empty() {
@@ -272,10 +267,7 @@ impl RevisionMessage {
         if revision.is_empty() {
             return None;
         }
-        let trailers: BTreeMap<&str, &str> = lines
-            .filter_map(|line| line.split_once(':'))
-            .map(|(key, value)| (key, value.trim()))
-            .collect();
+        let trailers = parse_trailers(lines);
         if *trailers.get("Revision")? != revision {
             return None;
         }
@@ -472,26 +464,23 @@ impl SourceClone {
     /// repository holds no such revision, and the classes
     /// [`ensure`](Self::ensure) names otherwise.
     pub async fn resolve(&self, revision: &str) -> Result<String, Error> {
-        let subject = self.subject();
-        let workspace = workspace_at(&self.path(), subject).await?;
-        workspace
-            .resolve(revision.to_owned())
-            .await
-            .map_err(|error| subject.refusal(error))?
-            .map_or_else(
-                || {
-                    Err(Error::not_found(
-                        "revision-not-found",
-                        format!("{subject} has no `{revision}`"),
-                    ))
-                },
-                Ok,
-            )
+        resolve_at(&self.path(), self.subject(), revision).await
     }
 
     fn subject(&self) -> Subject<'_> {
         Subject::Repository(&self.url)
     }
+}
+
+async fn resolve_at(at: &str, subject: Subject<'_>, revision: &str) -> Result<String, Error> {
+    let workspace = subject.open(at).await?;
+    workspace
+        .resolve(revision.to_owned())
+        .await
+        .map_err(|error| subject.refusal(error))?
+        .ok_or_else(|| {
+            Error::not_found("revision-not-found", format!("{subject} has no `{revision}`"))
+        })
 }
 
 // One spelling for every URL that names one repository: trimmed, the
@@ -538,8 +527,7 @@ async fn ensure(url: &str, at: &str) -> Result<(), Error> {
         }
         Err(_occupied) => {
             tracing::info!(repository = url, clone = at, "fetching");
-            let workspace = workspace_at(at, subject).await?;
-            workspace.fetch(ORIGIN).await.map_err(|error| subject.refusal(error))
+            subject.open(at).await?.fetch(ORIGIN).await.map_err(|error| subject.refusal(error))
         }
     }
 }
@@ -555,6 +543,10 @@ enum Subject<'a> {
 }
 
 impl Subject<'_> {
+    async fn open(self, at: &str) -> Result<Workspace, Error> {
+        vcs::open(at).await.map_err(|error| self.refusal(error))
+    }
+
     fn refusal(self, error: impl Into<Error>) -> Error {
         let error = error.into();
         match error.kind() {
@@ -566,18 +558,15 @@ impl Subject<'_> {
                     format!("{self}: {}", error.description())
                 },
             ),
-            ErrorKind::BadRequest if error.code() == "repository-required" => error,
-            ErrorKind::BadRequest if error.code() == "base-not-sealed" => error,
+            ErrorKind::BadRequest
+                if matches!(error.code(), "repository-required" | "base-not-sealed") =>
+            {
+                error
+            }
             ErrorKind::Conflict if error.code() == "pending" => Error::bad_request(
                 "base-not-sealed",
                 format!("{self} holds pending changes: {}", error.description()),
             ),
-            ErrorKind::Conflict if error.code() == "diverged" => {
-                server_error!("{self}: {}", error.description())
-            }
-            ErrorKind::Conflict if error.code() == "occupied" => {
-                server_error!("{self}: {}", error.description())
-            }
             ErrorKind::BadGateway => bad_gateway!("{self}: {}", error.description()),
             ErrorKind::ServerError if error.code() == "denied" => match self {
                 Self::Project => Error::bad_request(
@@ -593,7 +582,7 @@ impl Subject<'_> {
                     "repository-required",
                     "the project directory is not a repository",
                 ),
-                _ => Error::not_found(
+                Self::Repository(_) | Self::Target(_) | Self::WorkingCopy(_) => Error::not_found(
                     "revision-not-found",
                     format!("{self}: {}", error.description()),
                 ),
@@ -665,13 +654,9 @@ impl BuildRepo {
         }
         Ok(match repository {
             Some(PROJECT) => Self::Project,
-            Some(url) => Self::Target {
+            url => Self::Target {
                 name: name.to_owned(),
-                url: Some(url.to_owned()),
-            },
-            None => Self::Target {
-                name: name.to_owned(),
-                url: None,
+                url: url.map(str::to_owned),
             },
         })
     }
@@ -714,50 +699,20 @@ impl BuildRepo {
     pub async fn head(&self) -> Result<Option<String>, Error> {
         match self {
             Self::Project => {
-                let workspace = match vcs::open(PROJECT).await {
-                    Ok(workspace) => workspace,
-                    Err(error) if is_not_found(&error) => {
-                        return Err(Subject::Project.refusal(error));
-                    }
-                    Err(error) => return Err(Subject::Project.refusal(error)),
-                };
-                workspace
-                    .head()
-                    .await
-                    .map_err(|error| Subject::Project.refusal(error))?
-                    .map_or(Ok(None), |head| Ok(Some(head)))
+                self.open().await?.head().await.map_err(|error| self.subject().refusal(error))
             }
             Self::Target { name, url: Some(url) } => {
                 let at = target_path(name);
-                let subject = Subject::Repository(url);
                 ensure(url, &at).await?;
-                let workspace = workspace_at(&at, subject).await?;
-                workspace
-                    .resolve(DEFAULT_BRANCH.to_owned())
-                    .await
-                    .map_err(|error| subject.refusal(error))?
-                    .map_or_else(
-                        || {
-                            Err(Error::not_found(
-                                "revision-not-found",
-                                format!("{subject} has no `{DEFAULT_BRANCH}`"),
-                            ))
-                        },
-                        |head| Ok(Some(head)),
-                    )
+                resolve_at(&at, Subject::Repository(url), DEFAULT_BRANCH).await.map(Some)
             }
-            Self::Target { name, url: None } => {
-                let at = target_path(name);
-                match vcs::open(&at).await {
-                    Err(error) if is_not_found(&error) => Ok(None),
-                    Err(error) => Err(self.subject().refusal(error)),
-                    Ok(workspace) => workspace
-                        .head()
-                        .await
-                        .map_err(|error| self.subject().refusal(error))?
-                        .map_or(Ok(None), |head| Ok(Some(head))),
+            Self::Target { name, url: None } => match vcs::open(&target_path(name)).await {
+                Err(error) if is_not_found(&error) => Ok(None),
+                Err(error) => Err(self.subject().refusal(error)),
+                Ok(workspace) => {
+                    workspace.head().await.map_err(|error| self.subject().refusal(error))
                 }
-            }
+            },
         }
     }
 
@@ -834,8 +789,9 @@ impl BuildRepo {
             );
             return Ok(None);
         }
-        let workspace = workspace_at(&self.path(), self.subject()).await?;
-        let entries = workspace
+        let entries = self
+            .open()
+            .await?
             .log_all(&head, Some(base))
             .await
             .map_err(|error| self.subject().refusal(error))?;
@@ -872,19 +828,15 @@ impl BuildRepo {
     /// repository holds no `head`, and [`omnia_sdk::ErrorKind::ServerError`] when the
     /// capability fails otherwise.
     pub async fn cut_integration(&self, head: &str, revision: &str) -> Result<Integration, Error> {
-        let copy = WorkingCopy {
-            at: INTEGRATION.to_owned(),
-        };
-        let repo = workspace_at(&self.path(), self.subject()).await?;
-        match repo.add(INTEGRATION, head).await.map_err(|error| copy.subject().refusal(error))? {
-            Ok(_workspace) => {
-                return Ok(Integration {
-                    copy,
-                    head: head.to_owned(),
-                    staged: Vec::new(),
-                });
-            }
-            Err(_occupied) => {}
+        let copy = WorkingCopy::checkout(INTEGRATION);
+        let repo = self.open().await?;
+        if repo.add(INTEGRATION, head).await.map_err(|error| copy.subject().refusal(error))?.is_ok()
+        {
+            return Ok(Integration {
+                copy,
+                head: head.to_owned(),
+                staged: Vec::new(),
+            });
         }
 
         // what the copy an earlier run left holds over the head, read
@@ -900,16 +852,10 @@ impl BuildRepo {
             tracing::info!(at = INTEGRATION, "removing the working copy an earlier run left");
             (head.to_owned(), Vec::new())
         };
-        let integration = workspace_at(INTEGRATION, copy.subject()).await?;
-        integration.remove().await.map_err(|error| copy.subject().refusal(error))?;
-        match repo.add(INTEGRATION, &at).await.map_err(|error| copy.subject().refusal(error))? {
-            Ok(_workspace) => {}
-            Err(_occupied) => {
-                return Err(server_error!(
-                    "the integration working copy could not be cut at `{at}`"
-                ));
-            }
-        }
+        WorkingCopy::checkout(INTEGRATION).remove().await?;
+        repo.add(INTEGRATION, &at).await.map_err(|error| copy.subject().refusal(error))?.map_err(
+            |_occupied| server_error!("the integration working copy could not be cut at `{at}`"),
+        )?;
         Ok(Integration {
             copy,
             head: at,
@@ -936,7 +882,7 @@ impl BuildRepo {
         if staged == head {
             return Ok(None);
         }
-        let repo = workspace_at(&self.path(), self.subject()).await?;
+        let repo = self.open().await?;
         let descends = match repo.is_ancestor(head.to_owned(), staged.clone()).await {
             Ok(descends) => descends,
             Err(error) => {
@@ -991,12 +937,11 @@ impl BuildRepo {
     ///
     /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
     pub async fn labelled(&self, label: &str) -> Result<Option<String>, Error> {
-        let workspace = workspace_at(&self.path(), self.subject()).await?;
-        workspace
+        self.open()
+            .await?
             .bookmark(label.to_owned())
             .await
-            .map_err(|error| self.subject().refusal(error))?
-            .map_or(Ok(None), |commit| Ok(Some(commit)))
+            .map_err(|error| self.subject().refusal(error))
     }
 
     /// Whether `descendant` descends from `ancestor` in the repository.
@@ -1007,8 +952,8 @@ impl BuildRepo {
     /// repository holds neither commit, and [`omnia_sdk::ErrorKind::ServerError`] when the
     /// capability fails otherwise.
     pub async fn descends(&self, ancestor: &str, descendant: &str) -> Result<bool, Error> {
-        let workspace = workspace_at(&self.path(), self.subject()).await?;
-        workspace
+        self.open()
+            .await?
             .is_ancestor(ancestor.to_owned(), descendant.to_owned())
             .await
             .map_err(|error| self.subject().refusal(error))
@@ -1022,21 +967,20 @@ impl BuildRepo {
     /// repository holds no such commit, and [`omnia_sdk::ErrorKind::ServerError`] when the
     /// capability fails otherwise.
     pub async fn label(&self, label: &str, commit: &str) -> Result<(), Error> {
-        let workspace = workspace_at(&self.path(), self.subject()).await?;
-        match workspace
+        self.open()
+            .await?
             .set_bookmark(label.to_owned(), commit.to_owned(), None)
             .await
             .map_err(|error| self.subject().refusal(error))?
-        {
-            Ok(()) => {}
-            Err(_conflict) => {
-                return Err(server_error!(
-                    "the label `{label}` could not be moved to commit `{commit}`"
-                ));
-            }
-        }
+            .map_err(|_conflict| {
+                server_error!("the label `{label}` could not be moved to commit `{commit}`")
+            })?;
         tracing::info!(label, commit, "labelled");
         Ok(())
+    }
+
+    async fn open(&self) -> Result<Workspace, Error> {
+        self.subject().open(&self.path()).await
     }
 
     fn subject(&self) -> Subject<'_> {
@@ -1110,30 +1054,24 @@ impl WorkingCopy {
     /// repository holds no such revision, and [`omnia_sdk::ErrorKind::ServerError`] when the
     /// capability fails otherwise.
     pub async fn cut(repo: &str, at: &str, revision: &str) -> Result<Self, Error> {
-        let copy = Self { at: at.to_owned() };
-        let repo_workspace = workspace_at(repo, Subject::WorkingCopy(at)).await?;
-        match repo_workspace
+        let copy = Self::checkout(at);
+        let repo_workspace = copy.subject().open(repo).await?;
+        if repo_workspace
             .add(at, revision)
             .await
             .map_err(|error| copy.subject().refusal(error))?
+            .is_ok()
         {
-            Ok(_workspace) => Ok(copy),
-            Err(_occupied) => {
-                tracing::info!(at, "removing the working copy an earlier run left");
-                let existing = workspace_at(at, copy.subject()).await?;
-                existing.remove().await.map_err(|error| copy.subject().refusal(error))?;
-                match repo_workspace
-                    .add(at, revision)
-                    .await
-                    .map_err(|error| copy.subject().refusal(error))?
-                {
-                    Ok(_workspace) => Ok(copy),
-                    Err(_occupied) => {
-                        Err(server_error!("the working copy could not be cut at `{at}`"))
-                    }
-                }
-            }
+            return Ok(copy);
         }
+        tracing::info!(at, "removing the working copy an earlier run left");
+        Self::checkout(at).remove().await?;
+        repo_workspace
+            .add(at, revision)
+            .await
+            .map_err(|error| copy.subject().refusal(error))?
+            .map(|_workspace| copy)
+            .map_err(|_occupied| server_error!("the working copy could not be cut at `{at}`"))
     }
 
     /// A repository's own checkout at `at`, addressed as a working copy that is never removed.
@@ -1163,8 +1101,11 @@ impl WorkingCopy {
     ///
     /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
     pub async fn commit(&self, message: &str) -> Result<Option<String>, Error> {
-        let workspace = workspace_at(&self.at, self.subject()).await?;
-        workspace.commit(message.to_owned()).await.map_err(|error| self.subject().refusal(error))
+        self.open()
+            .await?
+            .commit(message.to_owned())
+            .await
+            .map_err(|error| self.subject().refusal(error))
     }
 
     /// Merges `revision` into the working copy under `policy` and advances its head.
@@ -1180,8 +1121,9 @@ impl WorkingCopy {
     pub async fn merge(
         &self, revision: &str, message: &str, policy: &[Rule],
     ) -> Result<Merged, Error> {
-        let workspace = workspace_at(&self.at, self.subject()).await?;
-        match workspace
+        match self
+            .open()
+            .await?
             .merge(revision.to_owned(), message.to_owned(), policy.to_vec())
             .await
             .map_err(|error| self.subject().refusal(error))?
@@ -1207,8 +1149,8 @@ impl WorkingCopy {
     ///
     /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
     pub async fn head(&self) -> Result<String, Error> {
-        let workspace = workspace_at(&self.at, self.subject()).await?;
-        workspace
+        self.open()
+            .await?
             .head()
             .await
             .map_err(|error| self.subject().refusal(error))?
@@ -1221,8 +1163,11 @@ impl WorkingCopy {
     ///
     /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
     pub async fn remove(self) -> Result<(), Error> {
-        let workspace = workspace_at(&self.at, self.subject()).await?;
-        workspace.remove().await.map_err(|error| self.subject().refusal(error))
+        self.open().await?.remove().await.map_err(|error| self.subject().refusal(error))
+    }
+
+    async fn open(&self) -> Result<Workspace, Error> {
+        self.subject().open(&self.at).await
     }
 
     fn subject(&self) -> Subject<'_> {
@@ -1237,6 +1182,5 @@ impl WorkingCopy {
 /// Returns [`omnia_sdk::ErrorKind::ServerError`] when the capability fails.
 pub async fn pending(at: &str) -> Result<Vec<Change>, Error> {
     let subject = Subject::WorkingCopy(at);
-    let workspace = workspace_at(at, subject).await?;
-    workspace.status_all().await.map_err(|error| subject.refusal(error))
+    subject.open(at).await?.status_all().await.map_err(|error| subject.refusal(error))
 }

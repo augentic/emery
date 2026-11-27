@@ -167,24 +167,13 @@ impl<'a> GroupingBrief<'a> {
         }
     }
 
-    // Derives every requirement basis.
-    //
     // A run whose requirement claims come from two or more sources asks the
     // model to group them, as does one matching claims against standing
-    // requirements. So does a run over one contributing source whose
-    // requirement ids span two or more stems, since its seams may describe
-    // one behaviour under different nouns. Otherwise the baseline stands alone
-    // and no call is spent. Whatever the model answers, claims sharing an id
-    // stay one group, and one source's distinct ids under one stem stay
-    // distinct groups — a group that merges them is split, with no round
-    // spent.
-    //
-    // - Returns `Error::BadRequest` when no source contributed a requirement
-    //   claim, or when the model cannot produce a valid grouping within the
-    //   available rounds.
-    // - Returns `Error::ServerError` when required prose is missing or a
-    //   grouping cannot be reconciled with the claims.
-    // - Returns `Error::BadGateway` when the model operation fails.
+    // requirements, or one over a single source whose requirement ids span
+    // two or more stems. Otherwise the baseline stands alone and no call is
+    // spent. Whatever the model answers, claims sharing an id stay one
+    // group, and one source's distinct ids under one stem stay distinct
+    // groups — a group that merges them is split, with no round spent.
     pub async fn derive(self) -> Result<Vec<Basis<'a>>, Error> {
         if self.claims().is_empty() {
             return Err(bad_request!("no source contributed a requirement claim"));
@@ -481,7 +470,7 @@ impl Display for Hint<'_> {
 #[schemars(title = "Emery grouping answer")]
 pub struct Grouping {
     /// One group per requirement.
-    pub groups: Vec<Group>,
+    groups: Vec<Group>,
 }
 
 impl Grouping {
@@ -604,11 +593,11 @@ impl Grouping {
 /// The claims assigned to one requirement and their agreement classes.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Group {
+struct Group {
     /// Indices of every claim describing this requirement.
-    pub claims: Vec<usize>,
+    claims: Vec<usize>,
     /// Partitions of [`Group::claims`] that express equivalent statements.
-    pub classes: Vec<Vec<usize>>,
+    classes: Vec<Vec<usize>>,
 }
 
 // Reconciled facts used to construct one requirement.
@@ -789,7 +778,7 @@ impl<'a> Basis<'a> {
                     sources: class.iter().map(|member| member.source.to_string()).collect(),
                     kind: lead.kind,
                     rank: lead.rank,
-                    claim: lead.id.to_string(),
+                    claim: lead.id.to_owned(),
                     statement: lead.statement.clone(),
                 }
             })
@@ -797,7 +786,7 @@ impl<'a> Basis<'a> {
 
         Requirement {
             id: self.id,
-            subject: self.subject.to_string(),
+            subject: self.subject.to_owned(),
             status: self.status,
             covered: self.covered,
             trigger: self.trigger.clone(),
@@ -837,8 +826,8 @@ impl<'a> Contributor<'a> {
 impl From<&Contributor<'_>> for Cited {
     fn from(member: &Contributor<'_>) -> Self {
         Self {
-            source: member.source.to_string(),
-            claim: member.id.to_string(),
+            source: member.source.to_owned(),
+            claim: member.id.to_owned(),
             path: member.path.map(str::to_owned),
         }
     }

@@ -181,7 +181,7 @@ mod tests {
     use std::path::Path;
 
     use super::Brief as _;
-    use crate::build::merge::MergeBrief;
+    use crate::build::MergeBrief;
     use crate::specify::{
         DesignAmend, DesignBrief, GroupingBrief, PartAmend, PartBrief, SpecBrief,
     };

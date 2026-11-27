@@ -21,7 +21,7 @@ use self::baseline::Baseline;
 use self::change::ChangeSet;
 use self::plan::{Assembled, Pruned};
 pub use crate::apply::ApplyOutput;
-use crate::brief::Brief as _;
+use crate::brief::Brief;
 pub use crate::revision::{
     Amendment, AmendmentBase, BriefState, Change, ChangeClass, DesignDiff, PartChange, PartClass,
     PlanDiff,
@@ -114,7 +114,7 @@ use crate::{apply, store};
 pub async fn amend(input: AmendInput) -> Result<AmendOutput, Error> {
     // the sources, the revision they amend, and the slot the amendment goes to,
     // each refused before any load
-    let bound = Bound::all(&input.sources)?;
+    let bound = Bound::all(input.sources)?;
     if bound.iter().any(|source| source.name() == BASELINE) {
         return Err(bad_request!(
             "source `{BASELINE}` is the current revision's own name in an amendment; name the \
@@ -167,7 +167,7 @@ pub async fn amend(input: AmendInput) -> Result<AmendOutput, Error> {
     // sections redrafted over the pruned base where any claim informs one
     // and the pruned base itself otherwise
     let chunks = SpecBrief::amending(&extracts, &drafted);
-    let drafting = future::try_join_all(chunks.into_iter().map(super::brief::Brief::judge));
+    let drafting = future::try_join_all(chunks.into_iter().map(Brief::judge));
     let (drafts, design) = match DesignAmend::new(&extracts, &drafted, &changes, &base_design) {
         Some(brief) => future::try_join(drafting, brief.judge()).await?,
         None => (drafting.await?, base_design),
@@ -200,8 +200,8 @@ pub async fn amend(input: AmendInput) -> Result<AmendOutput, Error> {
     };
 
     let tally = Tally::of(&amendment);
-    let conflicts = amendment.conflicts().map(str::to_owned).collect();
-    let stems = amendment.stems().into_iter().map(str::to_owned).collect();
+    let conflicts = amendment.conflicts();
+    let stems = amendment.stems();
     let (id, applied) = stage(&repo, standing, &amendment, tally, input.apply).await?;
 
     Ok(AmendOutput {

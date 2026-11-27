@@ -7,6 +7,7 @@
 //! the base's. A seal writes those three documents as a revision over the
 //! base, never the amendment itself.
 
+use std::collections::BTreeSet;
 use std::fmt::{self, Display, Formatter};
 
 use omnia_sdk::{Error, server_error};
@@ -111,24 +112,25 @@ impl Amendment {
     /// floor a part is cut at, so these are the parts the change reaches.
     /// An unchanged requirement counts for nothing.
     #[must_use]
-    pub fn stems(&self) -> Vec<&str> {
-        let mut stems: Vec<&str> = self
-            .changes
+    pub fn stems(&self) -> Vec<String> {
+        self.changes
             .iter()
             .filter(|change| change.class != ChangeClass::Unchanged)
             .map(Change::stem)
-            .collect();
-        stems.sort_unstable();
-        stems.dedup();
-        stems
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
     }
 
     /// Returns the subjects of the requirements the change sources disagree over, in id order.
-    pub fn conflicts(&self) -> impl Iterator<Item = &str> {
+    #[must_use]
+    pub fn conflicts(&self) -> Vec<String> {
         self.changes
             .iter()
             .filter(|change| change.class == ChangeClass::Conflict)
-            .map(|change| change.subject.as_str())
+            .map(|change| change.subject.clone())
+            .collect()
     }
 }
 

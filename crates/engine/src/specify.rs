@@ -31,7 +31,7 @@ pub use self::spec::SPEC_CHUNK;
 pub(crate) use self::spec::SpecBrief;
 use crate::adapter::{self, AdapterRef, Loaded};
 pub use crate::apply::ApplyOutput;
-use crate::brief::Brief as _;
+use crate::brief::Brief;
 use crate::revision::Revision;
 pub use crate::revision::{
     BadId, Changed, DesignDiff, Diff, Entry, PartEntry, PartId, PlanDiff, ReqId, Retired, Role,
@@ -97,7 +97,7 @@ use crate::{Rank, apply, preopen_path, store, vcs};
 ///
 /// A loader's or a source's error keeps its own class and code.
 pub async fn specify(input: SpecifyInput) -> Result<SpecifyOutput, Error> {
-    let bound = Bound::all(&input.sources)?;
+    let bound = Bound::all(input.sources)?;
     store::no_amendment().await?;
 
     // the repository the specification lives in, read before any load so
@@ -126,15 +126,13 @@ pub async fn specify(input: SpecifyInput) -> Result<SpecifyOutput, Error> {
     let chunks = SpecBrief::chunked(&extracts, &bases);
 
     // the slicing owns the design's data types alone, so it follows the design
-    let (drafts, (design, plan)) = future::try_join(
-        future::try_join_all(chunks.into_iter().map(super::brief::Brief::judge)),
-        async {
+    let (drafts, (design, plan)) =
+        future::try_join(future::try_join_all(chunks.into_iter().map(Brief::judge)), async {
             let design = DesignBrief::new(&extracts, &bases).judge().await?;
             let plan = PartBrief::new(&bases, Types::of(&design)).derive().await?;
             Ok::<_, Error>((design, plan))
-        },
-    )
-    .await?;
+        })
+        .await?;
     let spec = SpecBrief::assemble(drafts);
     let waves = plan.waves();
 
@@ -235,27 +233,35 @@ pub struct SourceConfig {
 
 impl SourceConfig {
     // The one place an operator root meets the guest preopen.
-    fn prepare(&self) -> Result<SourceInput, Error> {
-        let name = &self.name;
-        if !is_kebab(name) {
+    fn into_bound(self) -> Result<Bound, Error> {
+        let Self {
+            name,
+            adapter,
+            content,
+            repository,
+            digest,
+            rank,
+            scope,
+        } = self;
+        if !is_kebab(&name) {
             return Err(bad_request!("source `{name}` is not a kebab-case name"));
         }
 
         // spell a lent root beneath the `.` mount: the project root or the
         // source's working copy itself, or `<root>/<path>`
-        let content = match (&self.content, &self.repository) {
+        let content = match (content, &repository) {
             (SourceContent::Workspace(relative), None) => {
-                let relative = preopen_path(relative)?.display().to_string();
+                let relative = preopen_path(&relative)?.display().to_string();
                 let root = if relative == "." { relative } else { format!("./{relative}") };
                 SourceContent::Workspace(root)
             }
             (SourceContent::Workspace(relative), Some(_)) => {
-                let Ok(within) = preopen_path(relative) else {
+                let Ok(within) = preopen_path(&relative) else {
                     return Err(bad_request!(
                         "source `{name}`: path `{relative}` must lie within the repository"
                     ));
                 };
-                let checkout = vcs::source_checkout(name);
+                let checkout = vcs::source_checkout(&name);
                 let root = if within == Path::new(".") {
                     checkout
                 } else {
@@ -263,7 +269,7 @@ impl SourceConfig {
                 };
                 SourceContent::Workspace(root)
             }
-            (value @ SourceContent::Value(_), None) => value.clone(),
+            (value @ SourceContent::Value(_), None) => value,
             (SourceContent::Value(_), Some(_)) => {
                 return Err(bad_request!(
                     "source `{name}` names a repository beside inline text; a repository is \
@@ -272,9 +278,13 @@ impl SourceConfig {
             }
         };
 
-        Ok(SourceInput {
-            name: name.clone(),
-            content,
+        Ok(Bound {
+            adapter,
+            digest,
+            repository,
+            rank,
+            scope,
+            input: SourceInput { name, content },
         })
     }
 }
@@ -351,17 +361,17 @@ pub struct RepositorySource {
 
 // A source as a run binds it: checked, its input prepared, and ready to
 // extract once its adapter is loaded.
-pub(crate) struct Bound<'a> {
-    adapter: &'a AdapterRef,
-    digest: Option<&'a str>,
-    repository: Option<&'a SourceRepository>,
+pub(crate) struct Bound {
+    adapter: AdapterRef,
+    digest: Option<String>,
+    repository: Option<SourceRepository>,
     rank: Option<Rank>,
     scope: Scope,
     input: SourceInput,
 }
 
-impl<'a> Bound<'a> {
-    pub(crate) fn all(sources: &'a [SourceConfig]) -> Result<Vec<Self>, Error> {
+impl Bound {
+    pub(crate) fn all(sources: Vec<SourceConfig>) -> Result<Vec<Self>, Error> {
         if sources.is_empty() {
             return Err(Error::bad_request("specify-source-required", "no sources"));
         }
@@ -369,18 +379,11 @@ impl<'a> Bound<'a> {
         let mut names = BTreeSet::new();
         let mut bound = Vec::with_capacity(sources.len());
         for source in sources {
-            let input = source.prepare()?;
-            if !names.insert(source.name.as_str()) {
-                return Err(bad_request!("source `{}` appears twice", source.name));
+            let entry = source.into_bound()?;
+            if !names.insert(entry.input.name.clone()) {
+                return Err(bad_request!("source `{}` appears twice", entry.input.name));
             }
-            bound.push(Self {
-                adapter: &source.adapter,
-                digest: source.digest.as_deref(),
-                repository: source.repository.as_ref(),
-                rank: source.rank,
-                scope: source.scope,
-                input,
-            });
+            bound.push(entry);
         }
 
         Ok(bound)
@@ -397,7 +400,8 @@ impl<'a> Bound<'a> {
     // extraction succeeded.
     pub(crate) async fn extract_all(bound: &[Self]) -> Result<Extracted, Error> {
         let loaded =
-            &adapter::load(bound.iter().map(|source| (source.adapter, source.digest))).await?;
+            &adapter::load(bound.iter().map(|source| (&source.adapter, source.digest.as_deref())))
+                .await?;
         let checkouts = Checkouts::prepare(bound).await?;
         let extracted =
             future::try_join_all(bound.iter().map(|source| source.extract(loaded))).await;
@@ -413,7 +417,7 @@ impl<'a> Bound<'a> {
         &self, loaded: &BTreeMap<AdapterRef, Loaded<SourceMetadata>>,
     ) -> Result<Extract, Error> {
         let source = &self.input.name;
-        let adapter = self.adapter;
+        let adapter = &self.adapter;
 
         let Loaded { id, metadata } = loaded
             .get(adapter)
@@ -474,20 +478,21 @@ struct Checkouts {
 }
 
 impl Checkouts {
-    async fn prepare(bound: &[Bound<'_>]) -> Result<Self, Error> {
+    async fn prepare(bound: &[Bound]) -> Result<Self, Error> {
         let mut ensured = BTreeSet::new();
         let mut copies = Vec::new();
         let mut read = Vec::new();
         for source in bound {
-            let Some(repository) = source.repository else { continue };
-            let name = &source.input.name;
+            let Some(repository) = &source.repository else { continue };
+            let name = source.name();
             let repo = SourceClone::new(&repository.url);
-            if ensured.insert(repo.path()) {
+            let path = repo.path();
+            if ensured.insert(path.clone()) {
                 repo.ensure().await?;
             }
             let commit = repo.resolve(&repository.revision).await?;
             let at = vcs::source_checkout(name);
-            copies.push(WorkingCopy::cut(&repo.path(), &at, &commit).await?);
+            copies.push(WorkingCopy::cut(&path, &at, &commit).await?);
             tracing::info!(
                 source = %name,
                 repository = %repo.url(),
@@ -496,7 +501,7 @@ impl Checkouts {
                 "checked out"
             );
             read.push(RepositorySource {
-                source: name.clone(),
+                source: name.to_owned(),
                 repository: repo.url().to_owned(),
                 revision: repository.revision.clone(),
                 commit,
