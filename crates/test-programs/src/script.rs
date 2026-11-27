@@ -9,11 +9,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use emery_adapter::source::{
     Backing, Claim, ClaimKind, Evidence, SourceInput, SourceKind, SourceMetadata,
 };
-use emery_adapter::target::{MergeRule, MergeStrategy, Report, TargetMetadata, Task, Verdict};
-use omnia_sdk::Error;
+use emery_adapter::target::{MergeRule, Outcome, Report, Slice, TargetMetadata, Task, Verdict};
+use omnia_sdk::{Error, ErrorKind};
 use serde::{Deserialize, Serialize};
-
-use crate::slice_wire::SliceWire;
 
 /// Combined script staged for both adapter guests.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -31,8 +29,6 @@ pub const MOUNT: &str = ".emery/script";
 pub const STATE: &str = "state.json";
 /// Directory holding one JSON file per recorded adapter dispatch beneath [`MOUNT`].
 pub const CALLS_DIR: &str = "calls";
-/// Directory holding per-slice dispatch metadata beneath [`MOUNT`].
-pub const SLICES_DIR: &str = "slices";
 /// Directory holding per-slice failure-queue slot markers beneath [`MOUNT`].
 pub const FAILURES_DIR: &str = "failures";
 /// Directory holding wave verify-queue slot markers beneath [`MOUNT`].
@@ -44,9 +40,11 @@ pub const ARRIVED: &str = "arrived";
 #[must_use]
 pub fn sanitise_id(id: &str) -> String {
     id.chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.' { ch } else { '_' }
-        })
+        .map(
+            |ch| {
+                if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') { ch } else { '_' }
+            },
+        )
         .collect()
 }
 
@@ -124,7 +122,7 @@ pub struct TargetScriptState {
     pub versions: BTreeMap<String, String>,
     /// Merge rules every adapter declares.
     #[serde(default)]
-    pub rules: Vec<RuleWire>,
+    pub rules: Vec<MergeRule>,
     /// Default slice budget.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget: Option<u32>,
@@ -133,11 +131,51 @@ pub struct TargetScriptState {
     pub rendezvous: Option<RendezvousScript>,
 }
 
-/// Classified error the guest lifts like the WIT bindings would.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// Serialisable mirror of [`ErrorKind`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ErrorKindWire {
+    /// [`ErrorKind::BadRequest`].
+    BadRequest,
+    /// [`ErrorKind::NotFound`].
+    NotFound,
+    /// [`ErrorKind::Conflict`].
+    Conflict,
+    /// [`ErrorKind::ServerError`].
+    ServerError,
+    /// [`ErrorKind::BadGateway`].
+    BadGateway,
+}
+
+impl From<ErrorKind> for ErrorKindWire {
+    fn from(kind: ErrorKind) -> Self {
+        match kind {
+            ErrorKind::BadRequest => Self::BadRequest,
+            ErrorKind::NotFound => Self::NotFound,
+            ErrorKind::Conflict => Self::Conflict,
+            ErrorKind::BadGateway => Self::BadGateway,
+            _ => Self::ServerError,
+        }
+    }
+}
+
+impl From<ErrorKindWire> for ErrorKind {
+    fn from(kind: ErrorKindWire) -> Self {
+        match kind {
+            ErrorKindWire::BadRequest => Self::BadRequest,
+            ErrorKindWire::NotFound => Self::NotFound,
+            ErrorKindWire::Conflict => Self::Conflict,
+            ErrorKindWire::ServerError => Self::ServerError,
+            ErrorKindWire::BadGateway => Self::BadGateway,
+        }
+    }
+}
+
+/// Classified error carried across JSON test boundaries.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct ScriptError {
-    /// Omnia error kind name (`bad-request`, `server-error`, …).
-    pub kind: String,
+    /// Omnia error class.
+    pub kind: ErrorKindWire,
     /// Recovery code.
     pub code: String,
     /// Human-readable description.
@@ -145,19 +183,17 @@ pub struct ScriptError {
 }
 
 impl ScriptError {
-    /// Builds from a host [`Error`].
+    /// Builds a [`ScriptError`] from a host [`Error`].
     #[must_use]
     pub fn from_adapter(error: &Error) -> Self {
-        use omnia_sdk::ErrorKind;
-        let kind = match error.kind() {
-            ErrorKind::BadRequest => "bad-request",
-            ErrorKind::NotFound => "not-found",
-            ErrorKind::Conflict => "conflict",
-            ErrorKind::BadGateway => "bad-gateway",
-            ErrorKind::ServerError | _ => "server-error",
-        };
+        Self::from(error)
+    }
+}
+
+impl From<&Error> for ScriptError {
+    fn from(error: &Error) -> Self {
         Self {
-            kind: kind.to_owned(),
+            kind: error.kind().into(),
             code: error.code().to_owned(),
             description: error.description().to_owned(),
         }
@@ -166,13 +202,7 @@ impl ScriptError {
 
 impl From<ScriptError> for Error {
     fn from(script: ScriptError) -> Self {
-        match script.kind.as_str() {
-            "bad-request" => Self::bad_request(&script.code, &script.description),
-            "not-found" => Self::not_found(&script.code, &script.description),
-            "conflict" => Self::conflict(&script.code, &script.description),
-            "bad-gateway" => Self::bad_gateway(&script.code, &script.description),
-            _ => Self::server_error(&script.code, &script.description),
-        }
+        Self::new(script.kind.into(), script.code, script.description)
     }
 }
 
@@ -208,13 +238,10 @@ pub enum ScriptCall {
     TargetBuild {
         /// Adapter guest id.
         id: String,
-        /// Slice id.
-        slice_id: String,
         /// Workspace root path.
         workspace: String,
         /// The slice as the engine lowered it for the target.
-        #[serde(default)]
-        slice: Box<SliceWire>,
+        slice: Box<Slice>,
     },
     /// A target `run` dispatch for verification.
     TargetVerify {
@@ -235,6 +262,19 @@ impl SourceScriptState {
         }
     }
 
+    /// Resolves the scripted extraction outcome for source `name`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] converted from [`ScriptError`] when the script refuses `name`.
+    pub fn extract(&self, name: &str) -> Result<Evidence, Error> {
+        match self.evidence.get(name) {
+            Some(EvidenceScript::Ok(evidence)) => Ok(evidence.clone()),
+            Some(EvidenceScript::Err(err)) => Err(err.clone().into()),
+            None => Ok(Self::default_evidence()),
+        }
+    }
+
     /// Default evidence when nothing is scripted for a source name.
     #[must_use]
     pub fn default_evidence() -> Evidence {
@@ -251,51 +291,13 @@ impl SourceScriptState {
     }
 }
 
-/// Wire form of a merge rule in staged script JSON.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RuleWire {
-    /// Glob the rule applies to.
-    pub paths: String,
-    /// Merge strategy name.
-    pub strategy: String,
-}
-
-impl RuleWire {
-    #[must_use]
-    /// Converts this wire form to a contract [`MergeRule`].
-    pub fn to_merge_rule(&self) -> MergeRule {
-        MergeRule {
-            paths: self.paths.clone(),
-            strategy: match self.strategy.as_str() {
-                "ours" => MergeStrategy::Ours,
-                "theirs" => MergeStrategy::Theirs,
-                _ => MergeStrategy::Union,
-            },
-        }
-    }
-}
-
-impl From<&MergeRule> for RuleWire {
-    fn from(rule: &MergeRule) -> Self {
-        Self {
-            paths: rule.paths.clone(),
-            strategy: match rule.strategy {
-                MergeStrategy::Union => "union",
-                MergeStrategy::Ours => "ours",
-                MergeStrategy::Theirs => "theirs",
-            }
-            .to_owned(),
-        }
-    }
-}
-
 impl TargetScriptState {
     /// Metadata for adapter guest `id`.
     #[must_use]
     pub fn metadata(&self, id: &str) -> TargetMetadata {
         TargetMetadata {
             emery_version: self.versions.get(id).cloned(),
-            merge_rules: self.rules.iter().map(RuleWire::to_merge_rule).collect(),
+            merge_rules: self.rules.clone(),
             budget: self.budget,
         }
     }
@@ -304,11 +306,8 @@ impl TargetScriptState {
     ///
     /// # Errors
     ///
-    /// Returns [`ScriptError`] converted to [`Error`] when the script refuses the task.
-    pub fn run_at(
-        &self, task: &Task, attempt: usize,
-    ) -> Result<emery_adapter::target::Outcome, Error> {
-        use emery_adapter::target::Outcome;
+    /// Returns [`Error`] converted from [`ScriptError`] when the script refuses `task`.
+    pub fn run_at(&self, task: &Task, attempt: usize) -> Result<Outcome, Error> {
         match task {
             Task::Init => Ok(Outcome::Initialised),
             Task::Build(slice) => {

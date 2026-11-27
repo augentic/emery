@@ -12,13 +12,14 @@ use emery_sdk::survey::code::{
 };
 use emery_sdk::{ClaimKind, Evidence, Lexicon, Trigger};
 use omnia_test::host::{ScriptedModel, scratch};
-use support::harness::{SeamsRun, seams, seams_in};
-use support::{
+use support::harness::{DriverRun, seams, seams_in};
+use test_programs::protocol::{
+    BootstrapSpec, FileSpec, InputSpec, SeamsOutcome, SeamsScenario, SeamsTree, SeamsTreeKind,
+    WorkspaceInput,
+};
+use test_programs::stub::{
     PYTHON, TYPESCRIPT, call, callee, class_decl, export, from_module, from_package, function,
     line, member, module, span, value,
-};
-use test_programs::protocol::{
-    BootstrapSpec, FileSpec, InputSpec, SeamsScenario, SeamsTree, SeamsTreeKind, WorkspaceInput,
 };
 
 const NO_SURFACE: &str = "No surface was found in this source: its survey named no route, command, \
@@ -92,7 +93,7 @@ fn fixed_workspace(
     }
 }
 
-async fn run(model: &ScriptedModel, scenario: &SeamsScenario) -> SeamsRun {
+async fn run(model: &ScriptedModel, scenario: &SeamsScenario) -> DriverRun<SeamsOutcome> {
     seams(scenario, model.clone()).await
 }
 

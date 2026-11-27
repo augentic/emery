@@ -1,4 +1,4 @@
-//! Builds SDK driver `wasm32-wasip3` components and generates `gen.rs`.
+//! Builds SDK driver and scripted adapter `wasm32-wasip3` components and generates `gen.rs`.
 
 fn main() {
     omnia_test::build::Components::in_workspace("../..")

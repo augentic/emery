@@ -1,154 +1,87 @@
-//! Runs SDK driver guests under [`Deployment`] and parses their JSON stdout.
+//! Runs SDK driver guests under `Deployment` and parses their JSON stdout.
 
-use emery_adapter::source::{Claim, Evidence};
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+
+use emery_adapter::source::Evidence;
 use emery_adapter::target::{Report, Verdict};
+use emery_sdk::Error;
 use emery_sdk::survey::{Inventory, Survey};
-use emery_sdk::{Error, Lexicon, Seam};
-use omnia::{ExitStatus, Mount};
-use omnia_sdk::ErrorKind;
+use omnia::{ExitStatus, Mount, SourceSpec};
 use omnia_test::host::{Backends, Deployment, Scratch, precompiled, scratch};
 use omnia_wasi_model::{ModelClient, WasiModel};
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 use test_programs::protocol::{
-    BuildOutcome, BuildScenario, ExtractScenario, InputSpec, Response, SeamsOutcome, SeamsScenario,
+    BuildOutcome, BuildScenario, ExtractScenario, Response, SeamsOutcome, SeamsScenario,
     SurveyCommand, SurveyScenario, VERIFY_WORKSPACE, VerifyOutcome, VerifyScenario, WorkspaceInput,
 };
 
-/// An [`extract`] run: parsed stdout and the model handle for assertions.
-pub struct ExtractRun {
-    /// Parsed driver response.
-    pub response: Response<Evidence>,
-    /// Standard output as UTF-8.
+pub struct DriverRun<T> {
+    pub response: Response<T>,
     pub stdout: String,
 }
 
-/// A [`survey::surfaces`] run.
-pub struct SurveyRun {
-    /// Parsed driver response.
-    pub response: Response<Inventory>,
-    /// Standard output as UTF-8.
-    pub stdout: String,
-    /// Captured stdout for turn-shape assertions.
-    pub raw_stdout: String,
-}
-
-/// A [`survey::seams`](emery_sdk::survey::seams) run.
-pub struct SeamsRun {
-    /// Parsed driver response.
-    pub response: Response<SeamsOutcome<Claim>>,
-    /// Standard output as UTF-8.
-    pub stdout: String,
-}
-
-/// A [`target::build`](emery_sdk::target::build) run.
-pub struct BuildRun {
-    /// Parsed driver response.
-    pub response: Response<BuildOutcome<Report>>,
-    /// Standard output as UTF-8.
-    pub stdout: String,
-}
-
-/// A [`target::verify`](emery_sdk::target::verify) run.
-pub struct VerifyRun {
-    /// Parsed driver response.
-    pub response: Response<VerifyOutcome<Verdict>>,
-    /// Standard output as UTF-8.
-    pub stdout: String,
-}
-
-/// Runs the extract driver over a fresh scratch tree with `scenario` and `model`.
 pub async fn extract<M: ModelClient + Clone + 'static>(
     scenario: &ExtractScenario, model: M,
-) -> ExtractRun {
+) -> DriverRun<Evidence> {
     let project = scratch();
     extract_in(&project, scenario, model).await
 }
 
-/// Runs the extract driver over `project` with `scenario` and `model`.
 pub async fn extract_in<M: ModelClient + Clone + 'static>(
     project: &Scratch, scenario: &ExtractScenario, model: M,
-) -> ExtractRun {
-    stage_workspace(project, workspace_of(&scenario.input));
-    let arg = serde_json::to_string(scenario).expect("scenario serialises");
-    let (response, stdout) =
-        drive_mount::<Evidence, _>(test_programs::SDK_EXTRACT, project.mount(false), &arg, model)
-            .await;
-    ExtractRun { response, stdout }
+) -> DriverRun<Evidence> {
+    stage_workspace(project, scenario.input.workspace());
+    drive_mount(test_programs::SDK_EXTRACT, project.mount(false), scenario, model).await
 }
 
-/// Runs the survey driver with `scenario` and `model`.
 pub async fn survey<M: ModelClient + Clone + 'static>(
     scenario: &SurveyScenario, model: M,
-) -> SurveyRun {
-    let (response, stdout) =
-        drive::<Inventory, _>(test_programs::SDK_SURVEY, stage_survey(scenario), model).await;
-    SurveyRun {
-        response,
-        raw_stdout: stdout.clone(),
-        stdout,
-    }
+) -> DriverRun<Inventory> {
+    let project = scratch();
+    stage_workspace(&project, scenario.input.workspace());
+    let command = SurveyCommand::Surfaces(scenario.clone());
+    drive_mount(test_programs::SDK_SURVEY, project.mount(false), &command, model).await
 }
 
-/// Runs the seams driver over a fresh scratch tree with `scenario` and `model`.
 pub async fn seams<M: ModelClient + Clone + 'static>(
     scenario: &SeamsScenario, model: M,
-) -> SeamsRun {
+) -> DriverRun<SeamsOutcome> {
     let project = scratch();
     seams_in(&project, scenario, model).await
 }
 
-/// Runs the seams driver over `project` with `scenario` and `model`.
 pub async fn seams_in<M: ModelClient + Clone + 'static>(
     project: &Scratch, scenario: &SeamsScenario, model: M,
-) -> SeamsRun {
-    stage_workspace(project, workspace_of(&scenario.input));
+) -> DriverRun<SeamsOutcome> {
+    stage_workspace(project, scenario.input.workspace());
     let command = SurveyCommand::Seams(scenario.clone());
-    let arg = serde_json::to_string(&command).expect("scenario serialises");
-    let (response, stdout) = drive_mount::<SeamsOutcome<Claim>, _>(
-        test_programs::SDK_SURVEY,
-        project.mount(false),
-        &arg,
-        model,
-    )
-    .await;
-    SeamsRun { response, stdout }
+    drive_mount(test_programs::SDK_SURVEY, project.mount(false), &command, model).await
 }
 
-/// Runs the build driver over writable `project` with `scenario` and `model`.
 pub async fn build<M: ModelClient + Clone + 'static>(
     project: &Scratch, scenario: &BuildScenario, model: M,
-) -> BuildRun {
-    let arg = serde_json::to_string(scenario).expect("scenario serialises");
-    let mount = project.mount(true);
-    let (response, stdout) =
-        drive_mount::<BuildOutcome<Report>, _>(test_programs::SDK_BUILD, mount, &arg, model).await;
-    BuildRun { response, stdout }
+) -> DriverRun<BuildOutcome> {
+    drive_mount(test_programs::SDK_BUILD, project.mount(true), scenario, model).await
 }
 
-/// Runs the verify driver over writable `project` with `scenario` and `model`.
 pub async fn verify<M: ModelClient + Clone + 'static>(
     project: &Scratch, scenario: &VerifyScenario, model: M,
-) -> VerifyRun {
-    let arg = serde_json::to_string(scenario).expect("scenario serialises");
+) -> DriverRun<VerifyOutcome> {
     let mount = project.mount_as(VERIFY_WORKSPACE, true);
-    let (response, stdout) =
-        drive_mount::<VerifyOutcome<Verdict>, _>(test_programs::SDK_VERIFY, mount, &arg, model)
-            .await;
-    VerifyRun { response, stdout }
+    drive_mount(test_programs::SDK_VERIFY, mount, scenario, model).await
 }
 
-pub async fn drive<T: DeserializeOwned, M: ModelClient + Clone + 'static>(
-    guest: &'static str, (project, arg): (Scratch, String), model: M,
-) -> (Response<T>, String) {
-    drive_mount(guest, project.mount(false), &arg, model).await
-}
-
-pub async fn drive_mount<T: DeserializeOwned, M: ModelClient + Clone + 'static>(
-    guest: &'static str, mount: Mount, arg: &str, model: M,
-) -> (Response<T>, String) {
-    let source = precompiled(guest).expect("precompiled driver");
+async fn drive_mount<T, A, M>(guest: &str, mount: Mount, payload: &A, model: M) -> DriverRun<T>
+where
+    T: DeserializeOwned,
+    A: Serialize + Sync + ?Sized,
+    M: ModelClient + Clone + 'static,
+{
+    let arg = serde_json::to_string(payload).expect("scenario serialises");
     let captured = Deployment::new()
-        .guest("driver", source)
+        .guest("driver", cached_driver(guest))
         .command("driver")
         .mount(mount)
         .args([arg])
@@ -159,14 +92,21 @@ pub async fn drive_mount<T: DeserializeOwned, M: ModelClient + Clone + 'static>(
     let response = serde_json::from_str(run.stdout.trim()).unwrap_or_else(|err| {
         panic!("driver JSON on stdout: {err}: {}", run.stdout);
     });
-    (response, run.stdout)
+    DriverRun {
+        response,
+        stdout: run.stdout,
+    }
 }
 
-fn stage_survey(scenario: &SurveyScenario) -> (Scratch, String) {
-    let project = scratch();
-    stage_workspace(&project, workspace_of(&scenario.input));
-    let command = SurveyCommand::Surfaces(scenario.clone());
-    (project, serde_json::to_string(&command).expect("scenario serialises"))
+fn cached_driver(guest: &str) -> SourceSpec {
+    static DRIVERS: Mutex<BTreeMap<String, SourceSpec>> = Mutex::new(BTreeMap::new());
+    let mut drivers = DRIVERS.lock().expect("drivers");
+    if let Some(source) = drivers.get(guest) {
+        return source.clone();
+    }
+    let compiled = precompiled(guest).expect("precompiled driver");
+    drivers.insert(guest.to_owned(), compiled.clone());
+    compiled
 }
 
 fn stage_workspace(project: &Scratch, workspace: Option<&WorkspaceInput>) {
@@ -183,161 +123,67 @@ fn stage_workspace(project: &Scratch, workspace: Option<&WorkspaceInput>) {
     }
 }
 
-const fn workspace_of(input: &InputSpec) -> Option<&WorkspaceInput> {
-    match input {
-        InputSpec::Workspace(workspace) => Some(workspace),
-        InputSpec::Value { .. } => None,
+impl<T> DriverRun<T> {
+    #[track_caller]
+    pub fn error(self) -> Error {
+        match self.response {
+            Response::Err(error) => Error::from(error),
+            Response::Ok { .. } => panic!("expected error"),
+        }
+    }
+
+    #[track_caller]
+    fn expect_ok(self, expected: &str) -> T {
+        match self.response {
+            Response::Ok { value } => value,
+            Response::Err(err) => {
+                panic!("expected {expected}, got `{}`: {}", err.code, err.description);
+            }
+        }
     }
 }
 
-impl ExtractRun {
-    /// Returns evidence on success.
+impl DriverRun<Evidence> {
     #[track_caller]
     pub fn evidence(self) -> Evidence {
-        match self.response {
-            Response::Ok { value } => value,
-            Response::Err {
-                code, description, ..
-            } => {
-                panic!("expected evidence, got `{code}`: {description}");
-            }
-        }
-    }
-
-    /// Returns the error on refusal.
-    #[track_caller]
-    pub fn error(self) -> Error {
-        error_from_response(self.response)
+        self.expect_ok("evidence")
     }
 }
 
-impl SurveyRun {
-    /// Returns the inventory on success.
+impl DriverRun<Inventory> {
     #[track_caller]
     pub fn inventory(self) -> Inventory {
-        match self.response {
-            Response::Ok { value } => value,
-            Response::Err {
-                code, description, ..
-            } => {
-                panic!("expected inventory, got `{code}`: {description}");
-            }
-        }
-    }
-
-    /// Returns the error on refusal.
-    #[track_caller]
-    pub fn error(self) -> Error {
-        error_from_response(self.response)
+        self.expect_ok("inventory")
     }
 }
 
-impl SeamsRun {
-    /// Returns the survey on success.
+impl DriverRun<SeamsOutcome> {
     #[track_caller]
     pub fn survey(self) -> Survey {
-        match self.response {
-            Response::Ok { value } => Survey {
-                seams: value
-                    .seams
-                    .into_iter()
-                    .map(|seam| Seam {
-                        text: seam.text,
-                        files: seam.files,
-                        stems: seam.stems,
-                        anchors: seam.anchors,
-                        lexicon: Lexicon::with(seam.terms),
-                    })
-                    .collect(),
-                types: value.types,
-                contracts: value.contracts,
-            },
-            Response::Err {
-                code, description, ..
-            } => {
-                panic!("expected survey, got `{code}`: {description}");
-            }
-        }
-    }
-
-    /// Returns the error on refusal.
-    #[track_caller]
-    pub fn error(self) -> Error {
-        error_from_response(self.response)
+        Survey::from(self.expect_ok("survey"))
     }
 }
 
-impl BuildRun {
-    /// Returns the report on success.
+impl DriverRun<BuildOutcome> {
+    #[track_caller]
+    pub fn outcome(self) -> BuildOutcome {
+        self.expect_ok("report")
+    }
+
     #[track_caller]
     pub fn report(self) -> Report {
         self.outcome().report
     }
-
-    /// Returns `(report, checks)` on success.
-    #[track_caller]
-    pub fn outcome(self) -> BuildOutcome<Report> {
-        match self.response {
-            Response::Ok { value } => value,
-            Response::Err {
-                code, description, ..
-            } => {
-                panic!("expected report, got `{code}`: {description}");
-            }
-        }
-    }
-
-    /// Returns the error on refusal.
-    #[track_caller]
-    pub fn error(self) -> Error {
-        error_from_response(self.response)
-    }
 }
 
-impl VerifyRun {
-    /// Returns `(verdict, checks)` on success.
+impl DriverRun<VerifyOutcome> {
     #[track_caller]
-    pub fn outcome(self) -> VerifyOutcome<Verdict> {
-        match self.response {
-            Response::Ok { value } => value,
-            Response::Err {
-                code, description, ..
-            } => {
-                panic!("expected verdict, got `{code}`: {description}");
-            }
-        }
+    pub fn outcome(self) -> VerifyOutcome {
+        self.expect_ok("verdict")
     }
 
-    /// Returns the verdict on success.
     #[track_caller]
     pub fn verdict(self) -> Verdict {
         self.outcome().verdict
-    }
-
-    /// Returns the error on refusal.
-    #[track_caller]
-    pub fn error(self) -> Error {
-        error_from_response(self.response)
-    }
-}
-
-fn error_from_response<T>(response: Response<T>) -> Error {
-    match response {
-        Response::Err {
-            kind,
-            code,
-            description,
-        } => Error::new(parse_kind(&kind), &code, description),
-        Response::Ok { .. } => panic!("expected error"),
-    }
-}
-
-fn parse_kind(kind: &str) -> ErrorKind {
-    match kind {
-        "badrequest" | "bad_request" | "exhausted" => ErrorKind::BadRequest,
-        "notfound" | "not_found" => ErrorKind::NotFound,
-        "badgateway" | "bad_gateway" | "unavailable" => ErrorKind::BadGateway,
-        "conflict" => ErrorKind::Conflict,
-        _ => ErrorKind::ServerError,
     }
 }

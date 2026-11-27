@@ -7,7 +7,6 @@ use emery_sdk::target::export::{self, Guest};
 use test_programs::script::{CombinedScript, ScriptCall};
 use test_programs::script_io::{
     append_call, claim_build_attempt, claim_verify_attempt, read_state, rendezvous_wait,
-    write_slice_dispatch,
 };
 
 struct Adapter;
@@ -33,48 +32,45 @@ impl Guest for Adapter {
 }
 
 fn scripted_emery_version(id: &str) -> Option<String> {
-    if id == "acme:builderv100" { Some("100.0.0".into()) } else { None }
+    (id == "acme:builderv100").then(|| "100.0.0".to_owned())
 }
 
 fn scripted_budget(id: &str) -> u32 {
-    let default = 12;
+    const DEFAULT: u32 = 12;
     let Some(rest) = id.strip_prefix("acme:builderb") else {
-        return default;
+        return DEFAULT;
     };
     let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
-    digits.parse().ok().filter(|&budget| budget > 0).unwrap_or(default)
+    digits.parse().ok().filter(|&budget| budget > 0).unwrap_or(DEFAULT)
 }
 
 async fn dispatch(
-    id: &export::AdapterId, workspace: &str, task: export::Task,
+    id: &str, workspace: &str, task: export::Task,
 ) -> Result<export::Outcome, export::Error> {
     let combined = read_state::<CombinedScript>();
     let task = Task::from(task);
     let attempt = match &task {
         Task::Init => {
             append_call(&ScriptCall::TargetInit {
-                id: id.clone(),
+                id: id.to_owned(),
                 workspace: workspace.to_owned(),
             });
             0
         }
         Task::Build(slice) => {
-            write_slice_dispatch(&slice.id, &slice.base);
             append_call(&ScriptCall::TargetBuild {
-                id: id.clone(),
-                slice_id: slice.id.clone(),
+                id: id.to_owned(),
                 workspace: workspace.to_owned(),
-                slice: Box::default(),
+                slice: Box::new(slice.clone()),
             });
             if let Some(rendezvous) = &combined.target.rendezvous {
-                let expected: Vec<_> = rendezvous.expected.iter().cloned().collect();
-                rendezvous_wait(&slice.id, &expected).await;
+                rendezvous_wait(&slice.id, &rendezvous.expected).await;
             }
             claim_build_attempt(&slice.id)
         }
         Task::Verify => {
             append_call(&ScriptCall::TargetVerify {
-                id: id.clone(),
+                id: id.to_owned(),
                 workspace: workspace.to_owned(),
             });
             claim_verify_attempt()

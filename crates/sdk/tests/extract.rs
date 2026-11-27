@@ -5,8 +5,9 @@
 mod support;
 
 use emery_adapter::source::Backing;
+use omnia_test::host::ScriptedModel;
 use support::by_file::{
-    ByFile, FailKind, ScriptFailures, file_answers, file_invalid, file_retries, single_model,
+    ByFile, FailKind, ScriptFailures, file_answers, file_invalid, file_retries,
 };
 use support::harness::extract;
 use test_programs::protocol::{ExtractScenario, FileSpec, InputSpec, SeamSpec, WorkspaceInput};
@@ -288,7 +289,7 @@ async fn bad_request_seam() {
 }
 
 async fn no_seams() {
-    let model = single_model(Vec::<String>::new());
+    let model = ScriptedModel::default();
     let error = extract(&scenario(InputSpec::Workspace(workspace(&[])), Vec::new()), model.clone())
         .await
         .error();
@@ -298,7 +299,7 @@ async fn no_seams() {
 }
 
 async fn escaping_path() {
-    let model = single_model(Vec::<String>::new());
+    let model = ScriptedModel::default();
     let error = extract(
         &scenario(
             InputSpec::Workspace(workspace(&["a/x.md"])),
@@ -321,7 +322,7 @@ async fn escaping_path() {
 }
 
 async fn dot_path() {
-    let model = single_model(Vec::<String>::new());
+    let model = ScriptedModel::default();
     let error = extract(
         &scenario(
             InputSpec::Workspace(workspace(&[])),
@@ -339,7 +340,7 @@ async fn dot_path() {
 }
 
 async fn files_value() {
-    let model = single_model(Vec::<String>::new());
+    let model = ScriptedModel::default();
     let error = extract(
         &scenario(
             InputSpec::Value {

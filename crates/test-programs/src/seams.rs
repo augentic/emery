@@ -1,28 +1,25 @@
 //! Guest execution of [`SeamsScenario`] over hand-built trees.
 
-mod stub;
-
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use emery_prose::Doc;
+use emery_sdk::Context;
 use emery_sdk::survey::Lines;
 use emery_sdk::survey::code::{
     Arg, Binding, BindingKind, Call, Callee, EnvRead, Export, ExportKind, Init, Listing, Manifest,
     MemberKind, Parsed, Runs, Scope, Tree, Use,
 };
 use emery_sdk::survey::resolve::Target;
-use emery_sdk::{Claim, Context};
 
-use self::stub::{
+use crate::helpers::{err, ok};
+use crate::protocol::{
+    BootstrapSpec, Response, SeamsOutcome, SeamsScenario, SeamsTree, SeamsTreeKind,
+};
+use crate::stub::{
     PYTHON, Plain, Stub, TYPESCRIPT, binding, call, callee, class, class_decl, decorated, dynamic,
     export, from_module, from_package, function, line, literal, member, module, name, named_import,
     path, reference, span, tree, value,
-};
-use crate::helpers::{err, ok, source_input};
-use crate::protocol::{
-    BootstrapSpec, InputSpec, Response, SeamOutcome, SeamsOutcome, SeamsScenario, SeamsTree,
-    SeamsTreeKind, WORKSPACE,
 };
 
 const SEAMS_PROSE: &[Doc] = &[
@@ -37,44 +34,22 @@ const SEAMS_PROSE: &[Doc] = &[
 ];
 
 /// Runs [`emery_sdk::survey::seams`] for `scenario` and converts the result to a [`Response`].
-pub async fn run(scenario: &SeamsScenario) -> Response<SeamsOutcome<Claim>> {
-    let input = source_input(&scenario.input);
-    let root = tree_root(&scenario.input);
+pub async fn run(scenario: &SeamsScenario) -> Response<SeamsOutcome> {
+    let input = scenario.input.source_input();
+    let root = scenario.input.root();
     let settled = build_tree(&scenario.tree, &root);
     let ctx = Context::new(&scenario.adapter_id, input);
     match emery_sdk::survey::seams(&ctx, SEAMS_PROSE, &settled).await {
-        Ok(survey) => ok(SeamsOutcome {
-            seams: survey
-                .seams
-                .into_iter()
-                .map(|seam| SeamOutcome {
-                    text: seam.text,
-                    files: seam.files,
-                    stems: seam.stems,
-                    anchors: seam.anchors,
-                    terms: seam.lexicon.terms().map(str::to_owned).collect(),
-                })
-                .collect(),
-            types: survey.types,
-            contracts: survey.contracts,
-        }),
+        Ok(survey) => ok(SeamsOutcome::from(survey)),
         Err(error) => err(&error),
-    }
-}
-
-fn tree_root(spec: &InputSpec) -> PathBuf {
-    match spec {
-        InputSpec::Workspace(workspace) => workspace.subpath.as_deref().map_or_else(
-            || PathBuf::from(WORKSPACE),
-            |subpath| PathBuf::from(format!("{WORKSPACE}/{subpath}")),
-        ),
-        InputSpec::Value { .. } => PathBuf::from(WORKSPACE),
     }
 }
 
 fn build_tree(spec: &SeamsTree, root: &Path) -> Tree<Stub> {
     match spec {
-        SeamsTree::Service { bootstrap } => service(root, bootstrap.as_ref().map(runs)),
+        SeamsTree::Service { bootstrap } => {
+            service(root, bootstrap.as_ref().map(BootstrapSpec::to_runs))
+        }
         SeamsTree::Fixed { kind } => match kind {
             SeamsTreeKind::ClassDecorator => class_decorator(root),
             SeamsTreeKind::ExportsDeclared => exports_declared(root),
@@ -83,17 +58,6 @@ fn build_tree(spec: &SeamsTree, root: &Path) -> Tree<Stub> {
             SeamsTreeKind::OneModule => one_module(root),
             SeamsTreeKind::Handling => handling(root),
         },
-    }
-}
-
-fn runs(spec: &BootstrapSpec) -> Runs {
-    match spec {
-        BootstrapSpec::Load => Runs::Load,
-        BootstrapSpec::Script { name, function } => Runs::Script {
-            name: name.clone(),
-            function: function.clone(),
-        },
-        BootstrapSpec::Guard => Runs::Guard,
     }
 }
 

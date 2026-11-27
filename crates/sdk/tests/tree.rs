@@ -1,7 +1,5 @@
 //! Tests `survey::code::Tree` closure and registration lookups.
 
-mod support;
-
 use std::path::Path;
 
 use emery_sdk::survey::Lines;
@@ -12,10 +10,10 @@ use emery_sdk::survey::code::{
 use emery_sdk::survey::resolve::Target;
 use emery_sdk::survey::tests::Statement;
 use emery_sdk::{Claim, ClaimKind, Evidence, Trigger};
-use support::{
-    PYTHON, Plain, Stub, TYPESCRIPT, binding, call, callee, class, class_decl, dynamic, export,
-    from_module, from_package, function, import, inline, line, literal, member, module, name,
-    named_import, path, reference, span, tree, value, write,
+use test_programs::stub::{
+    self, PYTHON, Plain, Stub, TYPESCRIPT, binding, call, callee, class, class_decl, dynamic,
+    export, from_module, from_package, function, import, inline, line, literal, member, module,
+    name, named_import, path, reference, span, tree, value, write,
 };
 
 fn linked(from: &str, to: &[&str]) -> Plain {
@@ -70,7 +68,7 @@ fn closure_order() {
     );
     assert_eq!(tree.roots(), ["e.ts"], "the one module nothing imports");
 
-    let cycle = support::tree(
+    let cycle = stub::tree(
         Path::new("/svc"),
         &TYPESCRIPT,
         vec![linked("a.ts", &["b.ts"]), linked("b.ts", &["a.ts"])],

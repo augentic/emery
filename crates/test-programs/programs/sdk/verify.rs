@@ -5,18 +5,16 @@
 
 use std::path::Path;
 
-use emery_sdk::target::{Verdict, VerifyContext};
-use test_programs::helpers::{
-    VERIFY_PROSE, VERIFY_PROSE_OMIT_PROMPT, emit, err, leak_grants, ok, scenario,
-};
+use emery_sdk::target::VerifyContext;
+use test_programs::helpers::{VERIFY_PROSE, VERIFY_PROSE_OMIT_PROMPT, emit, err, ok, scenario};
 use test_programs::protocol::{VERIFY_WORKSPACE, VerifyCheck, VerifyOutcome, VerifyScenario};
 
 omnia_sdk::command::export!(run);
 
 async fn run() {
     let scenario: VerifyScenario = scenario();
-    let grants = leak_grants(&scenario.grants);
-    let ctx = VerifyContext::new(scenario.adapter_id, VERIFY_WORKSPACE).with_grants(grants);
+    let ctx =
+        VerifyContext::new(scenario.adapter_id, VERIFY_WORKSPACE).with_grants(scenario.grants);
     let docs = if scenario.omit_verify_prompt { VERIFY_PROSE_OMIT_PROMPT } else { VERIFY_PROSE };
     let mut checks = 0_usize;
     let response = match emery_sdk::target::verify(&ctx, docs, |verdict| {
@@ -42,7 +40,7 @@ async fn run() {
     })
     .await
     {
-        Ok(verdict) => ok::<VerifyOutcome<Verdict>>(VerifyOutcome { verdict, checks }),
+        Ok(verdict) => ok(VerifyOutcome { verdict, checks }),
         Err(error) => err(&error),
     };
     emit(response).await;

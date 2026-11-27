@@ -1,12 +1,6 @@
-//! Slice fixtures and scenario builders for the build suite.
+//! Slice fixtures for the build suite.
 
-use emery_sdk::target::{
-    DesignType, Grant, Guarded, Marker, Requirement, Scaffold, Scenario, Slice,
-};
-use test_programs::protocol::{
-    BuildCheck, BuildScenario, BuildSliceSpec, DesignTypeSpec, GrantSpec, GuardedSpec, MarkerSpec,
-    RequirementSpec, ScaffoldSpec, ScenarioSpec,
-};
+use emery_sdk::target::{DesignType, Requirement, Scenario, Slice};
 
 pub const VALID: &str =
     r#"{"covered":["REQ-001","REQ-002"],"written":["src/orders.rs","Cargo.toml"]}"#;
@@ -78,101 +72,4 @@ pub fn designed() -> Slice {
     "interface Order {\n  id: string;\n\n  lines: OrderLine[];\n}"
         .clone_into(&mut slice.types[0].signature);
     slice
-}
-
-pub fn slice_spec(slice: &Slice) -> BuildSliceSpec {
-    BuildSliceSpec {
-        id: slice.id.clone(),
-        part: slice.part.clone(),
-        name: slice.name.clone(),
-        index: slice.index,
-        count: slice.count,
-        base: slice.base.clone(),
-        requirements: slice.requirements.iter().map(requirement_spec).collect(),
-        types: slice.types.iter().map(design_type_spec).collect(),
-        brief: slice.brief.clone(),
-        spec: slice.spec.clone(),
-        design: slice.design.clone(),
-        plan: slice.plan.clone(),
-    }
-}
-
-fn requirement_spec(requirement: &Requirement) -> RequirementSpec {
-    RequirementSpec {
-        id: requirement.id.clone(),
-        subject: requirement.subject.clone(),
-        statement: requirement.statement.clone(),
-        scenarios: requirement.scenarios.iter().map(scenario_spec).collect(),
-    }
-}
-
-fn scenario_spec(scenario: &Scenario) -> ScenarioSpec {
-    ScenarioSpec {
-        name: scenario.name.clone(),
-        given: scenario.given.clone(),
-        when: scenario.when.clone(),
-        then: scenario.then.clone(),
-        and: scenario.and.clone(),
-    }
-}
-
-fn design_type_spec(design_type: &DesignType) -> DesignTypeSpec {
-    DesignTypeSpec {
-        key: design_type.key.clone(),
-        signature: design_type.signature.clone(),
-    }
-}
-
-pub fn scenario_for(slice: &Slice) -> BuildScenario {
-    BuildScenario {
-        adapter_id: "target:probe".to_owned(),
-        slice: slice_spec(slice),
-        grants: Vec::new(),
-        scaffold: None,
-        files: Vec::new(),
-        check: BuildCheck::None,
-        omit_build_prompt: false,
-    }
-}
-
-pub fn scenario_with_grants(slice: &Slice, grants: Vec<GrantSpec>) -> BuildScenario {
-    BuildScenario {
-        grants,
-        ..scenario_for(slice)
-    }
-}
-
-pub fn grants_from(grants: &[Grant]) -> Vec<GrantSpec> {
-    grants
-        .iter()
-        .map(|grant| GrantSpec {
-            egress: grant.egress.clone(),
-            read: grant.read.clone(),
-            env: grant.env.clone(),
-        })
-        .collect()
-}
-
-pub fn scaffold_spec(scaffold: Scaffold) -> ScaffoldSpec {
-    ScaffoldSpec {
-        brief: scaffold.brief,
-        passages: scaffold.passages,
-        files: scaffold.files.iter().map(guarded_spec).collect(),
-        types: scaffold.types,
-    }
-}
-
-fn guarded_spec(guarded: &Guarded) -> GuardedSpec {
-    GuardedSpec {
-        path: guarded.path.clone(),
-        keeps: guarded.keeps.clone(),
-        markers: guarded.markers.iter().map(marker_spec).collect(),
-    }
-}
-
-fn marker_spec(marker: &Marker) -> MarkerSpec {
-    MarkerSpec {
-        key: marker.key.clone(),
-        block: marker.block.clone(),
-    }
 }

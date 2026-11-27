@@ -6,7 +6,7 @@ mod support;
 
 use emery_sdk::survey::Surface;
 use omnia_test::SeenFormat;
-use support::by_file::single_model;
+use omnia_test::host::ScriptedModel;
 use support::harness::survey;
 use test_programs::protocol::{
     FactsSpec, FileSpec, InputSpec, SurveyCheck, SurveyScenario, WorkspaceInput,
@@ -58,15 +58,6 @@ fn tree() -> SurveyScenario {
 }
 
 #[tokio::test]
-async fn sdk_extract() {}
-
-#[tokio::test]
-async fn sdk_build() {}
-
-#[tokio::test]
-async fn sdk_verify() {}
-
-#[tokio::test]
 async fn sdk_survey() {
     request_shape().await;
     bare_facts().await;
@@ -83,7 +74,7 @@ async fn request_shape() {
     let mut scenario = tree();
     "The manifest names `svc`; `src/cli.ts` runs at load.\n".clone_into(&mut scenario.facts.text);
     scenario.facts.files = vec!["package.json".to_owned(), "src/cli.ts".to_owned()];
-    let model = single_model([VALID]);
+    let model = ScriptedModel::answering([VALID]);
     let run = survey(&scenario, model.clone()).await;
     let inventory = run.inventory();
     assert_eq!(inventory.surfaces.len(), 2);
@@ -117,7 +108,7 @@ async fn request_shape() {
 
 async fn bare_facts() {
     let scenario = tree();
-    let model = single_model([r#"{"surfaces":[]}"#]);
+    let model = ScriptedModel::answering([r#"{"surfaces":[]}"#]);
     let inventory = survey(&scenario, model.clone()).await.inventory();
     assert_eq!(inventory.surfaces, [] as [Surface; 0]);
     assert_eq!(inventory.unreached, [] as [String; 0]);
@@ -129,7 +120,7 @@ async fn bare_facts() {
 }
 
 async fn inline_value() {
-    let model = single_model(Vec::<String>::new());
+    let model = ScriptedModel::default();
     let scenario = SurveyScenario {
         adapter_id: "source:probe".to_owned(),
         input: InputSpec::Value {
@@ -148,7 +139,7 @@ async fn inline_value() {
 
 async fn doc_refs() {
     let scenario = tree();
-    let model = single_model([VALID]).calling(
+    let model = ScriptedModel::answering([VALID]).calling(
         0,
         [
             ("list_docs", "{}"),
@@ -166,7 +157,7 @@ async fn missing_prompt() {
     let mut scenario = tree();
     scenario.omit_survey_prompt = true;
     "source:mute".clone_into(&mut scenario.adapter_id);
-    let model = single_model(Vec::<String>::new());
+    let model = ScriptedModel::default();
     let error = survey(&scenario, model.clone()).await.error();
     assert_eq!(error.code(), "server_error");
     assert!(error.description().contains("`survey.md` is not embedded"), "{error}");
@@ -174,7 +165,7 @@ async fn missing_prompt() {
 
 async fn gate_findings() {
     let scenario = tree();
-    let model = single_model([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[
             {"name":"","anchor":"src/cli.ts","stem":"import"},
             {"name":"dup","anchor":"src/cli.ts#L1","stem":"a"},
@@ -202,7 +193,7 @@ async fn gate_findings() {
 async fn technology_stem() {
     let mut scenario = tree();
     scenario.check = SurveyCheck::None;
-    let model = single_model([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[
             {"name":"secret retriever","anchor":"src/cli.ts#L1","stem":"key-vault"},
             {"name":"POST /orders","anchor":"src/routes/orders.ts#L2","stem":"orders"}
@@ -220,7 +211,7 @@ async fn technology_stem() {
 async fn adapter_check() {
     let mut scenario = tree();
     scenario.check = SurveyCheck::RejectStart;
-    let model = single_model([
+    let model = ScriptedModel::answering([
         r#"{"surfaces":[{"name":"start","anchor":"src/cli.ts","stem":"start"}]}"#,
         VALID,
     ]);
@@ -231,7 +222,8 @@ async fn adapter_check() {
 
 async fn rounds_exhausted() {
     let scenario = tree();
-    let model = single_model([r#"{"surfaces":[{"name":"x","anchor":"nope.ts","stem":"x"}]}"#]);
+    let model =
+        ScriptedModel::answering([r#"{"surfaces":[{"name":"x","anchor":"nope.ts","stem":"x"}]}"#]);
     let error = survey(&scenario, model.clone()).await.error();
     assert_eq!(error.code(), "exhausted", "{error}");
     model.assert_exhausted();

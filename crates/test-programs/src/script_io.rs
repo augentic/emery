@@ -1,5 +1,6 @@
 //! Script mount helpers for adapter guests.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -8,10 +9,8 @@ use serde::de::DeserializeOwned;
 use wasip3::clocks::monotonic_clock;
 
 use crate::script::{
-    ARRIVED, CALLS_DIR, FAILURES_DIR, MOUNT, SLICES_DIR, STATE, ScriptCall, VERIFIES_DIR,
-    sanitise_id,
+    ARRIVED, CALLS_DIR, FAILURES_DIR, MOUNT, STATE, ScriptCall, VERIFIES_DIR, sanitise_id,
 };
-use crate::slice_wire::SliceWire;
 
 const POLL_NS: u64 = 2_000_000;
 const TIMEOUT_NS: u64 = 15_000_000_000;
@@ -26,36 +25,6 @@ pub fn read_state<T: DeserializeOwned>() -> T {
     let path = mount(STATE);
     let bytes = fs::read(&path).unwrap_or_else(|err| panic!("reading {}: {err}", path.display()));
     serde_json::from_slice(&bytes).unwrap_or_else(|err| panic!("state JSON: {err}"))
-}
-
-/// Writes a slice payload beside the call log for the host to reconstruct dispatches.
-///
-/// # Panics
-///
-/// Panics when the slice file cannot be written.
-pub fn write_slice(slice: &SliceWire) {
-    let dir = mount(SLICES_DIR);
-    let _ = fs::create_dir_all(&dir);
-    let key = sanitise_id(&slice.id);
-    let staged = dir.join(format!("{key}.tmp"));
-    let path = dir.join(format!("{key}.json"));
-    let bytes = serde_json::to_vec(slice).expect("slice serialises");
-    fs::write(&staged, bytes).expect("write slice log");
-    fs::rename(&staged, path).expect("place slice log");
-}
-
-/// Writes only dispatch metadata the host needs without serialising the full slice on the stack.
-///
-/// # Panics
-///
-/// Panics when the slice file cannot be written.
-pub fn write_slice_dispatch(id: &str, base: &str) {
-    let wire = SliceWire {
-        id: id.to_owned(),
-        base: base.to_owned(),
-        ..SliceWire::default()
-    };
-    write_slice(&wire);
 }
 
 /// Records one adapter dispatch under its own numbered JSON file in `calls/`.
@@ -98,8 +67,8 @@ pub fn claim_verify_attempt() -> usize {
 /// # Panics
 ///
 /// Panics when the arrived directory cannot be written or the barrier times out.
-pub async fn rendezvous_wait(key: &str, expected: &[String]) {
-    if !expected.iter().any(|id| id == key) {
+pub async fn rendezvous_wait(key: &str, expected: &BTreeSet<String>) {
+    if !expected.contains(key) {
         return;
     }
     let arrived = mount(ARRIVED);
@@ -110,13 +79,14 @@ pub async fn rendezvous_wait(key: &str, expected: &[String]) {
         .truncate(false)
         .open(arrived.join(sanitise_id(key)))
         .expect("mark arrived");
-    if expected.iter().all(|id| arrived.join(sanitise_id(id)).is_file()) {
+    let all_arrived = || expected.iter().all(|id| arrived.join(sanitise_id(id)).is_file());
+    if all_arrived() {
         return;
     }
     let deadline = monotonic_clock::now().saturating_add(TIMEOUT_NS);
     while monotonic_clock::now() < deadline {
         monotonic_clock::wait_for(POLL_NS).await;
-        if expected.iter().all(|id| arrived.join(sanitise_id(id)).is_file()) {
+        if all_arrived() {
             return;
         }
     }

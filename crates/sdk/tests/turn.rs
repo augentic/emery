@@ -10,7 +10,7 @@ use omnia_test::SeenFormat;
 use omnia_test::host::{ScriptedModel, scratch};
 use omnia_wasi_model::ModelClient;
 use support::by_file::{FailKind, ScriptFailures};
-use support::harness::{ExtractRun, extract, extract_in};
+use support::harness::{DriverRun, extract, extract_in};
 use test_programs::protocol::{ExtractScenario, InputSpec, SeamSpec, WorkspaceInput};
 
 const VALID: &str = r#"{"claims":[
@@ -68,7 +68,7 @@ fn scenario(input: InputSpec, seam: SeamSpec) -> ExtractScenario {
 
 async fn ask<M: ModelClient + Clone + 'static>(
     model: M, input: InputSpec, seam: SeamSpec,
-) -> ExtractRun {
+) -> DriverRun<Evidence> {
     extract(&scenario(input, seam), model).await
 }
 

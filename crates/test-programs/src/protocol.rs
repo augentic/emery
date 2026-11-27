@@ -1,9 +1,22 @@
-//! JSON scenario and response shapes shared by the drivers and the host suites.
+//! JSON scenario and response shapes shared by the SDK drivers and host suites.
 
+use std::path::PathBuf;
+
+use emery_adapter::source::{Claim, SourceInput};
+use emery_adapter::target::{Report, Slice, Verdict};
+use emery_sdk::survey::code::Runs;
+use emery_sdk::survey::{Inventory, Survey};
+use emery_sdk::target::{Grant, Scaffold};
+use emery_sdk::{Lexicon, Seam};
 use serde::{Deserialize, Serialize};
+
+use crate::script::ScriptError;
 
 /// The mount point of the lent workspace inside a driver guest.
 pub const WORKSPACE: &str = ".";
+
+/// Mount path of the writable workspace inside `sdk_verify`.
+pub const VERIFY_WORKSPACE: &str = "/lend/workspace";
 
 /// What a driver writes to stdout as one JSON value.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -15,29 +28,8 @@ pub enum Response<T> {
         value: T,
     },
     /// The SDK error envelope.
-    Err {
-        /// `Error::kind` as lowercase `snake_case`.
-        kind: String,
-        /// `Error::code`.
-        code: String,
-        /// `Error::description`.
-        description: String,
-    },
+    Err(ScriptError),
 }
-
-/// Extra fields the host reads after a run (concurrency tests).
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ExtractMeta {
-    /// Peak in-flight completions the host model recorded.
-    #[serde(default)]
-    pub peak: usize,
-    /// Seam-file arrival order the host model recorded.
-    #[serde(default)]
-    pub arrivals: Vec<String>,
-}
-
-/// Mount path of the writable workspace inside `sdk_verify`.
-pub const VERIFY_WORKSPACE: &str = "/lend/workspace";
 
 /// An `extract` driver scenario.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -90,21 +82,36 @@ pub struct SeamsScenario {
     pub tree: SeamsTree,
 }
 
-/// How a `SeamsTree::Service` bootstrap runs.
+/// How a [`SeamsTree::Service`] bootstrap runs.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BootstrapSpec {
-    /// `Runs::Load`.
+    /// [`Runs::Load`].
     Load,
-    /// `Runs::Script`.
+    /// [`Runs::Script`].
     Script {
         /// Console script name.
         name: String,
         /// Entry function name.
         function: String,
     },
-    /// `Runs::Guard`.
+    /// [`Runs::Guard`].
     Guard,
+}
+
+impl BootstrapSpec {
+    /// Converts this spec into an SDK [`Runs`] value.
+    #[must_use]
+    pub fn to_runs(&self) -> Runs {
+        match self {
+            Self::Load => Runs::Load,
+            Self::Script { name, function } => Runs::Script {
+                name: name.clone(),
+                function: function.clone(),
+            },
+            Self::Guard => Runs::Guard,
+        }
+    }
 }
 
 /// Named `Tree<Stub>` fixture built inside `sdk_survey`.
@@ -125,7 +132,7 @@ pub enum SeamsTreeKind {
     Handling,
 }
 
-/// Tree fixture configuration for `SeamsScenario`.
+/// Tree fixture configuration for [`SeamsScenario`].
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "fixture", rename_all = "snake_case")]
 pub enum SeamsTree {
@@ -142,7 +149,7 @@ pub enum SeamsTree {
     },
 }
 
-/// Serialised `Seam` returned by `sdk_survey` in `seams` mode.
+/// Serialised [`Seam`] returned by `sdk_survey` in `seams` mode.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SeamOutcome {
     /// Brief text leading the seam.
@@ -153,19 +160,59 @@ pub struct SeamOutcome {
     pub stems: Vec<String>,
     /// Anchors `requirement` claims overlap.
     pub anchors: Vec<String>,
-    /// Extra terms held in the seam's `Lexicon`.
+    /// Extra terms held in the seam's [`Lexicon`].
     pub terms: Vec<String>,
 }
 
 /// Successful payload returned by `sdk_survey` in `seams` mode.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct SeamsOutcome<C> {
+pub struct SeamsOutcome {
     /// Cut seams in order.
     pub seams: Vec<SeamOutcome>,
     /// Parsed `type` claims in order.
-    pub types: Vec<C>,
+    pub types: Vec<Claim>,
     /// Derived `contract` claims in order.
-    pub contracts: Vec<C>,
+    pub contracts: Vec<Claim>,
+}
+
+impl From<Survey> for SeamsOutcome {
+    fn from(survey: Survey) -> Self {
+        Self {
+            seams: survey
+                .seams
+                .into_iter()
+                .map(|seam| SeamOutcome {
+                    text: seam.text,
+                    files: seam.files,
+                    stems: seam.stems,
+                    anchors: seam.anchors,
+                    terms: seam.lexicon.terms().map(str::to_owned).collect(),
+                })
+                .collect(),
+            types: survey.types,
+            contracts: survey.contracts,
+        }
+    }
+}
+
+impl From<SeamsOutcome> for Survey {
+    fn from(outcome: SeamsOutcome) -> Self {
+        Self {
+            seams: outcome
+                .seams
+                .into_iter()
+                .map(|seam| Seam {
+                    text: seam.text,
+                    files: seam.files,
+                    stems: seam.stems,
+                    anchors: seam.anchors,
+                    lexicon: Lexicon::with(seam.terms),
+                })
+                .collect(),
+            types: outcome.types,
+            contracts: outcome.contracts,
+        }
+    }
 }
 
 /// The source half of a scenario.
@@ -181,6 +228,44 @@ pub enum InputSpec {
         /// The inlined text.
         text: String,
     },
+}
+
+impl InputSpec {
+    /// Borrows the workspace staging config when this input is a workspace.
+    #[must_use]
+    pub const fn workspace(&self) -> Option<&WorkspaceInput> {
+        match self {
+            Self::Workspace(workspace) => Some(workspace),
+            Self::Value { .. } => None,
+        }
+    }
+
+    /// Resolves the guest root directory for this input beneath [`WORKSPACE`].
+    #[must_use]
+    pub fn root(&self) -> PathBuf {
+        match self {
+            Self::Workspace(workspace) => workspace.subpath.as_deref().map_or_else(
+                || PathBuf::from(WORKSPACE),
+                |subpath| PathBuf::from(format!("{WORKSPACE}/{subpath}")),
+            ),
+            Self::Value { .. } => PathBuf::from(WORKSPACE),
+        }
+    }
+
+    /// Converts this spec into an adapter [`SourceInput`].
+    #[must_use]
+    pub fn source_input(&self) -> SourceInput {
+        match self {
+            Self::Workspace(workspace) => {
+                let root = workspace.subpath.as_deref().map_or_else(
+                    || WORKSPACE.to_owned(),
+                    |subpath| format!("{WORKSPACE}/{subpath}"),
+                );
+                SourceInput::workspace(&workspace.name, root)
+            }
+            Self::Value { name, text } => SourceInput::value(name, text),
+        }
+    }
 }
 
 /// A workspace root named `name` with files written before the guest runs.
@@ -232,23 +317,45 @@ pub enum SurveyCheck {
     RejectStart,
 }
 
+impl SurveyCheck {
+    /// Returns the check closure passed to [`emery_sdk::survey::surfaces`].
+    pub fn into_fn(self) -> impl FnMut(&Inventory) -> Vec<String> + Send {
+        move |answer| match self {
+            Self::None => Vec::new(),
+            Self::RejectStemB => {
+                if answer.surfaces.iter().any(|surface| surface.stem == "b") {
+                    vec!["- the adapter refuses stem `b`".to_owned()]
+                } else {
+                    Vec::new()
+                }
+            }
+            Self::RejectStart => answer
+                .surfaces
+                .iter()
+                .filter(|surface| surface.stem == "start")
+                .map(|surface| format!("- surface `{}`: `start` is the caller's", surface.name))
+                .collect(),
+        }
+    }
+}
+
 /// How a driver guest lays one seam.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SeamSpec {
-    /// `Seam::whole`.
+    /// [`Seam::whole`].
     Whole,
-    /// `Seam::files`.
+    /// [`Seam::files`].
     Files {
         /// Paths relative to the workspace root.
         files: Vec<String>,
     },
-    /// `Seam::note`.
+    /// [`Seam::note`].
     Note {
         /// Brief text leading the seam.
         text: String,
     },
-    /// Full `Seam` fields for turn-shape and gate scenarios.
+    /// Full [`Seam`] fields for turn-shape and gate scenarios.
     Custom {
         /// Brief text leading the seam.
         #[serde(default)]
@@ -262,117 +369,39 @@ pub enum SeamSpec {
         /// Anchors `requirement` claims must overlap.
         #[serde(default)]
         anchors: Vec<String>,
-        /// Package specifiers passed to `Lexicon::from_packages`.
+        /// Package specifiers passed to [`Lexicon::from_packages`].
         #[serde(default)]
         packages: Vec<String>,
     },
 }
 
-/// Requirement payload in a [`BuildScenario`].
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct RequirementSpec {
-    /// The stable requirement identifier.
-    pub id: String,
-    /// The dotted subject.
-    pub subject: String,
-    /// Statement paragraphs.
-    pub statement: Vec<String>,
-    /// Acceptance scenarios.
-    pub scenarios: Vec<ScenarioSpec>,
-}
-
-/// One scenario in a [`RequirementSpec`].
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ScenarioSpec {
-    /// Scenario heading.
-    pub name: String,
-    /// `GIVEN` lines.
-    #[serde(default)]
-    pub given: Vec<String>,
-    /// `WHEN` line.
-    pub when: String,
-    /// `THEN` line.
-    pub then: String,
-    /// `AND` lines.
-    #[serde(default)]
-    pub and: Vec<String>,
-}
-
-/// Owned design type in a [`BuildSliceSpec`].
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct DesignTypeSpec {
-    /// Type key.
-    pub key: String,
-    /// Signature text.
-    pub signature: String,
-}
-
-/// The slice a build driver runs.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct BuildSliceSpec {
-    /// Slice id, `SLICE-001`.
-    pub id: String,
-    /// Part id.
-    pub part: String,
-    /// Part name.
-    pub name: String,
-    /// Slice index.
-    pub index: u32,
-    /// Slice count in the part.
-    pub count: u32,
-    /// Base commit id.
-    pub base: String,
-    /// Requirements to build.
-    pub requirements: Vec<RequirementSpec>,
-    /// Types the slice owns.
-    pub types: Vec<DesignTypeSpec>,
-    /// Brief paragraphs.
-    pub brief: Vec<String>,
-    /// Specification cut.
-    pub spec: String,
-    /// Design document.
-    pub design: String,
-    /// Plan entry.
-    pub plan: String,
-}
-
-/// Marker entry in [`GuardedSpec`].
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct MarkerSpec {
-    /// Key an `edit_files` `find` names.
-    pub key: String,
-    /// Block the scaffold laid.
-    pub block: String,
-}
-
-/// Guarded file in [`ScaffoldSpec`].
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct GuardedSpec {
-    /// Root-relative path.
-    pub path: String,
-    /// Tokens a whole write must keep.
-    #[serde(default)]
-    pub keeps: Vec<String>,
-    /// Fill markers.
-    #[serde(default)]
-    pub markers: Vec<MarkerSpec>,
-}
-
-/// Scaffold the adapter laid before the turn.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ScaffoldSpec {
-    /// Brief under the scaffold heading.
-    #[serde(default)]
-    pub brief: String,
-    /// Reference passages after the scaffold section.
-    #[serde(default)]
-    pub passages: String,
-    /// Guarded scaffold files.
-    #[serde(default)]
-    pub files: Vec<GuardedSpec>,
-    /// Laid type keys.
-    #[serde(default)]
-    pub types: Vec<String>,
+impl SeamSpec {
+    /// Converts this spec into an SDK [`Seam`].
+    #[must_use]
+    pub fn to_seam(&self) -> Seam {
+        match self {
+            Self::Whole => Seam::whole(),
+            Self::Files { files } => Seam::files(files.clone()),
+            Self::Note { text } => Seam::note(text.clone()),
+            Self::Custom {
+                text,
+                files,
+                stems,
+                anchors,
+                packages,
+            } => Seam {
+                text: text.clone(),
+                files: files.clone(),
+                stems: stems.clone(),
+                anchors: anchors.clone(),
+                lexicon: if packages.is_empty() {
+                    Lexicon::default()
+                } else {
+                    Lexicon::from_packages(packages)
+                },
+            },
+        }
+    }
 }
 
 /// Adapter check wired in the build guest.
@@ -394,16 +423,13 @@ pub struct BuildScenario {
     /// Adapter id passed to `BuildContext`.
     pub adapter_id: String,
     /// Slice to build.
-    pub slice: BuildSliceSpec,
+    pub slice: Slice,
     /// Worker grants.
     #[serde(default)]
-    pub grants: Vec<GrantSpec>,
+    pub grants: Vec<Grant>,
     /// Optional scaffold.
     #[serde(default)]
-    pub scaffold: Option<ScaffoldSpec>,
-    /// Files staged under [`WORKSPACE`] before the run.
-    #[serde(default)]
-    pub files: Vec<FileSpec>,
+    pub scaffold: Option<Scaffold>,
     /// Per-candidate adapter check.
     #[serde(default)]
     pub check: BuildCheck,
@@ -412,27 +438,49 @@ pub struct BuildScenario {
     pub omit_build_prompt: bool,
 }
 
-/// Successful payload returned by `sdk_build`.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct BuildOutcome<R> {
-    /// Accepted report.
-    pub report: R,
-    /// Number of candidates the adapter `check` saw.
-    pub checks: usize,
+impl BuildScenario {
+    /// Returns a scenario for `target:probe` building `slice`.
+    #[must_use]
+    pub fn new(slice: Slice) -> Self {
+        Self {
+            adapter_id: "target:probe".to_owned(),
+            slice,
+            grants: Vec::new(),
+            scaffold: None,
+            check: BuildCheck::None,
+            omit_build_prompt: false,
+        }
+    }
+
+    /// Attaches worker `grants` to the scenario.
+    #[must_use]
+    pub fn with_grants(mut self, grants: impl Into<Vec<Grant>>) -> Self {
+        self.grants = grants.into();
+        self
+    }
+
+    /// Attaches `scaffold` to the scenario.
+    #[must_use]
+    pub fn with_scaffold(mut self, scaffold: Scaffold) -> Self {
+        self.scaffold = Some(scaffold);
+        self
+    }
+
+    /// Sets the per-candidate `check` variant.
+    #[must_use]
+    pub const fn with_check(mut self, check: BuildCheck) -> Self {
+        self.check = check;
+        self
+    }
 }
 
-/// One `Grant` entry passed to a target driver.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub struct GrantSpec {
-    /// Host names granted for egress.
-    #[serde(default)]
-    pub egress: Vec<String>,
-    /// `~/` home-relative read roots.
-    #[serde(default)]
-    pub read: Vec<String>,
-    /// Environment `(name, value)` pairs.
-    #[serde(default)]
-    pub env: Vec<(String, String)>,
+/// Successful payload returned by `sdk_build`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct BuildOutcome {
+    /// Accepted report.
+    pub report: Report,
+    /// Number of candidates the adapter `check` saw.
+    pub checks: usize,
 }
 
 /// Which adapter check callback the verify guest applies.
@@ -455,13 +503,29 @@ pub struct VerifyScenario {
     pub adapter_id: String,
     /// Worker grants attached to the context.
     #[serde(default)]
-    pub grants: Vec<GrantSpec>,
+    pub grants: Vec<Grant>,
     /// Adapter check variant applied to each candidate verdict.
     #[serde(default)]
     pub check: VerifyCheck,
     /// Whether `verify.md` is omitted from embedded prose.
     #[serde(default)]
     pub omit_verify_prompt: bool,
+}
+
+impl VerifyScenario {
+    /// Attaches worker `grants` to the scenario.
+    #[must_use]
+    pub fn with_grants(mut self, grants: impl Into<Vec<Grant>>) -> Self {
+        self.grants = grants.into();
+        self
+    }
+
+    /// Sets the per-candidate `check` variant.
+    #[must_use]
+    pub const fn with_check(mut self, check: VerifyCheck) -> Self {
+        self.check = check;
+        self
+    }
 }
 
 impl Default for VerifyScenario {
@@ -477,9 +541,9 @@ impl Default for VerifyScenario {
 
 /// Successful payload returned by `sdk_verify`.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-pub struct VerifyOutcome<V> {
+pub struct VerifyOutcome {
     /// The accepted verdict.
-    pub verdict: V,
+    pub verdict: Verdict,
     /// Number of candidate verdicts handed to the adapter `check`.
     pub checks: usize,
 }

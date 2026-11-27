@@ -13,20 +13,15 @@ autoexamples = false
 workspace = true
 
 [dependencies]
-serde.workspace = true
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-serde_json.workspace = true
-emery-adapter.workspace = true
-omnia-sdk.workspace = true
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-serde_json.workspace = true
 emery-adapter.workspace = true
 emery-sdk.workspace = true
+omnia-sdk.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 emery-prose.workspace = true
 futures.workspace = true
-omnia-sdk = { workspace = true, features = ["command"] }
 wasip3.workspace = true
 
 [build-dependencies]

@@ -9,54 +9,47 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use emery_sdk::target::{
-    Grant, Guarded, Marker, MergeRule, Metadata, Scaffold, Slice, TargetMetadata, metadata,
+    Grant, Guarded, Marker, MergeRule, Metadata, Report, Scaffold, Slice, TargetMetadata, metadata,
 };
 use omnia_sdk::ErrorKind;
 use omnia_test::host::{Scratch, ScriptedModel, scratch};
 use omnia_test::{Seen, SeenFormat, SeenWorker};
-use support::build_fixtures::{
-    VALID, designed, grants_from, scaffold_spec, scenario_for, scenario_with_grants, slice,
-};
-use support::harness::{BuildRun, build};
-use test_programs::protocol::{BuildCheck, ScaffoldSpec};
+use support::build_fixtures::{VALID, designed, slice};
+use support::harness::{DriverRun, build};
+use test_programs::protocol::{BuildCheck, BuildOutcome, BuildScenario};
 
-async fn ask(
-    project: &Scratch, model: &ScriptedModel, slice: &Slice,
-) -> emery_adapter::target::Report {
-    build(project, &scenario_for(slice), model.clone()).await.report()
+async fn ask(project: &Scratch, model: &ScriptedModel, slice: &Slice) -> Report {
+    build(project, &BuildScenario::new(slice.clone()), model.clone()).await.report()
 }
 
 async fn ask_as(
     project: &Scratch, model: &ScriptedModel, slice: &Slice, grants: &[Grant],
-) -> emery_adapter::target::Report {
-    let scenario = scenario_with_grants(slice, grants_from(grants));
+) -> Report {
+    let scenario = BuildScenario::new(slice.clone()).with_grants(grants);
     build(project, &scenario, model.clone()).await.report()
 }
 
 async fn ask_scaffolded(
     project: &Scratch, model: &ScriptedModel, slice: &Slice, brief: &str,
-) -> emery_adapter::target::Report {
-    let mut scenario = scenario_for(slice);
-    scenario.scaffold = Some(ScaffoldSpec {
+) -> Report {
+    let scaffold = Scaffold {
         brief: brief.to_owned(),
-        ..ScaffoldSpec::default()
-    });
-    build(project, &scenario, model.clone()).await.report()
+        ..Scaffold::default()
+    };
+    ask_guarded(project, model, slice, scaffold).await
 }
 
 async fn ask_guarded(
     project: &Scratch, model: &ScriptedModel, slice: &Slice, scaffold: Scaffold,
-) -> emery_adapter::target::Report {
-    let mut scenario = scenario_for(slice);
-    scenario.scaffold = Some(scaffold_spec(scaffold));
+) -> Report {
+    let scenario = BuildScenario::new(slice.clone()).with_scaffold(scaffold);
     build(project, &scenario, model.clone()).await.report()
 }
 
 async fn ask_checked(
     project: &Scratch, model: &ScriptedModel, slice: &Slice, check: BuildCheck,
-) -> BuildRun {
-    let mut scenario = scenario_for(slice);
-    scenario.check = check;
+) -> DriverRun<BuildOutcome> {
+    let scenario = BuildScenario::new(slice.clone()).with_check(check);
     build(project, &scenario, model.clone()).await
 }
 
@@ -69,7 +62,7 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
-fn stage<'a>(root: &std::path::Path, files: impl IntoIterator<Item = (&'a str, &'a str)>) {
+fn stage<'a>(root: &Path, files: impl IntoIterator<Item = (&'a str, &'a str)>) {
     for (file, content) in files {
         let path = root.join(file);
         fs::create_dir_all(path.parent().expect("a file has a parent")).expect("written dir");
@@ -77,7 +70,7 @@ fn stage<'a>(root: &std::path::Path, files: impl IntoIterator<Item = (&'a str, &
     }
 }
 
-fn seed<'a>(root: &std::path::Path, files: impl IntoIterator<Item = &'a str>) {
+fn seed<'a>(root: &Path, files: impl IntoIterator<Item = &'a str>) {
     stage(root, files.into_iter().map(|file| (file, "")));
 }
 
@@ -1900,7 +1893,7 @@ async fn doc_refs() {
 async fn missing_prompt() {
     let project = scratch();
     let model = ScriptedModel::default();
-    let mut scenario = scenario_for(&slice());
+    let mut scenario = BuildScenario::new(slice());
     scenario.adapter_id = "target:mute".to_owned();
     scenario.omit_build_prompt = true;
 
@@ -1953,7 +1946,7 @@ async fn rounds_exhausted() {
     let project = scratch();
     let model = ScriptedModel::answering([r#"{"covered":["REQ-404"],"written":[]}"#]);
 
-    let error = build(&project, &scenario_for(&slice()), model.clone()).await.error();
+    let error = build(&project, &BuildScenario::new(slice()), model.clone()).await.error();
     assert_eq!(error.kind(), ErrorKind::BadRequest, "{error}");
     assert_eq!(error.code(), "exhausted");
     model.assert_exhausted();

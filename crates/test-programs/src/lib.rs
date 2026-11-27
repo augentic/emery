@@ -1,11 +1,11 @@
-//! Guest SDK drivers and, natively, the artifact table the suites run.
+//! Guest drivers, scripted adapter components, and shared test fixtures.
 //!
-//! On `wasm32` the crate holds shared helpers for the drivers; natively it is
-//! the generated path constants and the `foreach_*!` completeness macros.
+//! Exports scenario and script protocols alongside stub survey fixtures on all
+//! targets, guest I/O helpers on `wasm32`, and compiled artifact paths natively.
 
 pub mod protocol;
 pub mod script;
-pub mod slice_wire;
+pub mod stub;
 
 #[cfg(target_arch = "wasm32")]
 pub mod helpers;

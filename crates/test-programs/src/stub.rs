@@ -1,6 +1,4 @@
-//! A stub recogniser and hand-built modules for the tree and seam suites.
-
-#![expect(dead_code, reason = "each suite reads the part of the support it needs")]
+//! Stub [`Recogniser`] and hand-built module builders for tree and seam suites.
 
 use std::collections::BTreeMap;
 use std::ops::Deref;
@@ -17,6 +15,7 @@ use emery_sdk::survey::tests::Statement;
 use emery_sdk::survey::{Annotations, ClassSyntax, Dialect, Lines};
 use emery_sdk::{Trigger, kebab};
 
+/// Stub `TypeScript` dialect for tree and seam suites.
 pub static TYPESCRIPT: Dialect = Dialect {
     self_name: "this",
     generic_stems: &["index", "main"],
@@ -54,6 +53,7 @@ pub static TYPESCRIPT: Dialect = Dialect {
     },
 };
 
+/// Stub Python dialect for tree and seam suites.
 pub static PYTHON: Dialect = Dialect {
     self_name: "self",
     generic_stems: &["__init__", "main", "app", "views", "urls"],
@@ -91,9 +91,12 @@ pub static PYTHON: Dialect = Dialect {
     },
 };
 
-// The shared module and nothing more, as an adapter with no fields of its own wraps it.
+/// Minimal module wrapper carrying [`Module`] with no dialect-specific fields.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Plain(pub Module);
+pub struct Plain(
+    /// Underlying parsed module.
+    pub Module,
+);
 
 impl Deref for Plain {
     type Target = Module;
@@ -103,13 +106,14 @@ impl Deref for Plain {
     }
 }
 
-// A recogniser scripted by its fields: the manifest, the bootstrap, and the
-// mounts are what a test says they are, and the lookups follow one plain
-// rule each.
+/// Scripted [`Recogniser`] configured by manifest, bootstrap, and router mounts.
 #[derive(Debug, Default)]
 pub struct Stub {
+    /// Manifest metadata reported for the tree.
     pub manifest: Manifest,
+    /// Optional `(entry_path, runs)` bootstrap entry.
     pub bootstrap: Option<(String, Runs)>,
+    /// Module-path-to-prefix router mounts.
     pub mounts: BTreeMap<String, String>,
 }
 
@@ -277,15 +281,20 @@ impl Recogniser for Stub {
     }
 }
 
+/// Returns a [`Lines`] span from `start` to `end`.
+#[must_use]
 pub const fn span(start: u32, end: u32) -> Lines {
     Lines { start, end }
 }
 
+/// Returns a single-line [`Lines`] span at `at`.
+#[must_use]
 pub const fn line(at: u32) -> Lines {
     Lines { start: at, end: at }
 }
 
-// A parsed module of `lines` placeholder lines at `path`.
+/// Returns a parsed [`Plain`] module of `lines` placeholder lines at `path`.
+#[must_use]
 pub fn module(path: &str, lines: u32) -> Plain {
     let text = "line\n".repeat(lines as usize);
     Plain(Module {
@@ -297,16 +306,14 @@ pub fn module(path: &str, lines: u32) -> Plain {
     })
 }
 
+/// Returns a named [`Import`] binding `local` from `specifier` settled to `target`.
+#[must_use]
 pub fn named_import(local: &str, specifier: &str, target: Target) -> Import {
-    Import {
-        local: local.to_owned(),
-        specifier: specifier.to_owned(),
-        imported: Imported::Named(local.to_owned()),
-        type_only: false,
-        target: Some(target),
-    }
+    import(local, specifier, Imported::Named(local.to_owned()), target)
 }
 
+/// Returns an [`Import`] binding `local` from `specifier` as `imported` settled to `target`.
+#[must_use]
 pub fn import(local: &str, specifier: &str, imported: Imported, target: Target) -> Import {
     Import {
         local: local.to_owned(),
@@ -317,6 +324,8 @@ pub fn import(local: &str, specifier: &str, imported: Imported, target: Target) 
     }
 }
 
+/// Returns a relative module [`Import`] binding `local` to `path`.
+#[must_use]
 pub fn from_module(local: &str, path: &str) -> Import {
     named_import(
         local,
@@ -325,10 +334,14 @@ pub fn from_module(local: &str, path: &str) -> Import {
     )
 }
 
+/// Returns a package [`Import`] binding `local` from `package`.
+#[must_use]
 pub fn from_package(local: &str, package: &str) -> Import {
     named_import(local, package, Target::Package(package.to_owned()))
 }
 
+/// Returns a [`Binding`] of `name` in `scope` with `kind` at `lines`.
+#[must_use]
 pub fn binding(name: &str, scope: Scope, kind: BindingKind, lines: Lines) -> Binding {
     Binding {
         name: name.to_owned(),
@@ -338,10 +351,14 @@ pub fn binding(name: &str, scope: Scope, kind: BindingKind, lines: Lines) -> Bin
     }
 }
 
+/// Returns a module-level function [`Binding`] named `name` at `lines`.
+#[must_use]
 pub fn function(name: &str, lines: Lines) -> Binding {
     binding(name, Scope::Module, BindingKind::Function, lines)
 }
 
+/// Returns a module-level class [`Binding`] named `name` with `bases` at `lines`.
+#[must_use]
 pub fn class(name: &str, bases: &[&str], lines: Lines) -> Binding {
     binding(
         name,
@@ -353,7 +370,8 @@ pub fn class(name: &str, bases: &[&str], lines: Lines) -> Binding {
     )
 }
 
-// A module-level value: `const <name> = <root>(..)`, or a string literal.
+/// Returns a module-level value [`Binding`] named `name` at `lines`.
+#[must_use]
 pub fn value(
     name: &str, root: Option<&[&str]>, call: Option<usize>, string: Option<&str>, init: Init,
     lines: Lines,
@@ -374,10 +392,14 @@ pub fn value(
     )
 }
 
+/// Converts string `segments` into an owned path vector.
+#[must_use]
 pub fn path(segments: &[&str]) -> Vec<String> {
     segments.iter().map(|segment| (*segment).to_owned()).collect()
 }
 
+/// Returns a [`Callee`] rooted at `head` with member `links`.
+#[must_use]
 pub fn callee(head: &str, links: &[&str]) -> Callee {
     Callee {
         head: head.to_owned(),
@@ -392,6 +414,8 @@ pub fn callee(head: &str, links: &[&str]) -> Callee {
     }
 }
 
+/// Returns a top-level [`Call`] to `callee` with `args` and `value` at `lines`.
+#[must_use]
 pub const fn call(callee: Callee, args: Vec<Arg>, value: Use, lines: Lines) -> Call {
     Call {
         callee,
@@ -407,6 +431,8 @@ pub const fn call(callee: Callee, args: Vec<Arg>, value: Use, lines: Lines) -> C
     }
 }
 
+/// Returns a string literal [`Arg`] carrying `text` at `lines`.
+#[must_use]
 pub fn literal(text: &str, lines: Lines) -> Arg {
     Arg {
         keyword: None,
@@ -421,6 +447,8 @@ pub fn literal(text: &str, lines: Lines) -> Arg {
     }
 }
 
+/// Returns an identifier path [`Arg`] naming `root` at `lines`.
+#[must_use]
 pub fn name(root: &[&str], lines: Lines) -> Arg {
     Arg {
         keyword: None,
@@ -435,6 +463,8 @@ pub fn name(root: &[&str], lines: Lines) -> Arg {
     }
 }
 
+/// Returns an inline function [`Arg`] at `lines`.
+#[must_use]
 pub fn inline(lines: Lines) -> Arg {
     Arg {
         keyword: None,
@@ -449,7 +479,8 @@ pub fn inline(lines: Lines) -> Arg {
     }
 }
 
-// An exported class declaration, `header` as written, over `members`.
+/// Returns an exported [`ClassDecl`] named `name` with `header` and `members` at `lines`.
+#[must_use]
 pub fn class_decl(name: &str, header: &str, lines: Lines, members: Vec<Member>) -> ClassDecl {
     ClassDecl {
         name: name.to_owned(),
@@ -465,6 +496,8 @@ pub fn class_decl(name: &str, header: &str, lines: Lines, members: Vec<Member>) 
     }
 }
 
+/// Returns a public class [`Member`] named `name` of `kind` with `signature` at `lines`.
+#[must_use]
 pub fn member(name: &str, kind: MemberKind, signature: &str, lines: Lines) -> Member {
     Member {
         name: name.to_owned(),
@@ -476,6 +509,8 @@ pub fn member(name: &str, kind: MemberKind, signature: &str, lines: Lines) -> Me
     }
 }
 
+/// Returns an [`Export`] of `name` with `kind` at `lines`.
+#[must_use]
 pub fn export(name: &str, kind: ExportKind, lines: Lines) -> Export {
     Export {
         name: name.to_owned(),
@@ -485,6 +520,8 @@ pub fn export(name: &str, kind: ExportKind, lines: Lines) -> Export {
     }
 }
 
+/// Returns a [`Decorated`] declaration record at `head` and `lines`.
+#[must_use]
 pub fn decorated(
     class: Option<&str>, member: Option<&str>, name: &[&str], literal: Option<&str>, head: Lines,
     lines: Lines,
@@ -500,6 +537,8 @@ pub fn decorated(
     }
 }
 
+/// Returns a [`Reference`] to `name` on `line`.
+#[must_use]
 pub fn reference(name: &str, line: u32) -> Reference {
     Reference {
         name: name.to_owned(),
@@ -507,7 +546,8 @@ pub fn reference(name: &str, line: u32) -> Reference {
     }
 }
 
-// A load by a computed name at `lines`, settled to the directory `scope` where it spells one.
+/// Returns a computed [`Dynamic`] load at `lines` scoped to `scope`.
+#[must_use]
 pub fn dynamic(lines: Lines, scope: Option<&str>) -> Dynamic {
     Dynamic {
         lines,
@@ -516,6 +556,11 @@ pub fn dynamic(lines: Lines, scope: Option<&str>) -> Dynamic {
     }
 }
 
+/// Writes `body` to `rel` beneath `root`, creating parent directories as needed.
+///
+/// # Panics
+///
+/// Panics when parent directories or the file cannot be written.
 pub fn write(root: &Path, rel: &str, body: &str) {
     let path = root.join(rel);
     if let Some(parent) = path.parent() {
@@ -524,7 +569,8 @@ pub fn write(root: &Path, rel: &str, body: &str) {
     std::fs::write(path, body).expect("write");
 }
 
-// A tree over `modules` at `root`, with no tests and the stub's manifest.
+/// Returns a settled [`Tree`] of `modules` at `root` under `dialect` and `stub`.
+#[must_use]
 pub fn tree(root: &Path, dialect: &'static Dialect, modules: Vec<Plain>, stub: Stub) -> Tree<Stub> {
     Tree {
         root: root.to_path_buf(),

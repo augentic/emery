@@ -4,10 +4,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use emery_sdk::Context;
-use emery_sdk::survey::{Facts, Inventory};
-use test_programs::helpers::{
-    SURVEY_PROSE, SURVEY_PROSE_OMIT_PROMPT, emit, err, ok, scenario, source_input, survey_check,
-};
+use emery_sdk::survey::Facts;
+use test_programs::helpers::{SURVEY_PROSE, SURVEY_PROSE_OMIT_PROMPT, emit, err, ok, scenario};
 use test_programs::protocol::{SurveyCommand, SurveyScenario};
 use test_programs::seams;
 
@@ -21,7 +19,7 @@ async fn run() {
 }
 
 async fn run_surfaces(scenario: &SurveyScenario) {
-    let input = source_input(&scenario.input);
+    let input = scenario.input.source_input();
     let ctx = Context::new(&scenario.adapter_id, input);
     let facts = Facts {
         modules: &scenario.facts.modules,
@@ -30,8 +28,8 @@ async fn run_surfaces(scenario: &SurveyScenario) {
     };
     let docs = if scenario.omit_survey_prompt { SURVEY_PROSE_OMIT_PROMPT } else { SURVEY_PROSE };
     let response =
-        match emery_sdk::survey::surfaces(&ctx, docs, &facts, survey_check(scenario.check)).await {
-            Ok(inventory) => ok::<Inventory>(inventory),
+        match emery_sdk::survey::surfaces(&ctx, docs, &facts, scenario.check.into_fn()).await {
+            Ok(inventory) => ok(inventory),
             Err(error) => err(&error),
         };
     emit(response).await;

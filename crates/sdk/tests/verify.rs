@@ -4,39 +4,28 @@
 
 mod support;
 
+use emery_sdk::target::Grant;
 use omnia_test::host::{Scratch, ScriptedModel, scratch};
 use omnia_test::{Seen, SeenFormat, SeenWorker};
-use support::harness::{VerifyRun, verify};
-use test_programs::protocol::{GrantSpec, VERIFY_WORKSPACE, VerifyCheck, VerifyScenario};
+use support::harness::{DriverRun, verify};
+use test_programs::protocol::{VERIFY_WORKSPACE, VerifyCheck, VerifyOutcome, VerifyScenario};
 
 const PASSED: &str = r#"{"passed":true,"failures":[]}"#;
 
-async fn ask(model: &ScriptedModel, project: &Scratch) -> VerifyRun {
+async fn ask(model: &ScriptedModel, project: &Scratch) -> DriverRun<VerifyOutcome> {
     verify(project, &VerifyScenario::default(), model.clone()).await
 }
 
-async fn ask_as(model: &ScriptedModel, project: &Scratch, grants: Vec<GrantSpec>) -> VerifyRun {
-    verify(
-        project,
-        &VerifyScenario {
-            grants,
-            ..VerifyScenario::default()
-        },
-        model.clone(),
-    )
-    .await
+async fn ask_as(
+    model: &ScriptedModel, project: &Scratch, grants: impl Into<Vec<Grant>>,
+) -> DriverRun<VerifyOutcome> {
+    verify(project, &VerifyScenario::default().with_grants(grants), model.clone()).await
 }
 
-async fn ask_checked(model: &ScriptedModel, project: &Scratch, check: VerifyCheck) -> VerifyRun {
-    verify(
-        project,
-        &VerifyScenario {
-            check,
-            ..VerifyScenario::default()
-        },
-        model.clone(),
-    )
-    .await
+async fn ask_checked(
+    model: &ScriptedModel, project: &Scratch, check: VerifyCheck,
+) -> DriverRun<VerifyOutcome> {
+    verify(project, &VerifyScenario::default().with_check(check), model.clone()).await
 }
 
 // The turn carries the verify prompt as its system, lends the integrated
@@ -262,18 +251,8 @@ async fn doc_refs() {
 // checks run the same toolchain over the integrated tree.
 #[tokio::test]
 async fn worker_grant() {
-    let grants = vec![
-        GrantSpec {
-            egress: vec!["registry.npmjs.org".to_owned()],
-            read: Vec::new(),
-            env: Vec::new(),
-        },
-        GrantSpec {
-            egress: Vec::new(),
-            read: vec!["~/.nvm/versions/node".to_owned()],
-            env: Vec::new(),
-        },
-    ];
+    let grants =
+        [Grant::new().egress(["registry.npmjs.org"]), Grant::new().read(["~/.nvm/versions/node"])];
     let project = scratch();
     let model = ScriptedModel::answering([PASSED]);
 
@@ -317,25 +296,12 @@ async fn missing_prompt() {
 // the host would refuse never reaches it.
 #[tokio::test]
 async fn invalid_worker_grant() {
-    let grants = vec![
-        GrantSpec {
-            egress: vec!["https://registry.npmjs.org".to_owned(), "registry.npmjs.org".to_owned()],
-            read: vec![
-                "/opt/node".to_owned(),
-                "~/".to_owned(),
-                "~/a/../b".to_owned(),
-                "~/.volta".to_owned(),
-            ],
-            env: vec![
-                ("VOLTA-HOME".to_owned(), "~/.volta".to_owned()),
-                ("NODE_ENV".to_owned(), "test".to_owned()),
-            ],
-        },
-        GrantSpec {
-            egress: Vec::new(),
-            read: Vec::new(),
-            env: vec![("NODE_ENV".to_owned(), "production".to_owned())],
-        },
+    let grants = [
+        Grant::new()
+            .egress(["https://registry.npmjs.org", "registry.npmjs.org"])
+            .read(["/opt/node", "~/", "~/a/../b", "~/.volta"])
+            .env([("VOLTA-HOME", "~/.volta"), ("NODE_ENV", "test")]),
+        Grant::new().env([("NODE_ENV", "production")]),
     ];
     let project = scratch();
     let model = ScriptedModel::default();
@@ -363,7 +329,7 @@ async fn invalid_worker_grant() {
 // grant, as no grants put none.
 #[tokio::test]
 async fn empty_worker_grant() {
-    let grants = vec![GrantSpec::default()];
+    let grants = [Grant::new()];
     let project = scratch();
     let model = ScriptedModel::answering([PASSED]);
 

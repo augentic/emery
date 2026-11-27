@@ -24,11 +24,10 @@ use omnia_wasi_otel::WasiOtel;
 use omnia_wasi_vcs::WasiVcs;
 use sha2::{Digest, Sha256};
 use test_programs::script::{
-    ARRIVED, CALLS_DIR, CombinedScript, EvidenceScript, FAILURES_DIR, MOUNT, ReportScript,
-    RuleWire, SLICES_DIR, STATE, ScriptCall, ScriptError, SourceScriptState, TargetScriptState,
-    VERIFIES_DIR, VerdictScript, sanitise_id,
+    ARRIVED, CALLS_DIR, CombinedScript, EvidenceScript, FAILURES_DIR, MOUNT, ReportScript, STATE,
+    ScriptCall, ScriptError, SourceScriptState, TargetScriptState, VERIFIES_DIR, VerdictScript,
+    sanitise_id,
 };
-use test_programs::slice_wire::SliceWire;
 
 use super::guest::engine_guest;
 use super::prefix::{PrefixedBlobStore, PrefixedKeyValue};
@@ -362,7 +361,7 @@ impl Provider {
             target: self.host_target_state(),
         };
         let dir = self.project.path().join(MOUNT);
-        for subdir in [ARRIVED, CALLS_DIR, SLICES_DIR, FAILURES_DIR, VERIFIES_DIR] {
+        for subdir in [ARRIVED, CALLS_DIR, FAILURES_DIR, VERIFIES_DIR] {
             let sub = dir.join(subdir);
             let _ = fs::remove_dir_all(&sub);
             fs::create_dir_all(&sub).expect("script subdir");
@@ -438,7 +437,7 @@ impl Provider {
                 })
                 .collect(),
             versions: self.target.versions.clone(),
-            rules: self.target.rules.iter().map(RuleWire::from).collect(),
+            rules: self.target.rules.clone(),
             budget: self.target.budget,
             rendezvous: self.target.rendezvous.as_ref().map(|r| {
                 test_programs::script::RendezvousScript {
@@ -446,18 +445,6 @@ impl Provider {
                 }
             }),
         }
-    }
-
-    fn read_script_slice(&self, slice_id: &str) -> Option<Slice> {
-        let path = self
-            .project
-            .path()
-            .join(MOUNT)
-            .join(SLICES_DIR)
-            .join(format!("{}.json", sanitise_id(slice_id)));
-        let bytes = fs::read(path).ok()?;
-        let wire: SliceWire = serde_json::from_slice(&bytes).ok()?;
-        Some(Slice::from(wire))
     }
 
     /// Clears queued build failures for `slice_id`.
@@ -514,21 +501,8 @@ impl Provider {
                 ScriptCall::TargetInit { workspace, .. } => {
                     self.target.inits.lock().expect("inits").push(workspace);
                 }
-                ScriptCall::TargetBuild {
-                    id,
-                    slice_id,
-                    workspace,
-                    slice,
-                } => {
-                    let mut lowered = if slice.id.is_empty() {
-                        self.read_script_slice(&slice_id).unwrap_or_else(|| Slice::from(*slice))
-                    } else {
-                        Slice::from(*slice)
-                    };
-                    if lowered.id.is_empty() {
-                        lowered.id = slice_id;
-                    }
-                    self.target.calls.lock().expect("calls").push((id, lowered, workspace));
+                ScriptCall::TargetBuild { id, workspace, slice } => {
+                    self.target.calls.lock().expect("calls").push((id, *slice, workspace));
                 }
                 ScriptCall::TargetVerify { workspace, .. } => {
                     self.target.verifies.lock().expect("verifies").push(workspace);
