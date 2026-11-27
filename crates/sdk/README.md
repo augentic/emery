@@ -35,8 +35,8 @@ impl SourceAdapter for Adapter {
         Metadata { kind: KIND }
     }
 
-    async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
-        let seams = survey::survey(ctx.input)?;
+    async fn extract(ctx: &Context) -> Result<Evidence, Error> {
+        let seams = survey::survey(&ctx.input)?;
         emery_sdk::extract(ctx, PROSE, &seams).await
     }
 }
@@ -76,35 +76,31 @@ Implement `target::TargetAdapter` on a unit struct, embed `build.md` and `verify
 ```rust
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write as _};
-use std::num::NonZeroU32;
 use std::path::Path;
 
 use emery_sdk::target::{Grant, MergeRule, Metadata, Outcome, TargetAdapter, Task};
 use emery_sdk::{Doc, Error, server_error};
-
-const RULES: &[MergeRule] = &[MergeRule::ours("Cargo.lock")];
-
-const CARGO: Grant = Grant {
-    egress: &["index.crates.io", "static.crates.io"],
-    read: &["~/.rustup", "~/.cargo/bin"],
-    env: &[("RUSTUP_HOME", "~/.rustup")],
-};
 
 pub struct Adapter;
 
 impl TargetAdapter for Adapter {
     fn metadata() -> Metadata {
         Metadata {
-            rules: RULES,
-            grants: &[CARGO],
-            budget: NonZeroU32::new(12),
+            rules: vec![MergeRule::ours("Cargo.lock")],
+            grants: vec![
+                Grant::new()
+                    .egress(["index.crates.io", "static.crates.io"])
+                    .read(["~/.rustup", "~/.cargo/bin"])
+                    .env([("RUSTUP_HOME", "~/.rustup")]),
+            ],
+            budget: Some(12),
         }
     }
 
-    async fn run(task: Task<'_>) -> Result<Outcome, Error> {
+    async fn run(task: Task) -> Result<Outcome, Error> {
         match task {
             Task::Init(ctx) => {
-                let manifest = Path::new(ctx.workspace).join("Cargo.toml");
+                let manifest = Path::new(&ctx.workspace).join("Cargo.toml");
                 match OpenOptions::new().write(true).create_new(true).open(manifest) {
                     Ok(mut file) => file
                         .write_all(b"[workspace]\nmembers = [\"crates/*\"]\n")
@@ -132,7 +128,7 @@ emery_sdk::export_target!(Adapter);
 
 ### Tasks and outcomes
 
-`TargetAdapter::run` receives a `target::Task` and must return the matching `Outcome` variant:
+`TargetAdapter::run` receives an owned `target::Task` and must return the matching `Outcome` variant:
 
 - **`Task::Init(InitContext)` → `Outcome::Initialised`:** Runs once per repository before the first slice builds. The adapter scaffolds missing seed files deterministically in Rust (using `create_new` so existing files are preserved) with no model turn.
 - **`Task::Build(BuildContext)` → `Outcome::Built(Report)`:** Runs one gated model turn per slice via `target::build(&ctx, PROSE, check)` under `build.md`. The model receives the slice's requirements, owned design types, and brief, and writes code using the `write_files` and `edit_files` tools. Both the SDK report gate and the adapter's `check` closure validate the candidate `Report` and workspace before the turn finishes.
@@ -140,22 +136,22 @@ emery_sdk::export_target!(Adapter);
 
 ### Scaffolding and guarded markers (`Scaffold`)
 
-Before calling `target::build`, an adapter can generate skeleton files from the typed `Slice` and attach them via `ctx.with_scaffold(Scaffold)`:
+Before calling `target::build`, an adapter can generate skeleton files from the typed `Slice` and attach an owned `Scaffold` via `ctx.with_scaffold(scaffold)`:
 
-- **`brief` and `passages`:** Markdown instructions and reference snippets rendered into the build turn's prompt.
-- **`files` (`&[Guarded]`):** Protects scaffolded files from accidental deletion or truncation. Each `Guarded` file specifies `keeps` (substrings that any whole-file `write_files` call must preserve) and `markers` (`Marker { key, block }` stubs that `edit_files` can replace by naming `key` alone in `find`).
-- **`types`:** Design type keys already laid into the scaffolded files, allowing the SDK to replace their full definitions in the prompt with a short pointer.
+- **`brief` and `passages` (`String`):** Markdown instructions and reference snippets rendered into the build turn's prompt.
+- **`files` (`Vec<Guarded>`):** Protects scaffolded files from accidental deletion or truncation. Each `Guarded` file specifies `keeps` (substrings that any whole-file `write_files` call must preserve) and `markers` (`Marker { key, block }` stubs that `edit_files` can replace by naming `key` alone in `find`).
+- **`types` (`Vec<String>`):** Design type keys already laid into the scaffolded files, allowing the SDK to replace their full definitions in the prompt with a short pointer.
 
 ### Merge rules, worker grants, and default budget (`Metadata` and `Grant`)
 
-`TargetAdapter::metadata()` returns static `target::Metadata`:
+`TargetAdapter::metadata()` returns an owned `target::Metadata`:
 
-- **`rules` (`&[MergeRule]`):** Path-glob strategies (`MergeRule::union`, `MergeRule::ours`, `MergeRule::theirs`) that the engine applies when merging parallel slice branches into the integration worktree.
-- **`grants` (`&[Grant]`):** Toolchain permissions attached to the isolated worker sandbox during `build` and `verify` turns:
-  - `egress`: Allowed outbound hostnames (`"index.crates.io"`, `"*.example.com"`).
-  - `read`: Read-only directories under the operator's home directory (`"~/.rustup"`, `"~/.nvm/versions/node"`).
-  - `env`: Static environment variables (`("RUSTUP_HOME", "~/.rustup")`).
-- **`budget` (`Option<NonZeroU32>`):** Default requirement budget per slice when neither `--budget` nor `[target] budget` sets one.
+- **`rules` (`Vec<MergeRule>`):** Path-glob strategies (`MergeRule::union`, `MergeRule::ours`, `MergeRule::theirs`) that the engine applies when merging parallel slice branches into the integration worktree.
+- **`grants` (`Vec<Grant>`):** Toolchain permissions attached to the isolated worker sandbox during `build` and `verify` turns (built with `Grant::new().egress(..).read(..).env(..)`):
+  - `egress` (`Vec<String>`): Allowed outbound hostnames (`"index.crates.io"`, `"*.example.com"`).
+  - `read` (`Vec<String>`): Read-only directories under the operator's home directory (`"~/.rustup"`, `"~/.nvm/versions/node"`).
+  - `env` (`Vec<(String, String)>`): Environment variables (`("RUSTUP_HOME", "~/.rustup")`).
+- **`budget` (`Option<u32>`):** Default requirement budget per slice when neither `--budget` nor `[target] budget` sets one.
 
 ---
 

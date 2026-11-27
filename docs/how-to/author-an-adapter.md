@@ -89,8 +89,8 @@ impl SourceAdapter for Adapter {
         }
     }
 
-    async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
-        let seams = survey(ctx.input)?;
+    async fn extract(ctx: &Context) -> Result<Evidence, Error> {
+        let seams = survey(&ctx.input)?;
         emery_sdk::extract(ctx, PROSE, &seams).await
     }
 }
@@ -131,7 +131,6 @@ Every target adapter embeds `prose/build.md` (with a `## Worked example` JSON fe
 ```rust
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write as _};
-use std::num::NonZeroU32;
 use std::path::Path;
 
 use emery_sdk::target::{
@@ -139,24 +138,20 @@ use emery_sdk::target::{
 };
 use emery_sdk::{Doc, Error, server_error};
 
-// Path-glob merge rules applied when slice commits merge into .emery/vcs/integration
-const RULES: &[MergeRule] = &[MergeRule::union("src/index.ts")];
-
-// Optional worker sandbox grants (network hosts, read-only ~/ roots, env vars)
-const GRANTS: &[Grant] = &[];
-
 pub struct Adapter;
 
 impl TargetAdapter for Adapter {
     fn metadata() -> Metadata {
         Metadata {
-            rules: RULES,
-            grants: GRANTS,
-            budget: NonZeroU32::new(12),
+            // Path-glob merge rules applied when slice commits merge into .emery/vcs/integration
+            rules: vec![MergeRule::union("src/index.ts")],
+            // Optional worker sandbox grants via Grant::new().egress(..).read(..).env(..)
+            grants: Vec::new(),
+            budget: Some(12),
         }
     }
 
-    async fn run(task: Task<'_>) -> Result<Outcome, Error> {
+    async fn run(task: Task) -> Result<Outcome, Error> {
         match task {
             Task::Init(ctx) => init(&ctx).map(|()| Outcome::Initialised),
             Task::Build(ctx) => emery_sdk::target::build(&ctx, PROSE, |_| Ok(Vec::new()))
@@ -171,8 +166,8 @@ impl TargetAdapter for Adapter {
 
 pub static PROSE: &[Doc] = emery_sdk::prose!["../prose/build.md", "../prose/verify.md"];
 
-fn init(ctx: &InitContext<'_>) -> Result<(), Error> {
-    let root = Path::new(ctx.workspace);
+fn init(ctx: &InitContext) -> Result<(), Error> {
+    let root = Path::new(&ctx.workspace);
     let readme = root.join("README.md");
     if let Some(parent) = readme.parent() {
         fs::create_dir_all(parent).map_err(|e| server_error!("creating dir: {e}"))?;

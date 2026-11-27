@@ -77,15 +77,15 @@ Inside the kernel boundary, a model worker is restricted to the minimum surface 
 
 ### Target adapter worker grants
 
-A target adapter knows which compiler and package manager its prompts run, so it declares its required reach in `TargetAdapter::metadata().grants` (`emery_sdk::target::Grant`):
+A target adapter knows which compiler and package manager its prompts run, so it declares its required reach as owned `Grant` values in `TargetAdapter::metadata().grants` (`Vec<Grant>`, built with `Grant::new().egress(..).read(..).env(..)` in `emery_sdk::target`):
 
 | Adapter | Granted egress hosts | Granted read-only `~/` roots | Granted environment variables |
 | --- | --- | --- | --- |
 | Source adapters (`intent`, `documentation`, `typescript`, `python`) | *(none)* | *(none)* | *(none)* |
 | `emery:node` | `registry.npmjs.org` | `~/.nvm/versions/node`, `~/.volta`, `~/.local/share/fnm` | `VOLTA_HOME=~/.volta` |
-| `emery:omnia` | `index.crates.io`, `static.crates.io` | `~/.rustup`, `~/.cargo/bin` *(never `~/.cargo` whole)* | `RUSTUP_HOME=~/.rustup` |
+| `emery:omnia` | `index.crates.io`, `static.crates.io`, `github.com` | `~/.rustup`, `~/.cargo/bin` *(never `~/.cargo` whole)* | `RUSTUP_HOME=~/.rustup` |
 
-Before starting any turn, the SDK and backend validate every grant (`Grant::findings`):
+Before starting any turn, the SDK unites the grants (`Grant::union`) and validates every entry (`Grant::findings`), and the backend enforces its boundary:
 
 - If a `~/` root does not exist on the host machine (for example, `~/.volta` on a machine using `nvm`), it is silently skipped.
 - If a grant requests a root outside `~/`, overlaps a sensitive credential directory (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.kube`, `~/.docker`, `~/.config/gh`, `~/.config/gcloud`, `~/.password-store`, `~/Library/Keychains`, or any parent directory above them), or attempts to set `CURSOR_API_KEY`, the backend rejects the turn with `invalid-request`.
