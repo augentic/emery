@@ -2,13 +2,11 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use std::future::pending;
-
 use emery_adapter::source::{SourceKind, SourceMetadata};
 use emery_sdk::SourceInput;
 use emery_sdk::export::{self, Guest};
 use test_programs::script::{CombinedScript, ScriptCall, SourceScriptState};
-use test_programs::script_io::{append_call, read_state, rendezvous_wait};
+use test_programs::script_io::{append_call, hold_forever, read_state, rendezvous_wait};
 
 struct Adapter;
 
@@ -26,9 +24,6 @@ impl Guest for Adapter {
     ) -> Result<export::Evidence, export::Error> {
         let state = read_state::<CombinedScript>().source;
         let source = SourceInput::from(input);
-        if state.held.contains(&source.name) {
-            pending::<()>().await;
-        }
         extract_scripted(&id, &source, &state).await
     }
 }
@@ -57,6 +52,9 @@ async fn extract_scripted(
 
     if let Some(rendezvous) = &state.rendezvous {
         rendezvous_wait(&source.name, &rendezvous.expected).await;
+    }
+    if state.held.contains(&source.name) {
+        hold_forever().await;
     }
 
     state.extract(&source.name).map(Into::into).map_err(Into::into)

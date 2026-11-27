@@ -98,6 +98,13 @@ pub async fn rendezvous_wait(key: &str, expected: &BTreeSet<String>) {
     );
 }
 
+/// Suspends the current guest task forever on a WASI waitable until cancelled.
+pub async fn hold_forever() -> ! {
+    loop {
+        monotonic_clock::wait_for(TIMEOUT_NS).await;
+    }
+}
+
 fn claim_slot(relative_dir: &str) -> usize {
     let dir = mount(relative_dir);
     let _ = fs::create_dir_all(&dir);

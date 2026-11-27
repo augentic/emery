@@ -1421,22 +1421,29 @@ async fn extract_bad_request() {
     assert_message(&envelope, "source `docs`: the brief is empty");
 }
 
-// Parallel extraction dispatches every source before the first refusal is the run's.
+// `docs` hangs forever after both sources arrive, so a run waiting for every
+// source would exceed the bound instead of ending on `code`'s refusal.
 #[tokio::test]
 async fn held_source() {
     let mut provider = Provider::idle();
+    provider.source.rendezvous = Some(Rendezvous::from_iter(["docs", "code"]));
+    provider.source.held.insert("docs".to_string());
     provider
         .source
         .evidence
         .insert("code".to_string(), Err(bad_request!("source `code`: the brief is empty")));
 
-    let envelope = fail(
-        &provider,
-        &["emery", "specify", &reference("docs"), &reference("code")],
-        1,
-        "bad_request",
+    let envelope = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        fail(
+            &provider,
+            &["emery", "specify", &reference("docs"), &reference("code")],
+            1,
+            "bad_request",
+        ),
     )
-    .await;
+    .await
+    .expect("the refusal ends the run while `docs` is still pending");
 
     assert_message(&envelope, "source `code`: the brief is empty");
     let dispatched: Vec<_> =
