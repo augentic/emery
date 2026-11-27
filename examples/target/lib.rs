@@ -6,14 +6,10 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Write as _};
-use std::num::NonZeroU32;
 use std::path::Path;
 
 use emery_sdk::target::{InitContext, MergeRule, Metadata, Outcome, TargetAdapter, Task};
 use emery_sdk::{Doc, Error, server_error};
-
-// two slices that list requirements in one index keep both lists
-const RULES: &[MergeRule] = &[MergeRule::union("build/*/index.md")];
 
 /// The adapter implementation.
 pub struct Adapter;
@@ -21,13 +17,14 @@ pub struct Adapter;
 impl TargetAdapter for Adapter {
     fn metadata() -> Metadata {
         Metadata {
-            rules: RULES,
-            budget: NonZeroU32::new(2),
+            // two slices that list requirements in one index keep both lists
+            rules: vec![MergeRule::union("build/*/index.md")],
+            budget: Some(2),
             ..Metadata::default()
         }
     }
 
-    async fn run(task: Task<'_>) -> Result<Outcome, Error> {
+    async fn run(task: Task) -> Result<Outcome, Error> {
         match task {
             Task::Init(ctx) => init(&ctx).map(|()| Outcome::Initialised),
             Task::Build(ctx) => {
@@ -52,8 +49,8 @@ const FILES: &[(&str, &str)] = &[(
 )];
 
 // Scaffolds each file of the layout the tree lacks; one the tree holds stands.
-fn init(ctx: &InitContext<'_>) -> Result<(), Error> {
-    let root = Path::new(ctx.workspace);
+fn init(ctx: &InitContext) -> Result<(), Error> {
+    let root = Path::new(&ctx.workspace);
     for (path, content) in FILES {
         let file = root.join(path);
         if let Some(dir) = file.parent() {

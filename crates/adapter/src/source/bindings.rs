@@ -25,11 +25,11 @@ mod generated {
     });
 }
 
-// The shared `types` interface, which the target axis binds through this
-// generation rather than its own.
 use omnia_sdk::{Error, ErrorKind, bad_gateway, bad_request};
 
 use self::generated::emery::adapter::source as wit;
+// The shared `types` interface, which the target axis binds through this
+// generation rather than its own.
 pub use self::generated::emery::adapter::types;
 use crate::source::{
     Backing, Claim, ClaimKind, Evidence, SourceContent, SourceInput, SourceKind, SourceMetadata,
@@ -54,7 +54,7 @@ pub fn metadata(id: &str) -> SourceMetadata {
 pub async fn extract(id: &str, input: &SourceInput) -> Result<Evidence, Error> {
     let name = &input.name;
     let answer =
-        wit::extract(id.to_string(), input.clone().into()).await.map_err(|err| match err {
+        wit::extract(id.to_owned(), input.clone().into()).await.map_err(|err| match err {
             types::Error::InvalidRequest(detail) => {
                 bad_request!("adapter `{id}` for source `{name}`: {detail}")
             }

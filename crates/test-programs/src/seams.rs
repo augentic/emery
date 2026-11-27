@@ -41,10 +41,7 @@ pub async fn run(scenario: &SeamsScenario) -> Response<SeamsOutcome<Claim>> {
     let input = source_input(&scenario.input);
     let root = tree_root(&scenario.input);
     let settled = build_tree(&scenario.tree, &root);
-    let ctx = Context {
-        adapter_id: scenario.adapter_id.as_str(),
-        input: &input,
-    };
+    let ctx = Context::new(&scenario.adapter_id, input);
     match emery_sdk::survey::seams(&ctx, SEAMS_PROSE, &settled).await {
         Ok(survey) => ok(SeamsOutcome {
             seams: survey

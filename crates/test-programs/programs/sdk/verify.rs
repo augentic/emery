@@ -16,11 +16,7 @@ omnia_sdk::command::export!(run);
 async fn run() {
     let scenario: VerifyScenario = scenario();
     let grants = leak_grants(&scenario.grants);
-    let ctx = VerifyContext {
-        adapter_id: scenario.adapter_id.as_str(),
-        workspace: VERIFY_WORKSPACE,
-        grants,
-    };
+    let ctx = VerifyContext::new(scenario.adapter_id, VERIFY_WORKSPACE).with_grants(grants);
     let docs = if scenario.omit_verify_prompt { VERIFY_PROSE_OMIT_PROMPT } else { VERIFY_PROSE };
     let mut checks = 0_usize;
     let response = match emery_sdk::target::verify(&ctx, docs, |verdict| {

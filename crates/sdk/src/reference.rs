@@ -66,9 +66,9 @@ struct ReadDoc {
 // Each call is reported at DEBUG with its arguments as the model sent them,
 // under the turn's `subject` — the source name, the slice id of a build, or
 // `verify` — and, for a mining turn, its `seam`.
-pub fn serve(
-    docs: &'static [Doc], imports: &'static [Doc], subject: &str, seam: Option<usize>,
-) -> Tools {
+pub fn serve(docs: &[Doc], imports: &[Doc], subject: &str, seam: Option<usize>) -> Tools {
+    let docs = docs.to_vec();
+    let imports = imports.to_vec();
     let subject = subject.to_owned();
 
     Box::new(move |call: ToolCall| -> ToolFuture {
@@ -76,13 +76,13 @@ pub fn serve(
             LIST_DOCS => {
                 let paths: Vec<&str> = docs
                     .iter()
-                    .chain(imports)
+                    .chain(&imports)
                     .map(|doc| doc.path)
                     .filter(|path| !SYSTEM.contains(path))
                     .collect();
                 Ok(json!({ "paths": paths }).to_string())
             }
-            READ_DOC => read(docs, imports, &call),
+            READ_DOC => read(&docs, &imports, &call),
             other => Err(format!("unknown tool `{other}`")),
         };
 

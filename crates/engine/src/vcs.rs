@@ -69,7 +69,7 @@ pub fn rules(declared: &[MergeRule]) -> Vec<Rule> {
     declared
         .iter()
         .map(|rule| Rule {
-            pattern: rule.paths.to_string(),
+            pattern: rule.paths.clone(),
             strategy: match rule.strategy {
                 MergeStrategy::Union => Strategy::Union,
                 MergeStrategy::Ours => Strategy::Ours,

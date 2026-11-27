@@ -20,13 +20,7 @@ async fn run() {
     write_files(&scenario.files);
     let grants = leak_grants(&scenario.grants);
     let slice = build_slice(&scenario.slice);
-    let mut ctx = BuildContext {
-        adapter_id: scenario.adapter_id.as_str(),
-        slice: &slice,
-        workspace: WORKSPACE,
-        grants,
-        scaffold: None,
-    };
+    let mut ctx = BuildContext::new(scenario.adapter_id, WORKSPACE, slice).with_grants(grants);
     if let Some(scaffold) = scenario.scaffold.as_ref() {
         ctx = ctx.with_scaffold(leak_scaffold(scaffold));
     }

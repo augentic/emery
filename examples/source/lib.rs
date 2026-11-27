@@ -18,8 +18,8 @@ impl SourceAdapter for Adapter {
         Metadata { kind: KIND }
     }
 
-    async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
-        let seams = survey(ctx.input)?;
+    async fn extract(ctx: &Context) -> Result<Evidence, Error> {
+        let seams = survey(&ctx.input)?;
         emery_sdk::extract(ctx, PROSE, &seams).await
     }
 }

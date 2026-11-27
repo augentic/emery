@@ -146,19 +146,19 @@ pub fn grants_from(grants: &[Grant]) -> Vec<GrantSpec> {
     grants
         .iter()
         .map(|grant| GrantSpec {
-            egress: grant.egress.iter().map(|host| (*host).to_owned()).collect(),
-            read: grant.read.iter().map(|root| (*root).to_owned()).collect(),
-            env: grant.env.iter().map(|&(k, v)| (k.to_owned(), v.to_owned())).collect(),
+            egress: grant.egress.clone(),
+            read: grant.read.clone(),
+            env: grant.env.clone(),
         })
         .collect()
 }
 
-pub fn scaffold_spec(scaffold: Scaffold<'_>) -> ScaffoldSpec {
+pub fn scaffold_spec(scaffold: Scaffold) -> ScaffoldSpec {
     ScaffoldSpec {
-        brief: scaffold.brief.to_owned(),
-        passages: scaffold.passages.to_owned(),
+        brief: scaffold.brief,
+        passages: scaffold.passages,
         files: scaffold.files.iter().map(guarded_spec).collect(),
-        types: scaffold.types.to_vec(),
+        types: scaffold.types,
     }
 }
 

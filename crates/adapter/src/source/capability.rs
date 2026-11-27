@@ -48,7 +48,8 @@ pub enum SourceContent {
 }
 
 /// Metadata declared by a source adapter.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct SourceMetadata {
     /// The minimum compatible Emery version, if the adapter declares one.
     pub emery_version: Option<String>,

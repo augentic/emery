@@ -166,14 +166,14 @@ pub struct Facts<'a> {
 ///
 /// # Errors
 ///
-/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the model rejects the request or no
+/// - Returns [`ErrorKind::BadRequest`](crate::ErrorKind::BadRequest) when the model rejects the request or no
 ///   valid answer is produced within the available rounds or the backend's
 ///   time budget.
-/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) when `docs` does not contain `survey.md`
+/// - Returns [`ErrorKind::ServerError`](crate::ErrorKind::ServerError) when `docs` does not contain `survey.md`
 ///   or the source is an inline value with no tree to survey.
-/// - Returns [`ErrorKind::BadGateway`](omnia_sdk::ErrorKind::BadGateway) when a model tool or transport fails.
+/// - Returns [`ErrorKind::BadGateway`](crate::ErrorKind::BadGateway) when a model tool or transport fails.
 pub async fn surfaces(
-    ctx: &Context<'_>, docs: &'static [Doc], facts: &Facts<'_>,
+    ctx: &Context, docs: &[Doc], facts: &Facts<'_>,
     mut check: impl FnMut(&Inventory) -> Vec<String> + Send,
 ) -> Result<Inventory, Error> {
     let source = &ctx.input.name;
@@ -188,7 +188,7 @@ pub async fn surfaces(
         .workspace(root);
     let inlined = inline(root, facts.files);
     let brief = Brief {
-        adapter_id: ctx.adapter_id,
+        adapter_id: &ctx.adapter_id,
         source,
         facts,
         inlined: &inlined,
@@ -391,14 +391,14 @@ impl Survey {
 ///
 /// # Errors
 ///
-/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the model rejects the request or no
+/// - Returns [`ErrorKind::BadRequest`](crate::ErrorKind::BadRequest) when the model rejects the request or no
 ///   valid answer is produced within the available rounds or the backend's
 ///   time budget.
-/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) when `docs` does not contain `survey.md`
+/// - Returns [`ErrorKind::ServerError`](crate::ErrorKind::ServerError) when `docs` does not contain `survey.md`
 ///   or the source is an inline value with no tree to survey.
-/// - Returns [`ErrorKind::BadGateway`](omnia_sdk::ErrorKind::BadGateway) when a model tool or transport fails.
+/// - Returns [`ErrorKind::BadGateway`](crate::ErrorKind::BadGateway) when a model tool or transport fails.
 pub async fn seams<R: Recogniser>(
-    ctx: &Context<'_>, docs: &'static [Doc], tree: &Tree<R>,
+    ctx: &Context, docs: &[Doc], tree: &Tree<R>,
 ) -> Result<Survey, Error> {
     let source = &ctx.input.name;
     let locator = SurfaceLocator::new(tree);

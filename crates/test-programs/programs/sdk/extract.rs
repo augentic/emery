@@ -14,10 +14,7 @@ omnia_sdk::command::export!(run);
 async fn run() {
     let scenario: ExtractScenario = scenario();
     let input = source_input(&scenario.input);
-    let ctx = Context {
-        adapter_id: scenario.adapter_id.as_str(),
-        input: &input,
-    };
+    let ctx = Context::new(scenario.adapter_id, input);
     let seams: Vec<_> = scenario.seams.iter().map(seam).collect();
     let docs = if scenario.omit_extract_prompt { EXTRACT_PROSE_OMIT_PROMPT } else { EXTRACT_PROSE };
     let response = match emery_sdk::extract(&ctx, docs, &seams).await {

@@ -2,8 +2,6 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use std::num::NonZeroU32;
-
 use emery_adapter::target::{MergeRule, Outcome, Task};
 use emery_sdk::target::export::{self, Guest};
 use test_programs::script::{CombinedScript, ScriptCall};
@@ -22,7 +20,7 @@ impl Guest for Adapter {
         } else {
             Vec::new()
         };
-        let mut metadata = emery_sdk::target::metadata(&rules, Some(scripted_budget(&id)));
+        let mut metadata = emery_sdk::target::metadata(rules, Some(scripted_budget(&id)));
         metadata.emery_version = scripted_emery_version(&id);
         export::TargetMetadata::from(metadata)
     }
@@ -38,13 +36,13 @@ fn scripted_emery_version(id: &str) -> Option<String> {
     if id == "acme:builderv100" { Some("100.0.0".into()) } else { None }
 }
 
-fn scripted_budget(id: &str) -> NonZeroU32 {
-    let default = NonZeroU32::new(12).expect("twelve");
+fn scripted_budget(id: &str) -> u32 {
+    let default = 12;
     let Some(rest) = id.strip_prefix("acme:builderb") else {
         return default;
     };
     let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
-    digits.parse().ok().and_then(NonZeroU32::new).unwrap_or(default)
+    digits.parse().ok().filter(|&budget| budget > 0).unwrap_or(default)
 }
 
 async fn dispatch(

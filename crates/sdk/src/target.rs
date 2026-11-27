@@ -24,38 +24,29 @@
 //! use emery_sdk::target::{Grant, Metadata, Outcome, TargetAdapter, Task};
 //! use emery_sdk::{Doc, Error, server_error};
 //!
-//! // cargo fetches from crates.io's sparse index and its download host
-//! const CARGO: Grant = Grant {
-//!     egress: &["index.crates.io", "static.crates.io"],
-//!     read: &[],
-//!     env: &[],
-//! };
-//!
-//! // rustup finds its toolchains under `RUSTUP_HOME`, which the worker's
-//! // private `HOME` would otherwise hide
-//! const RUSTUP: Grant = Grant {
-//!     egress: &[],
-//!     read: &["~/.rustup", "~/.cargo/bin"],
-//!     env: &[("RUSTUP_HOME", "~/.rustup")],
-//! };
-//!
-//! const GRANTS: &[Grant] = &[CARGO, RUSTUP];
-//!
 //! pub struct Adapter;
 //!
 //! impl TargetAdapter for Adapter {
 //!     fn metadata() -> Metadata {
 //!         Metadata {
-//!             grants: GRANTS,
+//!             grants: vec![
+//!                 // cargo fetches from crates.io's sparse index and download host
+//!                 Grant::new().egress(["index.crates.io", "static.crates.io"]),
+//!                 // rustup finds its toolchains under `RUSTUP_HOME`, which the
+//!                 // worker's private `HOME` would otherwise hide
+//!                 Grant::new()
+//!                     .read(["~/.rustup", "~/.cargo/bin"])
+//!                     .env([("RUSTUP_HOME", "~/.rustup")]),
+//!             ],
 //!             ..Metadata::default()
 //!         }
 //!     }
 //!
-//!     async fn run(task: Task<'_>) -> Result<Outcome, Error> {
+//!     async fn run(task: Task) -> Result<Outcome, Error> {
 //!         match task {
 //!             Task::Init(ctx) => {
 //!                 // a held manifest stands; the tree lacking one gets the layout's
-//!                 let manifest = Path::new(ctx.workspace).join("Cargo.toml");
+//!                 let manifest = Path::new(&ctx.workspace).join("Cargo.toml");
 //!                 match OpenOptions::new().write(true).create_new(true).open(manifest) {
 //!                     Ok(mut file) => file
 //!                         .write_all(b"[workspace]\nmembers = [\"crates/*\"]\n")
@@ -98,7 +89,6 @@ mod design;
 mod write;
 
 use std::fmt::{self, Display, Formatter};
-use std::num::NonZeroU32;
 use std::path::Path;
 
 #[cfg(target_arch = "wasm32")]
@@ -111,6 +101,7 @@ pub use emery_adapter::target::{
 use emery_prose::Doc;
 use omnia_sdk::model::{Question, WorkerGrant};
 use omnia_sdk::{Error, server_error};
+use serde::{Deserialize, Serialize};
 
 use self::write::{Writer, Written};
 use crate::{BUILD, VERIFY, prompt, quoted, reference, unique};
@@ -118,54 +109,84 @@ use crate::{BUILD, VERIFY, prompt, quoted, reference, unique};
 /// Host dispatch to a loaded target adapter through [`emery_adapter::target`].
 ///
 /// [`Task`](capability::Task) is the task the engine passes to
-/// [`emery_adapter::target::run`], `init`, `build(slice)`, or `verify`, each
+/// [`run`](capability::run), `init`, `build(slice)`, or `verify`, each
 /// answered by the [`Outcome`] of its kind.
 pub mod capability {
-    pub use emery_adapter::target::Task;
+    pub use emery_adapter::target::{Task, metadata, run};
 }
 
 /// What one program of the worker's toolchain is granted beyond the lent tree.
 ///
-/// A target adapter spells one per program its prompts run, as that
-/// program's own documentation states its reach, and lists them as its
+/// A target adapter builds one per program its prompts run, as that program's
+/// own documentation states its reach, and lists them as its
 /// [`Metadata::grants`]. [`build`] and [`verify`] carry the list with every
 /// turn as the completion's worker grant, their [`union`](Self::union), each
-/// entry once however many grants spell it. The host holds each entry to
-/// its shape and the backend applies what exists on its machine. The adapter
-/// is trusted by its digest, so what it spells is what the deployment
-/// granted when it pinned it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// entry once however many grants spell it. The host holds each entry to its
+/// shape and the backend applies what exists on its machine. The adapter is
+/// trusted by its digest, so what it spells is what the deployment granted
+/// when it pinned it.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
 pub struct Grant {
     /// Host names the program's commands may reach through the backend's
     /// egress proxy: a name whole, or `*.suffix` for a domain and every
     /// host beneath it. Never an IP literal, a port, a scheme, or a path.
-    pub egress: &'static [&'static str],
+    pub egress: Vec<String>,
     /// Directories the program may read beside the lend and the system,
     /// each `~/<path>`: beneath the operator's home, never `~/` itself and
     /// never holding `..`. One the machine lacks grants nothing.
-    pub read: &'static [&'static str],
+    pub read: Vec<String>,
     /// Environment variables set for the program, each a name of the shape
     /// `[A-Za-z_][A-Za-z0-9_]*` and a value whose leading `~/` the backend
     /// expands to the operator's home.
-    pub env: &'static [(&'static str, &'static str)],
+    pub env: Vec<(String, String)>,
 }
 
 impl Grant {
+    /// Returns an empty grant carrying no hosts, read roots, or variables.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            egress: Vec::new(),
+            read: Vec::new(),
+            env: Vec::new(),
+        }
+    }
+
+    /// Appends `hosts` to [`egress`](field@Self::egress).
+    #[must_use]
+    pub fn egress(mut self, hosts: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.egress.extend(hosts.into_iter().map(Into::into));
+        self
+    }
+
+    /// Appends `roots` to [`read`](field@Self::read).
+    #[must_use]
+    pub fn read(mut self, roots: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.read.extend(roots.into_iter().map(Into::into));
+        self
+    }
+
+    /// Appends `vars` to [`env`](field@Self::env).
+    #[must_use]
+    pub fn env<K, V>(mut self, vars: impl IntoIterator<Item = (K, V)>) -> Self
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        self.env.extend(vars.into_iter().map(|(name, value)| (name.into(), value.into())));
+        self
+    }
+
     /// Returns the worker grant a turn carries for `grants`: `None` when
     /// they unite to nothing, every entry once otherwise, in
     /// first-occurrence order.
     #[must_use]
     pub fn union(grants: &[Self]) -> Option<WorkerGrant> {
         let union = WorkerGrant {
-            egress: unique(
-                grants.iter().flat_map(|grant| grant.egress.iter().map(|host| (*host).to_owned())),
-            ),
-            read: unique(
-                grants.iter().flat_map(|grant| grant.read.iter().map(|root| (*root).to_owned())),
-            ),
-            env: unique(grants.iter().flat_map(|grant| {
-                grant.env.iter().map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-            })),
+            egress: unique(grants.iter().flat_map(|grant| grant.egress.iter().cloned())),
+            read: unique(grants.iter().flat_map(|grant| grant.read.iter().cloned())),
+            env: unique(grants.iter().flat_map(|grant| grant.env.iter().cloned())),
         };
         if union.egress.is_empty() && union.read.is_empty() && union.env.is_empty() {
             None
@@ -189,7 +210,7 @@ impl Grant {
     pub fn findings(grants: &[Self]) -> Vec<String> {
         let mut findings = Vec::new();
         for grant in grants {
-            for host in grant.egress {
+            for host in &grant.egress {
                 if !is_host_name(host) {
                     findings.push(format!(
                         "egress `{host}` is not a host name: a name whole or `*.suffix`, never a \
@@ -197,14 +218,14 @@ impl Grant {
                     ));
                 }
             }
-            for root in grant.read {
+            for root in &grant.read {
                 if !is_home_root(root) {
                     findings.push(format!(
                         "read root `{root}` is not `~/<path>` over a plain relative path"
                     ));
                 }
             }
-            for (name, _) in grant.env {
+            for (name, _) in &grant.env {
                 if !is_variable_name(name) {
                     findings.push(format!(
                         "variable `{name}` is not a name of the shape `[A-Za-z_][A-Za-z0-9_]*`"
@@ -214,7 +235,9 @@ impl Grant {
         }
 
         // one value per variable across the grants
-        let env = unique(grants.iter().flat_map(|grant| grant.env.iter().copied()));
+        let env = unique(grants.iter().flat_map(|grant| {
+            grant.env.iter().map(|(name, value)| (name.as_str(), value.as_str()))
+        }));
         for (index, (name, value)) in env.iter().enumerate() {
             let earlier = env[..index].iter().find(|(other, _)| other == name);
             if let Some((_, other)) = earlier {
@@ -243,27 +266,28 @@ fn is_variable_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Static configuration a target adapter declares for merge rules, worker
-/// grants, and its default slice budget.
+/// Configuration a target adapter declares for merge rules, worker grants,
+/// and its default slice budget.
 ///
 /// Returned by [`TargetAdapter::metadata`]. [`export_target!`](crate::export_target)
 /// exposes [`rules`](Self::rules) and [`budget`](Self::budget) through the
 /// component's `metadata` export, and [`build`] and [`verify`] attach
 /// [`grants`](Self::grants) to every turn. The default declares no rules,
 /// no grants, and no budget.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
 pub struct Metadata {
     /// Merge rules applied when integrating each slice into the tree.
     ///
     /// The first rule matching a conflicting path applies; paths matched by no
     /// rule are resolved by the engine through a merge turn.
-    pub rules: &'static [MergeRule],
+    pub rules: Vec<MergeRule>,
     /// Toolchain access granted to the model's worker in [`build`] and
     /// [`verify`] turns, one [`Grant`] per program the prompts run.
-    pub grants: &'static [Grant],
+    pub grants: Vec<Grant>,
     /// Default requirement budget per slice when neither `--budget` nor
     /// `[target] budget` sets one.
-    pub budget: Option<NonZeroU32>,
+    pub budget: Option<u32>,
 }
 
 impl From<Metadata> for TargetMetadata {
@@ -277,43 +301,73 @@ impl From<Metadata> for TargetMetadata {
 /// An init carries no model: it is the adapter's own code scaffolding the
 /// layout's initial files where the tree lacks them, so two inits over one
 /// tree scaffold the same files.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InitContext<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InitContext {
     /// The identifier used to address the adapter.
-    pub adapter_id: &'a str,
+    pub adapter_id: String,
     /// The deployment-local path of the tree root the layout is scaffolded
     /// beneath. The deployment's grant decides whether it may be written.
-    pub workspace: &'a str,
+    pub workspace: String,
+}
+
+impl InitContext {
+    /// Returns an initialisation context for `adapter_id` in `workspace`.
+    #[must_use]
+    pub fn new(adapter_id: impl Into<String>, workspace: impl Into<String>) -> Self {
+        Self {
+            adapter_id: adapter_id.into(),
+            workspace: workspace.into(),
+        }
+    }
 }
 
 /// The adapter addressed, the slice it builds, and the tree it builds into.
 ///
 /// [`build`] takes it; each turn reaches the host model through Omnia's
 /// `model` interface.
-#[derive(Debug, Clone, Copy)]
-pub struct BuildContext<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BuildContext {
     /// The identifier used to address the adapter.
-    pub adapter_id: &'a str,
+    pub adapter_id: String,
     /// The [`Slice`] to build.
-    pub slice: &'a Slice,
+    pub slice: Slice,
     /// The deployment-local path of the tree root, which the turn lends to
     /// the model and writes beneath through `write_files` and `edit_files`.
     /// The deployment's grant decides whether it may be written.
-    pub workspace: &'a str,
+    pub workspace: String,
     /// What the model's worker reaches beyond the tree, the adapter's
     /// [`Metadata::grants`].
-    pub grants: &'a [Grant],
+    pub grants: Vec<Grant>,
     /// What the adapter's own code scaffolded into the workspace for the
     /// slice before the turn, where it scaffolded anything. The host lifts
     /// the context with `None`; an adapter that scaffolds a skeleton sets it
     /// through [`with_scaffold`](Self::with_scaffold).
-    pub scaffold: Option<Scaffold<'a>>,
+    pub scaffold: Option<Scaffold>,
 }
 
-impl<'a> BuildContext<'a> {
+impl BuildContext {
+    /// Returns a build context for `adapter_id` building `slice` in `workspace`.
+    #[must_use]
+    pub fn new(adapter_id: impl Into<String>, workspace: impl Into<String>, slice: Slice) -> Self {
+        Self {
+            adapter_id: adapter_id.into(),
+            slice,
+            workspace: workspace.into(),
+            grants: Vec::new(),
+            scaffold: None,
+        }
+    }
+
+    /// Returns the context with [`grants`](Self::grants) set.
+    #[must_use]
+    pub fn with_grants(mut self, grants: impl Into<Vec<Grant>>) -> Self {
+        self.grants = grants.into();
+        self
+    }
+
     /// Returns the context with [`scaffold`](Self::scaffold) set.
     #[must_use]
-    pub const fn with_scaffold(mut self, scaffold: Scaffold<'a>) -> Self {
+    pub fn with_scaffold(mut self, scaffold: Scaffold) -> Self {
         self.scaffold = Some(scaffold);
         self
     }
@@ -324,30 +378,31 @@ impl<'a> BuildContext<'a> {
 /// Attach a scaffold to [`BuildContext`] with [`BuildContext::with_scaffold`]
 /// when the adapter generates skeleton files from the typed [`Slice`] for the
 /// model to fill in place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Scaffold<'a> {
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Scaffold {
     /// Markdown rendered after the design under `What the adapter scaffolded
     /// for this slice before this turn:`.
     ///
     /// Names the scaffolded files and the markers to fill. An empty string
     /// omits the section.
-    pub brief: &'a str,
+    pub brief: String,
     /// Reference passages appended verbatim after the scaffold section.
     ///
     /// Ignored when cutting the design to the slice, so types mentioned only
     /// in quoted examples are not retained. An empty string appends nothing.
-    pub passages: &'a str,
+    pub passages: String,
     /// Guarded files that `write_files` may not delete or overwrite without
     /// their [`Guarded::keeps`] tokens.
-    pub files: &'a [Guarded],
+    pub files: Vec<Guarded>,
     /// Keys of design `Type:` blocks already laid into the scaffolded files.
     ///
     /// [`build`] replaces each matching data-type block in the brief's design
     /// with a pointer to the scaffold section.
-    pub types: &'a [String],
+    pub types: Vec<String>,
 }
 
-impl Scaffold<'_> {
+impl Scaffold {
     fn section(&self) -> Option<&str> {
         Some(self.brief.trim_end()).filter(|brief| !brief.is_empty())
     }
@@ -367,14 +422,17 @@ impl Scaffold<'_> {
 /// `edit_files` fills a [`Marker`] in [`markers`](Self::markers) when an
 /// edit's `find` is the marker's key alone, replacing the block the scaffold
 /// laid for it without the model copying the block's lines.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Guarded {
     /// Root-relative path of the scaffolded file.
     pub path: String,
     /// Substrings that any whole-file write to `path` must preserve, such as
     /// requirement markers, item declarations, or anchored list lines.
+    #[serde(default)]
     pub keeps: Vec<String>,
     /// Markers in `path` that `edit_files` addresses by key.
+    #[serde(default)]
     pub markers: Vec<Marker>,
 }
 
@@ -405,7 +463,8 @@ impl Guarded {
 /// place the file holds [`block`](Self::block), as written or with its line
 /// breaks and indentation read past, so the model names the marker rather
 /// than copying its lines.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Marker {
     /// The key an edit's `find` names the marker by, such as
     /// `REQ-001 orders.read: the handler`.
@@ -429,17 +488,36 @@ impl Marker {
 ///
 /// [`verify`] takes it; each turn reaches the host model through Omnia's
 /// `model` interface.
-#[derive(Debug, Clone, Copy)]
-pub struct VerifyContext<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifyContext {
     /// The identifier used to address the adapter.
-    pub adapter_id: &'a str,
+    pub adapter_id: String,
     /// The deployment-local path of the integrated tree's root, which the
     /// turn lends to the model for its checks to run in and repairs beneath
     /// through `write_files` and `edit_files`.
-    pub workspace: &'a str,
+    pub workspace: String,
     /// What the model's worker reaches beyond the tree, the adapter's
     /// [`Metadata::grants`].
-    pub grants: &'a [Grant],
+    pub grants: Vec<Grant>,
+}
+
+impl VerifyContext {
+    /// Returns a verification context for `adapter_id` in `workspace`.
+    #[must_use]
+    pub fn new(adapter_id: impl Into<String>, workspace: impl Into<String>) -> Self {
+        Self {
+            adapter_id: adapter_id.into(),
+            workspace: workspace.into(),
+            grants: Vec::new(),
+        }
+    }
+
+    /// Returns the context with [`grants`](Self::grants) set.
+    #[must_use]
+    pub fn with_grants(mut self, grants: impl Into<Vec<Grant>>) -> Self {
+        self.grants = grants.into();
+        self
+    }
 }
 
 /// The task a target adapter is asked, each with the context its turn needs.
@@ -449,19 +527,28 @@ pub struct VerifyContext<'a> {
 /// - [`Init`](Self::Init) answers [`Outcome::Initialised`].
 /// - [`Build`](Self::Build) answers [`Outcome::Built`].
 /// - [`Verify`](Self::Verify) answers [`Outcome::Verified`].
-#[derive(Debug)]
-pub enum Task<'a> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(
+    target_pointer_width = "64",
+    expect(
+        clippy::large_enum_variant,
+        reason = "a task is built once per dispatch and handed to TargetAdapter::run by value; \
+                  the slice's documents dominate its size on the heap, so boxing the context \
+                  saves nothing"
+    )
+)]
+pub enum Task {
     /// Scaffold the layout's initial files the tree lacks, a held file left
     /// as it stands. Put once per repository a build lands in, before any
     /// slice; the engine seals what the tree then holds as its
     /// `Initialise` commit.
-    Init(InitContext<'a>),
+    Init(InitContext),
     /// Build one slice of the plan into the tree, through
     /// [`build`](fn@build).
-    Build(BuildContext<'a>),
+    Build(BuildContext),
     /// Run the checks over the integrated tree, repair what they find, and
     /// answer a verdict, through [`verify`](fn@verify).
-    Verify(VerifyContext<'a>),
+    Verify(VerifyContext),
 }
 
 /// A target adapter that initialises, builds, and verifies a workspace.
@@ -473,10 +560,10 @@ pub trait TargetAdapter {
     /// Returns what the adapter declares about itself: the rules it merges
     /// under, the grants its worker carries, and its default slice budget.
     ///
-    /// Answered from compiled-in constants, with no model call and no
-    /// filesystem access. [`Metadata::default`] by default, for an adapter
-    /// that merges under no rule, whose turns run nothing that reaches
-    /// beyond the tree, and that leaves the slice budget to the engine.
+    /// Answered without model calls or filesystem access. [`Metadata::default`]
+    /// by default, for an adapter that merges under no rule, whose turns run
+    /// nothing that reaches beyond the tree, and that leaves the slice budget
+    /// to the engine.
     #[must_use]
     fn metadata() -> Metadata {
         Metadata::default()
@@ -489,11 +576,11 @@ pub trait TargetAdapter {
     ///
     /// # Errors
     ///
-    /// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the tree refuses [`Task::Init`], such
+    /// - Returns [`ErrorKind::BadRequest`](crate::ErrorKind::BadRequest) when the tree refuses [`Task::Init`], such
     ///   as when a directory or symlink occupies a layout file's path.
-    /// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) when [`Task::Init`] cannot write the tree.
+    /// - Returns [`ErrorKind::ServerError`](crate::ErrorKind::ServerError) when [`Task::Init`] cannot write the tree.
     /// - Returns what [`build`](fn@build) or [`verify`](fn@verify) returns.
-    fn run(task: Task<'_>) -> impl Future<Output = Result<Outcome, Error>>;
+    fn run(task: Task) -> impl Future<Output = Result<Outcome, Error>>;
 }
 
 /// Returns the `metadata` answer for a target adapter merging under `rules`
@@ -508,11 +595,11 @@ pub trait TargetAdapter {
 /// the contract the adapter compiled against. Build a [`TargetMetadata`]
 /// directly only when the adapter must loosen or tighten that pin.
 #[must_use]
-pub fn metadata(rules: &[MergeRule], budget: Option<NonZeroU32>) -> TargetMetadata {
+pub fn metadata(rules: impl Into<Vec<MergeRule>>, budget: Option<u32>) -> TargetMetadata {
     TargetMetadata {
-        emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
-        merge_rules: rules.to_vec(),
-        budget: budget.map(NonZeroU32::get),
+        emery_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+        merge_rules: rules.into(),
+        budget,
     }
 }
 
@@ -556,22 +643,22 @@ pub fn metadata(rules: &[MergeRule], budget: Option<NonZeroU32>) -> TargetMetada
 ///
 /// # Errors
 ///
-/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the model rejects the request or
+/// - Returns [`ErrorKind::BadRequest`](crate::ErrorKind::BadRequest) when the model rejects the request or
 ///   produces no valid report within the round limit or time budget.
-/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) before any turn when `docs` lacks
+/// - Returns [`ErrorKind::ServerError`](crate::ErrorKind::ServerError) before any turn when `docs` lacks
 ///   `build.md` or `ctx`'s [`grants`](BuildContext::grants) have
 ///   [`findings`](Grant::findings).
-/// - Returns [`ErrorKind::BadGateway`](omnia_sdk::ErrorKind::BadGateway) when a model tool or transport fails.
+/// - Returns [`ErrorKind::BadGateway`](crate::ErrorKind::BadGateway) when a model tool or transport fails.
 /// - Returns the [`Error`] returned by `check`, ending the turn immediately.
 pub async fn build(
-    ctx: &BuildContext<'_>, docs: &'static [Doc],
+    ctx: &BuildContext, docs: &[Doc],
     mut check: impl FnMut(&Report) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Report, Error> {
-    let slice = ctx.slice;
+    let slice = &ctx.slice;
     let id = &slice.id;
-    let root = Path::new(ctx.workspace);
-    let scaffolded = ctx.scaffold.map_or(&[][..], |scaffold| scaffold.files);
-    let writer = Writer::new(ctx.workspace, id).guarding(scaffolded);
+    let root = Path::new(&ctx.workspace);
+    let scaffolded = ctx.scaffold.as_ref().map_or(&[][..], |scaffold| scaffold.files.as_slice());
+    let writer = Writer::new(&ctx.workspace, id).guarding(scaffolded);
     let written = writer.written();
     let mut tools = reference::tools();
     tools.extend(writer.tools());
@@ -579,13 +666,13 @@ pub async fn build(
         Question::<Report>::new(&format!("build-{id}"))
             .system(prompt(docs, BUILD)?)
             .tools(tools)
-            .workspace(ctx.workspace),
-        ctx.grants,
+            .workspace(&ctx.workspace),
+        &ctx.grants,
     )?;
     let brief = Brief {
-        adapter_id: ctx.adapter_id,
+        adapter_id: &ctx.adapter_id,
         slice,
-        scaffold: ctx.scaffold,
+        scaffold: ctx.scaffold.as_ref(),
     };
 
     tracing::info!(
@@ -658,29 +745,29 @@ const VERIFY_TURN: &str = "verify";
 ///
 /// # Errors
 ///
-/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the model rejects the request or
+/// - Returns [`ErrorKind::BadRequest`](crate::ErrorKind::BadRequest) when the model rejects the request or
 ///   produces no valid verdict within the round limit or time budget.
-/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) before any turn when `docs` lacks
+/// - Returns [`ErrorKind::ServerError`](crate::ErrorKind::ServerError) before any turn when `docs` lacks
 ///   `verify.md` or `ctx`'s [`grants`](VerifyContext::grants) have
 ///   [`findings`](Grant::findings).
-/// - Returns [`ErrorKind::BadGateway`](omnia_sdk::ErrorKind::BadGateway) when a model tool or transport fails.
+/// - Returns [`ErrorKind::BadGateway`](crate::ErrorKind::BadGateway) when a model tool or transport fails.
 /// - Returns the [`Error`] returned by `check`, ending the turn immediately.
 pub async fn verify(
-    ctx: &VerifyContext<'_>, docs: &'static [Doc],
+    ctx: &VerifyContext, docs: &[Doc],
     mut check: impl FnMut(&Verdict) -> Result<Vec<String>, Error> + Send,
 ) -> Result<Verdict, Error> {
-    let writer = Writer::new(ctx.workspace, VERIFY_TURN);
+    let writer = Writer::new(&ctx.workspace, VERIFY_TURN);
     let mut tools = reference::tools();
     tools.extend(writer.tools());
     let question = granted(
         Question::<Verdict>::new(VERIFY_TURN)
             .system(prompt(docs, VERIFY)?)
             .tools(tools)
-            .workspace(ctx.workspace),
-        ctx.grants,
+            .workspace(&ctx.workspace),
+        &ctx.grants,
     )?;
     let brief = VerifyBrief {
-        adapter_id: ctx.adapter_id,
+        adapter_id: &ctx.adapter_id,
     };
 
     tracing::info!("verifying");
@@ -722,28 +809,24 @@ pub async fn call<A: TargetAdapter>(
     id: export::AdapterId, workspace: String, task: export::Task,
 ) -> Result<export::Outcome, export::Error> {
     let asked = emery_adapter::target::Task::from(task);
-    let metadata = A::metadata();
-    let task = match &asked {
-        emery_adapter::target::Task::Init => Task::Init(InitContext {
-            adapter_id: &id,
-            workspace: &workspace,
-        }),
-        emery_adapter::target::Task::Build(slice) => Task::Build(BuildContext {
-            adapter_id: &id,
-            slice,
-            workspace: &workspace,
-            grants: metadata.grants,
-            scaffold: None,
-        }),
-        emery_adapter::target::Task::Verify => Task::Verify(VerifyContext {
-            adapter_id: &id,
-            workspace: &workspace,
-            grants: metadata.grants,
-        }),
+    let label = asked.to_string();
+    let (accepts, task): (fn(&Outcome) -> bool, _) = match asked {
+        emery_adapter::target::Task::Init => (
+            |outcome| matches!(outcome, Outcome::Initialised),
+            Task::Init(InitContext::new(id, workspace)),
+        ),
+        emery_adapter::target::Task::Build(slice) => (
+            |outcome| matches!(outcome, Outcome::Built(_)),
+            Task::Build(BuildContext::new(id, workspace, slice).with_grants(A::metadata().grants)),
+        ),
+        emery_adapter::target::Task::Verify => (
+            |outcome| matches!(outcome, Outcome::Verified(_)),
+            Task::Verify(VerifyContext::new(id, workspace).with_grants(A::metadata().grants)),
+        ),
     };
     let outcome = A::run(task).await?;
-    if !outcome.answers(&asked) {
-        return Err(export::Error::Internal(format!("answered {outcome} to {asked}")));
+    if !accepts(&outcome) {
+        return Err(export::Error::Internal(format!("answered {outcome} to {label}")));
     }
     Ok(outcome.into())
 }
@@ -793,7 +876,7 @@ const TOOLS_RULE: &str = "`write_files` writes one or more files beneath `$WORKS
 struct Brief<'a> {
     adapter_id: &'a str,
     slice: &'a Slice,
-    scaffold: Option<Scaffold<'a>>,
+    scaffold: Option<&'a Scaffold>,
 }
 
 impl Display for Brief<'_> {
@@ -826,12 +909,12 @@ impl Display for Brief<'_> {
              The design, cut to this slice:\n\n{design}\n\n",
             plan = slice.plan.trim_end(),
             spec = slice.spec.trim_end(),
-            design = design::cut(slice, self.scaffold.as_ref()),
+            design = design::cut(slice, self.scaffold),
         )?;
 
         // what the adapter scaffolded before the turn, where it scaffolded
         // anything, and what it quotes for the turn
-        if let Some(scaffold) = &self.scaffold {
+        if let Some(scaffold) = self.scaffold {
             if let Some(brief) = scaffold.section() {
                 write!(
                     f,

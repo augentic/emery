@@ -77,17 +77,15 @@ const NEAREST: usize = 16;
 ///
 /// # Errors
 ///
-/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when `seams` is empty, a seam's file path
+/// - Returns [`ErrorKind::BadRequest`] when `seams` is empty, a seam's file path
 ///   is invalid, the model rejects the request, or no valid response is
 ///   produced within the available rounds or the backend's time budget.
-/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) when a seam names files or anchors over an
+/// - Returns [`ErrorKind::ServerError`] when a seam names files or anchors over an
 ///   inline value, a stem is not kebab-case, an anchor is outside the `path`
 ///   grammar, or `docs` does not contain `extract.md`.
-/// - Returns [`ErrorKind::BadGateway`](omnia_sdk::ErrorKind::BadGateway) when a model tool or transport fails on
+/// - Returns [`ErrorKind::BadGateway`] when a model tool or transport fails on
 ///   the retried request too.
-pub async fn extract(
-    ctx: &Context<'_>, docs: &'static [Doc], seams: &[Seam],
-) -> Result<Evidence, Error> {
+pub async fn extract(ctx: &Context, docs: &[Doc], seams: &[Seam]) -> Result<Evidence, Error> {
     let source = &ctx.input.name;
     if seams.is_empty() {
         return Err(bad_request!("`{source}`: nothing to extract"));
@@ -95,7 +93,7 @@ pub async fn extract(
 
     // settle every seam and the system before the first turn is spent
     let plans =
-        seams.iter().map(|seam| Plan::of(seam, ctx.input)).collect::<Result<Vec<_>, _>>()?;
+        seams.iter().map(|seam| Plan::of(seam, &ctx.input)).collect::<Result<Vec<_>, _>>()?;
     let system = format!("{}\n\n---\n\n{}", prompt(docs, EXTRACT)?, prompt(RUNTIME, CLAIMS)?);
 
     // one gated turn per seam, largest first, at most CONCURRENT pending
@@ -607,7 +605,7 @@ fn longest_run(body: &str) -> usize {
 // once, so the event carries the class alone.
 #[tracing::instrument(skip_all, fields(source = %ctx.input.name, seam = index))]
 async fn turn(
-    system: &str, ctx: &Context<'_>, docs: &'static [Doc], index: usize, plan: &Plan<'_>,
+    system: &str, ctx: &Context, docs: &[Doc], index: usize, plan: &Plan<'_>,
 ) -> Result<Evidence, Error> {
     let source = &ctx.input.name;
     let mut question = Question::<Evidence>::new(&format!("evidence-{source}-{index}"))
@@ -618,7 +616,7 @@ async fn turn(
     }
 
     let brief = Brief {
-        adapter_id: ctx.adapter_id,
+        adapter_id: &ctx.adapter_id,
         source,
         plan,
     };

@@ -120,8 +120,8 @@ impl<'a> Entry<'a> {
 ///
 /// # Errors
 ///
-/// - Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when an entry name is not UTF-8.
-/// - Returns [`ErrorKind::ServerError`](omnia_sdk::ErrorKind::ServerError) when the workspace cannot be read.
+/// - Returns [`ErrorKind::BadRequest`](crate::ErrorKind::BadRequest) when an entry name is not UTF-8.
+/// - Returns [`ErrorKind::ServerError`](crate::ErrorKind::ServerError) when the workspace cannot be read.
 pub fn list(root: &str, mut keep: impl FnMut(Entry<'_>) -> bool) -> Result<Vec<String>, Error> {
     let mut files = walk(Path::new(root), "", &mut keep)?;
     files.sort();

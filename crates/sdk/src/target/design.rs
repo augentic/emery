@@ -18,8 +18,8 @@ const MECHANISM: &str = " (mechanism)";
 // to a line naming it, one owned by no entry of the slice's `types` and
 // spelled by none of the slice's text left out and listed once at the end,
 // every mechanism type and every paragraph as the design holds them.
-pub fn cut(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> String {
-    let laid = scaffold.map_or(&[][..], |scaffold| scaffold.types);
+pub fn cut(slice: &Slice, scaffold: Option<&Scaffold>) -> String {
+    let laid = scaffold.map_or(&[][..], |scaffold| scaffold.types.as_slice());
     let spelled = spelled(slice, scaffold);
     let mut kept: Vec<Cow<'_, str>> = Vec::new();
     let mut left_out: Vec<&str> = Vec::new();
@@ -57,11 +57,11 @@ pub fn cut(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> String {
 // cut of the specification, the signatures of the types it owns, and the
 // scaffold's brief, never its passages, since a reference quoted for the
 // turn speaks of no type of this design.
-fn spelled(slice: &Slice, scaffold: Option<&Scaffold<'_>>) -> Vec<Vec<String>> {
+fn spelled(slice: &Slice, scaffold: Option<&Scaffold>) -> Vec<Vec<String>> {
     [slice.plan.as_str(), slice.spec.as_str()]
         .into_iter()
         .chain(slice.types.iter().map(|owned| owned.signature.as_str()))
-        .chain(scaffold.map(|scaffold| scaffold.brief))
+        .chain(scaffold.map(|scaffold| scaffold.brief.as_str()))
         .map(words)
         .collect()
 }

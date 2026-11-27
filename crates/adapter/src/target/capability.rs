@@ -1,13 +1,15 @@
 //! Records supplied to a target adapter and returned by its metadata export.
 
-use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
+
+use serde::{Deserialize, Serialize};
 
 use crate::Trigger;
 use crate::target::{Report, Verdict};
 
 /// What the engine asks a target adapter to do in the lent tree.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 #[cfg_attr(
     target_pointer_width = "64",
     expect(
@@ -47,7 +49,8 @@ impl Display for Task {
 /// [`Built`](Self::Built) answers [`Task::Build`], and
 /// [`Verified`](Self::Verified) answers [`Task::Verify`]; any other pairing
 /// is the adapter's defect, which [`answers`](Self::answers) tells.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Outcome {
     /// The tree holds the layout's initial files.
     Initialised,
@@ -90,7 +93,8 @@ impl Display for Outcome {
 /// `covered` is held to the requirement ids. [`name`](Self::name) and
 /// [`brief`](Self::brief) are the part's, and [`index`](Self::index) of
 /// [`count`](Self::count) places the slice within its part's cut.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Slice {
     /// The stable slice identifier, `SLICE-001`.
     pub id: String,
@@ -121,7 +125,8 @@ pub struct Slice {
 
 /// One requirement a slice builds, typed beside its rendering in the
 /// specification.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Requirement {
     /// The stable requirement identifier, `REQ-001`.
     pub id: String,
@@ -146,7 +151,8 @@ impl Requirement {
 }
 
 /// One acceptance scenario of a requirement.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Scenario {
     /// The scenario's heading.
     pub name: String,
@@ -161,7 +167,8 @@ pub struct Scenario {
 }
 
 /// One design type a slice owns, as the design carries it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct DesignType {
     /// The type's key, as the plan entry names it.
     pub key: String,
@@ -170,7 +177,8 @@ pub struct DesignType {
 }
 
 /// Metadata declared by a target adapter.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct TargetMetadata {
     /// The minimum compatible Emery version, if the adapter declares one.
     pub emery_version: Option<String>,
@@ -184,25 +192,24 @@ pub struct TargetMetadata {
 
 /// One rule for merging a slice into the integrated tree.
 ///
-/// An adapter spells its rules as a `const` slice through [`MergeRule::union`],
-/// [`MergeRule::ours`], and [`MergeRule::theirs`], so `paths` borrows a
-/// literal there and owns what the contract carries across. A conflict no
-/// rule resolves is the engine's to resolve with the model.
+/// Build rules with [`MergeRule::union`], [`MergeRule::ours`], and
+/// [`MergeRule::theirs`]. A conflict no rule resolves is resolved by the
+/// engine with the model.
 ///
 /// # Examples
 ///
 /// ```
 /// use emery_adapter::target::{MergeRule, MergeStrategy};
 ///
-/// const RULES: &[MergeRule] =
-///     &[MergeRule::ours("Cargo.lock"), MergeRule::union("src/*/index.ts")];
-/// assert_eq!(RULES[1].paths, "src/*/index.ts");
-/// assert_eq!(RULES[1].strategy, MergeStrategy::Union);
+/// let rules = [MergeRule::ours("Cargo.lock"), MergeRule::union("src/*/index.ts")];
+/// assert_eq!(rules[1].paths, "src/*/index.ts");
+/// assert_eq!(rules[1].strategy, MergeStrategy::Union);
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct MergeRule {
     /// A glob over paths relative to the tree root.
-    pub paths: Cow<'static, str>,
+    pub paths: String,
     /// How a conflict at a matching path is resolved.
     pub strategy: MergeStrategy,
 }
@@ -210,32 +217,33 @@ pub struct MergeRule {
 impl MergeRule {
     /// Returns a rule keeping both sides' lines at the paths `paths` matches.
     #[must_use]
-    pub const fn union(paths: &'static str) -> Self {
+    pub fn union(paths: impl Into<String>) -> Self {
         Self::new(paths, MergeStrategy::Union)
     }
 
     /// Returns a rule keeping the integrated tree's side at the paths `paths` matches.
     #[must_use]
-    pub const fn ours(paths: &'static str) -> Self {
+    pub fn ours(paths: impl Into<String>) -> Self {
         Self::new(paths, MergeStrategy::Ours)
     }
 
     /// Returns a rule keeping the slice's side at the paths `paths` matches.
     #[must_use]
-    pub const fn theirs(paths: &'static str) -> Self {
+    pub fn theirs(paths: impl Into<String>) -> Self {
         Self::new(paths, MergeStrategy::Theirs)
     }
 
-    const fn new(paths: &'static str, strategy: MergeStrategy) -> Self {
+    fn new(paths: impl Into<String>, strategy: MergeStrategy) -> Self {
         Self {
-            paths: Cow::Borrowed(paths),
+            paths: paths.into(),
             strategy,
         }
     }
 }
 
 /// How a merge resolves a conflict at a path a [`MergeRule`] matches.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum MergeStrategy {
     /// Both sides' lines kept, each once: declaration and import lists.
     Union,

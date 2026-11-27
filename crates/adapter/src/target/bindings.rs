@@ -22,7 +22,7 @@ mod generated {
         // the shared `types` are the source generation's, so one Rust type
         // stands for each of them on both axes
         with: {
-            "emery:adapter/types@0.1.0": crate::source::bindings::types,
+            "emery:adapter/types@0.1.0": crate::source::types,
         },
         // the world imports and exports one interface, so the export's
         // records alias the import's and one Rust type stands for each
@@ -33,7 +33,7 @@ mod generated {
 use omnia_sdk::{Error, bad_gateway, bad_request};
 
 use self::generated::emery::adapter::target as wit;
-use crate::source::bindings::types;
+use crate::source::types;
 use crate::target::{
     DesignType, MergeRule, MergeStrategy, Outcome, Report, Requirement, Scenario, Slice,
     TargetMetadata, Task, Verdict,
@@ -59,7 +59,7 @@ pub fn metadata(id: &str) -> TargetMetadata {
 // A failure names the adapter; the caller, which dispatches task by task,
 // names the slice or the wave.
 pub async fn run(id: &str, workspace: &str, task: &Task) -> Result<Outcome, Error> {
-    let outcome = wit::run(id.to_string(), workspace.to_string(), task.clone().into())
+    let outcome = wit::run(id.to_owned(), workspace.to_owned(), task.clone().into())
         .await
         .map_err(|err| match err {
             types::Error::InvalidRequest(detail) => bad_request!("adapter `{id}`: {detail}"),
@@ -91,7 +91,7 @@ impl From<wit::TargetMetadata> for TargetMetadata {
 impl From<MergeRule> for wit::MergeRule {
     fn from(rule: MergeRule) -> Self {
         Self {
-            paths: rule.paths.into_owned(),
+            paths: rule.paths,
             strategy: rule.strategy.into(),
         }
     }
@@ -100,7 +100,7 @@ impl From<MergeRule> for wit::MergeRule {
 impl From<wit::MergeRule> for MergeRule {
     fn from(rule: wit::MergeRule) -> Self {
         Self {
-            paths: rule.paths.into(),
+            paths: rule.paths,
             strategy: rule.strategy.into(),
         }
     }

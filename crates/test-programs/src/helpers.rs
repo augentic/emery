@@ -100,32 +100,17 @@ pub fn seam(spec: &SeamSpec) -> Seam {
     }
 }
 
-/// Leaks `specs` into a `'static` slice of [`Grant`]s for a one-shot driver run.
+/// Converts `specs` into owned [`Grant`]s for a driver run.
 #[must_use]
-pub fn leak_grants(specs: &[GrantSpec]) -> &'static [Grant] {
-    if specs.is_empty() {
-        return &[];
-    }
-    let grants: Vec<Grant> = specs
+pub fn leak_grants(specs: &[GrantSpec]) -> Vec<Grant> {
+    specs
         .iter()
-        .map(|spec| {
-            let egress: Vec<&'static str> =
-                spec.egress.iter().map(|host| &*host.clone().leak()).collect();
-            let read: Vec<&'static str> =
-                spec.read.iter().map(|root| &*root.clone().leak()).collect();
-            let env: Vec<(&'static str, &'static str)> = spec
-                .env
-                .iter()
-                .map(|(name, value)| (&*name.clone().leak(), &*value.clone().leak()))
-                .collect();
-            Grant {
-                egress: egress.leak(),
-                read: read.leak(),
-                env: env.leak(),
-            }
+        .map(|spec| Grant {
+            egress: spec.egress.clone(),
+            read: spec.read.clone(),
+            env: spec.env.clone(),
         })
-        .collect();
-    grants.leak()
+        .collect()
 }
 
 /// The survey check callback named by the scenario.
@@ -279,19 +264,14 @@ fn design_type(spec: &DesignTypeSpec) -> DesignType {
     }
 }
 
-/// Leaks a [`ScaffoldSpec`] into a `'static` [`Scaffold`] for one driver run.
+/// Converts a [`ScaffoldSpec`] into an owned [`Scaffold`] for one driver run.
 #[must_use]
-pub fn leak_scaffold(spec: &ScaffoldSpec) -> Scaffold<'static> {
-    let brief: &'static str = spec.brief.clone().leak();
-    let passages: &'static str = spec.passages.clone().leak();
-    let types: &'static [String] = spec.types.clone().leak();
-    let files: Vec<Guarded> = spec.files.iter().map(guarded).collect();
-    let files: &'static [Guarded] = files.leak();
+pub fn leak_scaffold(spec: &ScaffoldSpec) -> Scaffold {
     Scaffold {
-        brief,
-        passages,
-        files,
-        types,
+        brief: spec.brief.clone(),
+        passages: spec.passages.clone(),
+        files: spec.files.iter().map(guarded).collect(),
+        types: spec.types.clone(),
     }
 }
 

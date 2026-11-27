@@ -22,10 +22,7 @@ async fn run() {
 
 async fn run_surfaces(scenario: &SurveyScenario) {
     let input = source_input(&scenario.input);
-    let ctx = Context {
-        adapter_id: scenario.adapter_id.as_str(),
-        input: &input,
-    };
+    let ctx = Context::new(&scenario.adapter_id, input);
     let facts = Facts {
         modules: &scenario.facts.modules,
         text: &scenario.facts.text,

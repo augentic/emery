@@ -4,7 +4,6 @@
 //! run; guests read it without modifying it and record dispatches and queue
 //! consumption as separate files beneath per-purpose subdirectories.
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use emery_adapter::source::{
@@ -266,7 +265,7 @@ impl RuleWire {
     /// Converts this wire form to a contract [`MergeRule`].
     pub fn to_merge_rule(&self) -> MergeRule {
         MergeRule {
-            paths: Cow::Owned(self.paths.clone()),
+            paths: self.paths.clone(),
             strategy: match self.strategy.as_str() {
                 "ours" => MergeStrategy::Ours,
                 "theirs" => MergeStrategy::Theirs,
@@ -279,7 +278,7 @@ impl RuleWire {
 impl From<&MergeRule> for RuleWire {
     fn from(rule: &MergeRule) -> Self {
         Self {
-            paths: rule.paths.to_string(),
+            paths: rule.paths.clone(),
             strategy: match rule.strategy {
                 MergeStrategy::Union => "union",
                 MergeStrategy::Ours => "ours",

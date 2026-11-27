@@ -5,7 +5,6 @@
 mod support;
 
 use std::fs;
-use std::num::NonZeroU32;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 
@@ -46,7 +45,7 @@ async fn ask_scaffolded(
 }
 
 async fn ask_guarded(
-    project: &Scratch, model: &ScriptedModel, slice: &Slice, scaffold: Scaffold<'_>,
+    project: &Scratch, model: &ScriptedModel, slice: &Slice, scaffold: Scaffold,
 ) -> emery_adapter::target::Report {
     let mut scenario = scenario_for(slice);
     scenario.scaffold = Some(scaffold_spec(scaffold));
@@ -195,14 +194,14 @@ async fn request_shape() {
 // rules and default slice budget beside the SDK's version pin.
 #[test]
 fn target_metadata() {
-    const RULES: &[MergeRule] = &[MergeRule::ours("Cargo.lock")];
+    let rules = vec![MergeRule::ours("Cargo.lock")];
     let declared = Metadata {
-        rules: RULES,
-        grants: &[],
-        budget: NonZeroU32::new(12),
+        rules: rules.clone(),
+        grants: Vec::new(),
+        budget: Some(12),
     };
     let lowered = TargetMetadata::from(declared);
-    assert_eq!(lowered, metadata(RULES, NonZeroU32::new(12)));
+    assert_eq!(lowered, metadata(rules, Some(12)));
     assert_eq!(lowered.emery_version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
     assert_eq!(lowered.merge_rules, [MergeRule::ours("Cargo.lock")]);
     assert_eq!(lowered.budget, Some(12));
@@ -293,12 +292,11 @@ async fn design_cut_scaffolded() {
     seed(project.path(), ["src/orders.rs", "Cargo.toml"]);
     let model = ScriptedModel::answering([VALID]);
     let slice = designed();
-    let types = ["orders.order".to_owned(), "start.Config".to_owned()];
     let scaffold = Scaffold {
-        brief: "- `src/orders.rs`: scaffolded, `Order` laid; an `Invoice` is read as a value.\n",
-        passages: "",
-        files: &[],
-        types: &types,
+        brief: "- `src/orders.rs`: scaffolded, `Order` laid; an `Invoice` is read as a value.\n"
+            .to_owned(),
+        types: vec!["orders.order".to_owned(), "start.Config".to_owned()],
+        ..Scaffold::default()
     };
 
     ask_guarded(&project, &model, &slice, scaffold).await;
@@ -330,13 +328,13 @@ async fn design_cut_passages() {
     seed(project.path(), ["src/orders.rs", "Cargo.toml"]);
     let model = ScriptedModel::answering([VALID]);
     let slice = designed();
-    let files = [Guarded::new("src/orders.rs", ["REQ-001"])];
     let scaffold = Scaffold {
-        brief: "- `src/orders.rs`: scaffolded\n",
+        brief: "- `src/orders.rs`: scaffolded\n".to_owned(),
         passages: "From the references, for this slice:\n\n## A probe\n\nAn `Invoice` is read as \
-                   a value and answered whole.\n",
-        files: &files,
-        types: &[],
+                   a value and answered whole.\n"
+            .to_owned(),
+        files: vec![Guarded::new("src/orders.rs", ["REQ-001"])],
+        ..Scaffold::default()
     };
 
     ask_guarded(&project, &model, &slice, scaffold).await;
@@ -436,15 +434,13 @@ async fn write_scaffolded_drop() {
                     write_files(&[("src/lib.rs", "pub mod orders;\n")]),
                 ],
             );
-    let files = [
-        Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"]),
-        Guarded::new("Cargo.toml", Vec::<String>::new()),
-    ];
     let scaffold = Scaffold {
-        brief: "- `src/orders.rs`: scaffolded\n- `Cargo.toml`: held\n",
-        passages: "",
-        files: &files,
-        types: &[],
+        brief: "- `src/orders.rs`: scaffolded\n- `Cargo.toml`: held\n".to_owned(),
+        files: vec![
+            Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"]),
+            Guarded::new("Cargo.toml", Vec::<String>::new()),
+        ],
+        ..Scaffold::default()
     };
 
     let report = ask_guarded(&project, &model, &slice(), scaffold).await;
@@ -525,17 +521,15 @@ async fn write_scaffolded_kept() {
                     write_files(&[("src/lib.rs", "pub mod orders;\npub mod billing;\n")]),
                 ],
             );
-    let files = [
-        Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"]),
-        Guarded::new("src/orders/mod.rs", ["pub struct Order"]),
-        Guarded::new("Cargo.toml", Vec::<String>::new()),
-        Guarded::new("src/lib.rs", tokens),
-    ];
     let scaffold = Scaffold {
-        brief: "- `src/orders.rs`: scaffolded\n",
-        passages: "",
-        files: &files,
-        types: &[],
+        brief: "- `src/orders.rs`: scaffolded\n".to_owned(),
+        files: vec![
+            Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"]),
+            Guarded::new("src/orders/mod.rs", ["pub struct Order"]),
+            Guarded::new("Cargo.toml", Vec::<String>::new()),
+            Guarded::new("src/lib.rs", tokens),
+        ],
+        ..Scaffold::default()
     };
 
     let report = ask_guarded(&project, &model, &slice(), scaffold).await;
@@ -606,12 +600,10 @@ async fn write_scaffolded_edit() {
                 ),
             ],
         );
-    let files = [Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"])];
     let scaffold = Scaffold {
-        brief: "- `src/orders.rs`: scaffolded\n",
-        passages: "",
-        files: &files,
-        types: &[],
+        brief: "- `src/orders.rs`: scaffolded\n".to_owned(),
+        files: vec![Guarded::new("src/orders.rs", ["pub fn create", "REQ-001 orders.create"])],
+        ..Scaffold::default()
     };
 
     let report = ask_guarded(&project, &model, &slice(), scaffold).await;
@@ -647,24 +639,17 @@ async fn write_scaffolded_edit() {
 // host's to apply.
 #[tokio::test]
 async fn worker_grant() {
-    const CARGO: Grant = Grant {
-        egress: &["index.crates.io", "static.crates.io"],
-        read: &["~/.cargo/bin"],
-        env: &[],
-    };
-    const RUSTUP: Grant = Grant {
-        egress: &[],
-        read: &["~/.rustup", "~/.cargo/bin"],
-        env: &[("RUSTUP_HOME", "~/.rustup")],
-    };
-    const GRANTS: &[Grant] = &[CARGO, RUSTUP];
+    let grants = [
+        Grant::new().egress(["index.crates.io", "static.crates.io"]).read(["~/.cargo/bin"]),
+        Grant::new().read(["~/.rustup", "~/.cargo/bin"]).env([("RUSTUP_HOME", "~/.rustup")]),
+    ];
     let project = scratch();
 
     seed(project.path(), ["src/orders.rs", "Cargo.toml"]);
     let model = ScriptedModel::answering([VALID]);
     let slice = slice();
 
-    ask_as(&project, &model, &slice, GRANTS).await;
+    ask_as(&project, &model, &slice, &grants).await;
 
     let seen = model.seen();
     assert_eq!(seen.len(), 1);
@@ -1165,10 +1150,9 @@ async fn edit_marker_key() {
         )]),
     ];
     let scaffold = Scaffold {
-        brief: "- `src/orders.rs`: scaffolded\n- `tests/orders.rs`: scaffolded\n",
-        passages: "",
-        files: &files,
-        types: &[],
+        brief: "- `src/orders.rs`: scaffolded\n- `tests/orders.rs`: scaffolded\n".to_owned(),
+        files: files.into(),
+        ..Scaffold::default()
     };
 
     let report = ask_guarded(&project, &model, &slice(), scaffold).await;
@@ -1226,10 +1210,9 @@ async fn edit_marker_scoped() {
         Guarded::new("tests/orders.rs", Vec::<String>::new()),
     ];
     let scaffold = Scaffold {
-        brief: "- `src/orders.rs`: scaffolded\n- `tests/orders.rs`: scaffolded\n",
-        passages: "",
-        files: &files,
-        types: &[],
+        brief: "- `src/orders.rs`: scaffolded\n- `tests/orders.rs`: scaffolded\n".to_owned(),
+        files: files.into(),
+        ..Scaffold::default()
     };
 
     let report = ask_guarded(&project, &model, &slice(), scaffold).await;

@@ -31,8 +31,8 @@
 //!         Metadata { kind: KIND }
 //!     }
 //!
-//!     async fn extract(ctx: &Context<'_>) -> Result<Evidence, Error> {
-//!         let seams = survey(ctx.input)?;
+//!     async fn extract(ctx: &Context) -> Result<Evidence, Error> {
+//!         let seams = survey(&ctx.input)?;
 //!         emery_sdk::extract(ctx, PROSE, &seams).await
 //!     }
 //! }
@@ -83,11 +83,16 @@ pub use emery_adapter::{
 };
 pub use emery_lexicon::{Lexicon, words};
 pub use emery_prose::{Doc, body, check, find, prose};
-pub use omnia_sdk::{Error, bad_gateway, bad_request, not_found, server_error};
+pub use omnia_sdk::{Error, ErrorKind, bad_gateway, bad_request, not_found, server_error};
 pub use serde_json;
 pub use tracing;
 
 pub use self::extract::{CONCURRENT, INLINE_BYTES, Seam, extract};
+
+/// Host dispatch to a loaded source adapter through [`emery_adapter::source`].
+pub mod capability {
+    pub use emery_adapter::source::{extract, metadata};
+}
 
 /// The runtime references every source adapter prompt may link.
 ///
@@ -201,11 +206,7 @@ macro_rules! export_target {
 pub async fn call<A: SourceAdapter>(
     id: export::AdapterId, input: export::Input,
 ) -> Result<export::Evidence, export::Error> {
-    let input = SourceInput::from(input);
-    let ctx = Context {
-        adapter_id: &id,
-        input: &input,
-    };
+    let ctx = Context::new(id, SourceInput::from(input));
     Ok(A::extract(&ctx).await?.into())
 }
 
@@ -213,13 +214,13 @@ pub async fn call<A: SourceAdapter>(
 ///
 /// [`export_source!`] answers the component's `metadata` with it over the
 /// adapter's [`Metadata::kind`]. The `emery-version` pin is this SDK's own
-/// version, identifying the contract the adapter compiled against. Build an
+/// version, identifying the contract the adapter compiled against. Build a
 /// [`SourceMetadata`] directly only when the adapter must loosen or tighten
 /// that pin.
 #[must_use]
 pub fn metadata(kind: SourceKind) -> SourceMetadata {
     SourceMetadata {
-        emery_version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        emery_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
         kind,
     }
 }
@@ -285,20 +286,32 @@ pub fn unique<T: Ord>(items: impl IntoIterator<Item = T>) -> Vec<T> {
 ///
 /// [`extract`](fn@extract) takes it; each turn reaches the host model through
 /// Omnia's `model` interface.
-#[derive(Clone, Copy, Debug)]
-pub struct Context<'a> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Context {
     /// The identifier used to address the adapter.
-    pub adapter_id: &'a str,
+    pub adapter_id: String,
     /// The [`SourceInput`] identifying the source and its content.
-    pub input: &'a SourceInput,
+    pub input: SourceInput,
+}
+
+impl Context {
+    /// Returns a context for `adapter_id` reading `input`.
+    #[must_use]
+    pub fn new(adapter_id: impl Into<String>, input: SourceInput) -> Self {
+        Self {
+            adapter_id: adapter_id.into(),
+            input,
+        }
+    }
 }
 
 /// What a source adapter declares about itself: the kind of source it reads.
 ///
-/// [`SourceAdapter::metadata`] answers it from the adapter's compiled-in
-/// constants, and [`export_source!`] answers the component's `metadata`
-/// over its [`kind`](Self::kind).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// [`SourceAdapter::metadata`] answers it without model or filesystem access,
+/// and [`export_source!`] answers the component's `metadata` over its
+/// [`kind`](Self::kind).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Metadata {
     /// The kind of source the adapter reads, which ranks its evidence against
     /// other sources'.
@@ -313,8 +326,7 @@ pub trait SourceAdapter {
     /// Returns what the adapter declares about itself: the kind of source it
     /// reads.
     ///
-    /// Answered from compiled-in constants, with no model call and no
-    /// filesystem access.
+    /// Answered without model calls or filesystem access.
     #[must_use]
     fn metadata() -> Metadata;
 
@@ -325,9 +337,9 @@ pub trait SourceAdapter {
     ///
     /// # Errors
     ///
-    /// Returns [`ErrorKind::BadRequest`](omnia_sdk::ErrorKind::BadRequest) when the adapter refuses its input, and
-    /// what [`extract`](fn@extract) returns otherwise.
-    fn extract(ctx: &Context<'_>) -> impl Future<Output = Result<Evidence, Error>>;
+    /// Returns [`ErrorKind::BadRequest`] when the adapter refuses its input,
+    /// and what [`extract`](fn@extract) returns otherwise.
+    fn extract(ctx: &Context) -> impl Future<Output = Result<Evidence, Error>>;
 }
 
 // Each item in backticks, comma-separated.

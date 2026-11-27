@@ -9,12 +9,14 @@
 //! by an adapter.
 
 #[cfg(target_arch = "wasm32")]
-pub(crate) mod bindings;
+mod bindings;
 mod capability;
 mod evidence;
 
 #[cfg(target_arch = "wasm32")]
 pub use bindings::export;
+#[cfg(target_arch = "wasm32")]
+pub(crate) use bindings::types;
 pub use capability::{SourceContent, SourceInput, SourceMetadata};
 pub use evidence::{
     Anchor, Backing, BadAnchor, CLAIM_ID_REGEX, Claim, ClaimKind, Evidence, SourceKind,
