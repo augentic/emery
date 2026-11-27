@@ -18,8 +18,7 @@
 use anyhow::Context;
 use omnia_sdk::blobstore::{self, Container};
 use omnia_sdk::keyvalue::types::{Precondition, Revision as StoreRevision};
-use omnia_sdk::keyvalue::{self, Bucket};
-use omnia_sdk::{Error, ErrorKind, server_error};
+use omnia_sdk::{Error, ErrorKind, keyvalue, server_error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -29,7 +28,7 @@ use crate::revision::{
 use crate::vcs::{BuildRepo, REVISION, RevisionMessage, SPECIFICATION, Summary, WorkingCopy};
 use crate::{EntryKind, files, secrets};
 
-/// What the default key-value bucket last held at a key, for a conditional write.
+// What the default key-value bucket last held at a key, for a conditional write.
 struct KeyEntry {
     value: Option<Vec<u8>>,
     revision: Option<StoreRevision>,
@@ -42,10 +41,52 @@ impl KeyEntry {
             revision: None,
         }
     }
-}
 
-async fn bucket() -> Result<Bucket, Error> {
-    keyvalue::default().await
+    async fn read(key: &str, unreadable: &str) -> Self {
+        let entry = match keyvalue::default().await {
+            Ok(bucket) => bucket.get(key.to_owned()).await.map_err(Error::from),
+            Err(error) => Err(error),
+        };
+        match entry {
+            Ok(Some(entry)) => Self {
+                value: Some(entry.value),
+                revision: Some(entry.revision),
+            },
+            Ok(None) => Self::empty(),
+            Err(error) => {
+                tracing::warn!(%error, "{unreadable}");
+                Self::empty()
+            }
+        }
+    }
+
+    async fn staged() -> Self {
+        Self::read(STAGED_KEY, "the staged record is unreadable").await
+    }
+
+    async fn revision() -> Self {
+        Self::read(REVISION_KEY, "the current revision id is unreadable").await
+    }
+
+    fn bytes(&self) -> Option<&[u8]> {
+        self.value.as_deref()
+    }
+
+    fn precondition(&self) -> Precondition {
+        self.revision
+            .as_ref()
+            .map_or(Precondition::Absent, |revision| Precondition::Matches(revision.clone()))
+    }
+
+    async fn swap(&self, key: &str, value: &[u8], what: &str) -> Result<(), Error> {
+        let bucket = keyvalue::default().await?;
+        bucket
+            .compare_and_swap(key, self.revision.clone(), value, None)
+            .await
+            .with_context(|| what.to_owned())?
+            .map_err(|_conflict| server_error!("{what}: another writer changed the entry first"))?;
+        Ok(())
+    }
 }
 
 async fn open_staged() -> Result<Container, Error> {
@@ -53,51 +94,6 @@ async fn open_staged() -> Result<Container, Error> {
         blobstore::open(STAGED_CONTAINER).await
     } else {
         blobstore::create(STAGED_CONTAINER).await
-    }
-}
-
-async fn staged_key() -> KeyEntry {
-    match bucket().await {
-        Ok(bucket) => key_entry(&bucket, STAGED_KEY, "the staged record is unreadable").await,
-        Err(error) => {
-            tracing::warn!(%error, "the staged record is unreadable");
-            KeyEntry::empty()
-        }
-    }
-}
-
-async fn revision_key() -> KeyEntry {
-    match bucket().await {
-        Ok(bucket) => {
-            key_entry(&bucket, REVISION_KEY, "the current revision id is unreadable").await
-        }
-        Err(error) => {
-            tracing::warn!(%error, "the current revision id is unreadable");
-            KeyEntry::empty()
-        }
-    }
-}
-
-async fn key_entry(bucket: &Bucket, key: &str, unreadable: &'static str) -> KeyEntry {
-    match bucket.get(key.to_owned()).await {
-        Ok(Some(entry)) => KeyEntry {
-            value: Some(entry.value),
-            revision: Some(entry.revision),
-        },
-        Ok(None) => KeyEntry::empty(),
-        Err(error) => {
-            tracing::warn!(%error, "{unreadable}");
-            KeyEntry::empty()
-        }
-    }
-}
-
-async fn cas_bytes(
-    bucket: &Bucket, key: &str, entry: &KeyEntry, value: &[u8], what: &'static str,
-) -> Result<(), Error> {
-    match bucket.compare_and_swap(key, entry.revision.clone(), value, None).await.context(what)? {
-        Ok(_) => Ok(()),
-        Err(_conflict) => Err(server_error!("{what}: another writer changed the entry first")),
     }
 }
 
@@ -175,7 +171,7 @@ impl Slot {
 
     // Fails closed on bytes that decode as no record.
     async fn read() -> Result<Option<Self>, Error> {
-        let bucket = bucket().await?;
+        let bucket = keyvalue::default().await?;
         let Some(raw) = bucket.read(STAGED_KEY).await.context("getting the staged record")? else {
             return Ok(None);
         };
@@ -186,19 +182,19 @@ impl Slot {
         Ok(serde_json::from_slice(raw).context("decoding the staged record")?)
     }
 
-    fn from_token(token: Option<&[u8]>) -> Option<Self> {
-        token.and_then(|raw| Self::decode(raw).ok())
+    fn from_entry(entry: &KeyEntry) -> Option<Self> {
+        entry.bytes().and_then(|raw| Self::decode(raw).ok())
     }
 
-    fn no_amendment(token: Option<&[u8]>) -> Result<(), Error> {
-        match Self::from_token(token) {
+    fn no_amendment(entry: &KeyEntry) -> Result<(), Error> {
+        match Self::from_entry(entry) {
             Some(slot) if slot.kind == StagedKind::Amendment => Err(amendment_pending(&slot.id)),
             Some(_) | None => Ok(()),
         }
     }
 
-    fn no_candidate(token: Option<&[u8]>) -> Result<(), Error> {
-        match Self::from_token(token) {
+    fn no_candidate(entry: &KeyEntry) -> Result<(), Error> {
+        match Self::from_entry(entry) {
             Some(slot) if slot.kind == StagedKind::Revision => Err(candidate_pending(&slot.id)),
             Some(_) | None => Ok(()),
         }
@@ -208,26 +204,15 @@ impl Slot {
     // and prunes the candidate it displaced, bytes that decode as no record
     // naming none.
     async fn swap(self, entry: &KeyEntry) -> Result<(), Error> {
-        let bucket = bucket().await?;
-        let when = entry
-            .revision
-            .as_ref()
-            .map_or(Precondition::Absent, |revision| Precondition::Matches(revision.clone()));
-        match bucket
-            .set_json_if(STAGED_KEY, &self, None, when)
+        let bucket = keyvalue::default().await?;
+        bucket
+            .set_json_if(STAGED_KEY, &self, None, entry.precondition())
             .await
             .context("swapping the staged record")?
-        {
-            Ok(_) => {}
-            Err(_conflict) => {
-                return Err(server_error!(
-                    "swapping the staged record: another writer changed the entry first"
-                ));
-            }
-        }
-        if let Some(slot) =
-            Self::from_token(entry.value.as_deref()).filter(|slot| slot.id != self.id)
-        {
+            .map_err(|_conflict| {
+                server_error!("swapping the staged record: another writer changed the entry first")
+            })?;
+        if let Some(slot) = Self::from_entry(entry).filter(|slot| slot.id != self.id) {
             prune(&slot.id, slot.kind).await;
         }
         Ok(())
@@ -408,7 +393,7 @@ impl Current {
         repo: &BuildRepo, commit: &str, expect: Option<&str>,
     ) -> Result<Option<Self>, Error> {
         let copy = WorkingCopy::cut(&repo.path(), REVISION, commit).await?;
-        let current = Self::read_tree(copy.path(), commit, expect).await;
+        let current = Self::read_tree(copy.path(), commit, expect);
         copy.remove().await?;
         current
     }
@@ -421,10 +406,8 @@ impl Current {
     // read as one revision are that revision whatever label the repository
     // holds for them, since a clone reads no remote's label and an operator
     // may delete a merged one.
-    async fn read_tree(
-        at: &str, commit: &str, expect: Option<&str>,
-    ) -> Result<Option<Self>, Error> {
-        match Occupancy::of(at).await? {
+    fn read_tree(at: &str, commit: &str, expect: Option<&str>) -> Result<Option<Self>, Error> {
+        match Occupancy::of(at)? {
             Occupancy::Absent => {
                 return expect.map_or(Ok(None), |id| {
                     Err(mismatch(format!(
@@ -441,9 +424,9 @@ impl Current {
                 )));
             }
         }
-        let spec = files::read(at, &path(Spec::NAME)).await?;
-        let design = files::read(at, &path(Design::NAME)).await?;
-        let plan = files::read(at, &path(Plan::NAME)).await?;
+        let spec = files::read(at, &path(Spec::NAME))?;
+        let design = files::read(at, &path(Design::NAME))?;
+        let plan = files::read(at, &path(Plan::NAME))?;
         let id = Revision::identify(&spec, &design, &plan);
         if let Some(expected) = expect.filter(|expected| *expected != id) {
             return Err(mismatch(format!(
@@ -489,8 +472,8 @@ impl Occupancy {
 
     // What stands at `spec/` beneath `at`: nothing, exactly the three
     // documents as files, or something else, named.
-    async fn of(at: &str) -> Result<Self, Error> {
-        let root = files::list(at, ".").await?;
+    fn of(at: &str) -> Result<Self, Error> {
+        let root = files::list(at, ".")?;
         let Some(entry) = root.into_iter().find(|entry| entry.name == SPECIFICATION) else {
             return Ok(Self::Absent);
         };
@@ -499,8 +482,7 @@ impl Occupancy {
             EntryKind::File => return Ok(Self::Other("a file".to_owned())),
             EntryKind::Link => return Ok(Self::Other("a symbolic link".to_owned())),
         }
-        let mut names: Vec<String> = files::list(at, SPECIFICATION)
-            .await?
+        let mut names: Vec<String> = files::list(at, SPECIFICATION)?
             .into_iter()
             .map(|entry| match entry.kind {
                 EntryKind::File => entry.name,
@@ -552,8 +534,7 @@ pub struct Standing {
     pub behind: Option<String>,
     // The pointer as read, for the compare-and-swap; absent when storage
     // could not be read too, so the swap fails closed against a present key.
-    pointer: Option<Vec<u8>>,
-    pointer_revision: Option<StoreRevision>,
+    pointer: KeyEntry,
 }
 
 impl Standing {
@@ -623,8 +604,8 @@ pub struct Sealed {
 // amendment is never displaced: it is `amendment-pending`, read before any
 // document is written.
 pub async fn stage(revision: &Revision, fresh: bool) -> Result<String, Error> {
-    let entry = staged_key().await;
-    Slot::no_amendment(entry.value.as_deref())?;
+    let entry = KeyEntry::staged().await;
+    Slot::no_amendment(&entry)?;
 
     let (id, documents) = revision.documents()?;
     let bodies = documents.each_ref().map(|(name, body)| (*name, body.as_str()));
@@ -640,8 +621,8 @@ pub async fn stage(revision: &Revision, fresh: bool) -> Result<String, Error> {
 // displaced: it is `amendment-pending`, read before any document is
 // written.
 pub async fn stage_amendment(amendment: &Amendment) -> Result<String, Error> {
-    let entry = staged_key().await;
-    Slot::no_candidate(entry.value.as_deref())?;
+    let entry = KeyEntry::staged().await;
+    Slot::no_candidate(&entry)?;
 
     let body = amendment.to_json()?;
     let id = Amendment::identify(body.as_bytes());
@@ -720,16 +701,14 @@ pub async fn staged_amendment() -> Result<Option<StagedAmendment>, Error> {
 // as `stage` does: a record that does not decode is corruption the stage
 // swaps over, never a refusal.
 pub async fn no_amendment() -> Result<(), Error> {
-    let entry = staged_key().await;
-    Slot::no_amendment(entry.value.as_deref())
+    Slot::no_amendment(&KeyEntry::staged().await)
 }
 
 // Refuses `amendment-pending` when a revision candidate is staged, so a verb
 // that stages an amendment refuses before it spends a turn on one; the slot
 // is read as `no_amendment` reads it.
 pub async fn no_candidate() -> Result<(), Error> {
-    let entry = staged_key().await;
-    Slot::no_candidate(entry.value.as_deref())
+    Slot::no_candidate(&KeyEntry::staged().await)
 }
 
 // Removes the staged candidate, documents and record, whatever its kind;
@@ -738,7 +717,7 @@ pub async fn clear() -> Result<(), Error> {
     let Some(Slot { id, kind, .. }) = Slot::read().await? else {
         return Ok(());
     };
-    let bucket = bucket().await?;
+    let bucket = keyvalue::default().await?;
     bucket.remove(STAGED_KEY).await.context("clearing the staged candidate")?;
     prune(&id, kind).await;
     Ok(())
@@ -754,23 +733,19 @@ pub async fn clear() -> Result<(), Error> {
 // head holds documents that read as no revision or as no one revision's,
 // and `spec-outdated` on one under another grammar.
 pub async fn current(repo: &BuildRepo) -> Result<Standing, Error> {
-    let KeyEntry {
-        value: pointer,
-        revision: pointer_revision,
-    } = revision_key().await;
+    let pointer = KeyEntry::revision().await;
     let Some(head) = repo.head().await? else {
         return Ok(Standing {
             head: None,
             current: None,
             behind: None,
             pointer,
-            pointer_revision,
         });
     };
 
     // the label the pointer names, where it stands over the head
     let mut behind = None;
-    let named = pointer.as_deref().and_then(|pointer| str::from_utf8(pointer).ok());
+    let named = pointer.bytes().and_then(|raw| str::from_utf8(raw).ok());
     if let Some(id) = named {
         let label = label(id);
         match repo.labelled(&label).await? {
@@ -781,7 +756,6 @@ pub async fn current(repo: &BuildRepo) -> Result<Standing, Error> {
                     current,
                     behind: None,
                     pointer,
-                    pointer_revision,
                 });
             }
             Some(commit) => {
@@ -799,7 +773,6 @@ pub async fn current(repo: &BuildRepo) -> Result<Standing, Error> {
         current,
         behind,
         pointer,
-        pointer_revision,
     })
 }
 
@@ -851,19 +824,10 @@ pub async fn commit(
     let commit = sealed?;
 
     // the pointer, then the candidate the seal consumed
-    let bucket = bucket().await?;
-    let pointer = KeyEntry {
-        value: standing.pointer,
-        revision: standing.pointer_revision,
-    };
-    cas_bytes(
-        &bucket,
-        REVISION_KEY,
-        &pointer,
-        message.revision.as_bytes(),
-        "swapping the revision id",
-    )
-    .await?;
+    standing
+        .pointer
+        .swap(REVISION_KEY, message.revision.as_bytes(), "swapping the revision id")
+        .await?;
     clear().await?;
     Ok(Sealed {
         label: label(&message.revision),
@@ -881,7 +845,7 @@ async fn seal_copy(
 ) -> Result<String, Error> {
     let at = copy.path();
     let over = message.base.as_deref();
-    if let Occupancy::Other(what) = Occupancy::of(at).await? {
+    if let Occupancy::Other(what) = Occupancy::of(at)? {
         return Err(mismatch(format!(
             "`{SPECIFICATION}/` at {} holds {what}, so the directory is the operator's and the \
              specification cannot live there",
@@ -889,12 +853,12 @@ async fn seal_copy(
         )));
     }
     for (name, body) in documents {
-        files::write(at, &path(name), body.as_bytes()).await?;
+        files::write(at, &path(name), body.as_bytes())?;
     }
 
     // what changed, held to the secret gate and sealed
     let pending = copy.pending().await?;
-    let leaks = secrets::findings(at, &pending).await?;
+    let leaks = secrets::findings(at, &pending)?;
     if !leaks.is_empty() {
         return Err(secrets::refusal("the seal", &leaks));
     }
@@ -937,8 +901,8 @@ pub async fn not_generated(standing: &Standing) -> Error {
     Error::not_found("spec-not-generated", clauses.join("; "))
 }
 
-// The `build-target-required` refusal of `verb`, which reads or seals the
-// current revision and was given no target naming the repository it lives in.
+/// Returns the `build-target-required` refusal for `verb` when no `[target]` names a repository.
+#[must_use]
 pub fn target_required(verb: &str) -> Error {
     Error::bad_request(
         "build-target-required",

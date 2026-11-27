@@ -5,7 +5,6 @@
 //! wrote them, and seals and merges the resolutions; the brief holds every
 //! answer to one whole file per path, free of conflict markers.
 
-use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 
@@ -55,8 +54,8 @@ impl UnresolvedMerge<'_> {
         // each path a text file on both sides, read before any turn is spent
         let mut conflicts = Vec::with_capacity(self.paths.len());
         for path in &self.paths {
-            let integrated = self.side(run.integration, path, Side::Integrated).await?;
-            let slice = self.side(worktree, path, Side::Slice).await?;
+            let integrated = self.side(run.integration, path, Side::Integrated)?;
+            let slice = self.side(worktree, path, Side::Slice)?;
             conflicts.push(Conflict {
                 path: path.clone(),
                 integrated,
@@ -111,10 +110,10 @@ impl UnresolvedMerge<'_> {
         for file in &resolutions {
             let path = beneath(&file.path)
                 .map_err(|bad| server_error!("the resolution at `{}` {bad}", file.path))?;
-            files::write(worktree.path(), &path, file.content.as_bytes()).await?;
+            files::write(worktree.path(), &path, file.content.as_bytes())?;
         }
         let pending = worktree.pending().await?;
-        gated(worktree.path(), "the merge's resolution", &pending).await?;
+        gated(worktree.path(), "the merge's resolution", &pending)?;
         let mut resolved: Vec<String> = resolutions.into_iter().map(|file| file.path).collect();
         resolved.sort_unstable();
         let subject = format!("{id} {} resolved at {}", part.name, resolved.join(", "));
@@ -144,7 +143,7 @@ impl UnresolvedMerge<'_> {
     // engine never writes, one the slice removed, one `side` does not hold
     // as a regular file, or one that is not text is nothing the model can
     // resolve, so no turn is spent on it.
-    async fn side(&self, copy: &WorkingCopy, path: &str, side: Side) -> Result<String, Error> {
+    fn side(&self, copy: &WorkingCopy, path: &str, side: Side) -> Result<String, Error> {
         if let Err(bad) = beneath(path) {
             return Err(self.unresolved(format_args!("`{path}` {bad}")));
         }
@@ -153,7 +152,7 @@ impl UnresolvedMerge<'_> {
         if removed {
             return Err(self.unresolved(format_args!("the slice removed `{path}`")));
         }
-        match kind_at(copy.path(), path).await? {
+        match kind_at(copy.path(), path)? {
             Some(EntryKind::File) => {}
             Some(EntryKind::Link) => {
                 return Err(
@@ -169,7 +168,7 @@ impl UnresolvedMerge<'_> {
                 return Err(self.unresolved(format_args!("{side} does not hold `{path}`")));
             }
         }
-        String::from_utf8(files::read(copy.path(), path).await?)
+        String::from_utf8(files::read(copy.path(), path)?)
             .map_err(|_bytes| self.unresolved(format_args!("`{path}` is not text in {side}")))
     }
 
@@ -233,8 +232,8 @@ impl Brief for MergeBrief<'_> {
     const NAME: &'static str = "merge";
     const PROSE: &'static [&'static str] = &["merge.md"];
 
-    fn label(&self) -> Cow<'static, str> {
-        Cow::Owned(format!("merge-{}", self.slice))
+    fn label(&self) -> String {
+        format!("merge-{}", self.slice)
     }
 
     fn tighten(&self, schema: &mut Value) -> Result<(), Error> {

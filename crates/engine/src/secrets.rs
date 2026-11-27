@@ -11,7 +11,7 @@ use crate::files;
 
 // Names every change under `at` that carries a credential, `<path>: <what>`,
 // reading only the paths the name rule passes.
-pub async fn findings(at: &str, changes: &[Change]) -> Result<Vec<String>, Error> {
+pub fn findings(at: &str, changes: &[Change]) -> Result<Vec<String>, Error> {
     let mut findings = Vec::new();
     for change in changes {
         if change.kind == ChangeKind::Deleted {
@@ -19,7 +19,7 @@ pub async fn findings(at: &str, changes: &[Change]) -> Result<Vec<String>, Error
         }
         let what = match named(&change.path) {
             Some(what) => Some(what),
-            None => carried(&files::read(at, &change.path).await?),
+            None => carried(&files::read(at, &change.path)?),
         };
         if let Some(what) = what {
             findings.push(format!("{}: {what}", change.path));

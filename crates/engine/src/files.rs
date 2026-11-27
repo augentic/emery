@@ -35,12 +35,11 @@ pub enum EntryKind {
 ///
 /// # Errors
 ///
-/// Returns [`omnia_sdk::ErrorKind::ServerError`] when `path` holds neither, a directory
-/// or nothing at all, or what it holds cannot be read.
-pub async fn read(at: &str, path: &str) -> Result<Vec<u8>, Error> {
-    let outcome = carried(&Path::new(at).join(path))
-        .map_err(|error| server_error!("reading `{path}` under `{at}`: {error}"));
-    async move { outcome }.await
+/// Returns [`omnia_sdk::ErrorKind::ServerError`] when `path` holds neither a file nor a symbolic
+/// link, or what it holds cannot be read.
+pub fn read(at: &str, path: &str) -> Result<Vec<u8>, Error> {
+    carried(&Path::new(at).join(path))
+        .map_err(|error| server_error!("reading `{path}` under `{at}`: {error}"))
 }
 
 /// Lists what the directory at `path` beneath `at` holds.
@@ -49,10 +48,9 @@ pub async fn read(at: &str, path: &str) -> Result<Vec<u8>, Error> {
 ///
 /// Returns [`omnia_sdk::ErrorKind::ServerError`] when `path` is no directory or cannot
 /// be read.
-pub async fn list(at: &str, path: &str) -> Result<Vec<Entry>, Error> {
-    let outcome = listed(&Path::new(at).join(path))
-        .map_err(|error| server_error!("listing `{path}` under `{at}`: {error}"));
-    async move { outcome }.await
+pub fn list(at: &str, path: &str) -> Result<Vec<Entry>, Error> {
+    listed(&Path::new(at).join(path))
+        .map_err(|error| server_error!("listing `{path}` under `{at}`: {error}"))
 }
 
 /// Writes `bytes` as the whole file at `path` beneath `at`.
@@ -62,10 +60,9 @@ pub async fn list(at: &str, path: &str) -> Result<Vec<Entry>, Error> {
 /// Returns [`omnia_sdk::ErrorKind::ServerError`] when a link stands at the path or on
 /// the way to it, a file stands where a directory is needed, or the
 /// file cannot be written.
-pub async fn write(at: &str, path: &str, bytes: &[u8]) -> Result<(), Error> {
-    let outcome = written(Path::new(at), path, bytes)
-        .map_err(|error| server_error!("writing `{path}` under `{at}`: {error}"));
-    async move { outcome }.await
+pub fn write(at: &str, path: &str, bytes: &[u8]) -> Result<(), Error> {
+    written(Path::new(at), path, bytes)
+        .map_err(|error| server_error!("writing `{path}` under `{at}`: {error}"))
 }
 
 fn written(root: &Path, path: &str, bytes: &[u8]) -> io::Result<()> {

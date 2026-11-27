@@ -654,7 +654,7 @@ impl<'a> Run<'a> {
         // what the build changed, as the copy holds it rather than as the
         // report lists it, held to the seal gates before any of it is sealed
         let pending = built.worktree.pending().await?;
-        gated(built.worktree.path(), "the build", &pending).await?;
+        gated(built.worktree.path(), "the build", &pending)?;
         let mut written: Vec<String> = pending.iter().map(|change| change.path.clone()).collect();
         written.sort_unstable();
 
@@ -765,7 +765,7 @@ impl<'a> Run<'a> {
         // gates and sealed as the wave's own commit
         let pending = self.integration.pending().await?;
         if !pending.is_empty() {
-            gated(self.integration.path(), "the verification", &pending).await?;
+            gated(self.integration.path(), "the verification", &pending)?;
             let ids: Vec<String> = merged.iter().map(ToString::to_string).collect();
             let message = format!(
                 "Wave {wave} verified\n\nRevision: {}\nAdapter: {}\nSlices: {}",
@@ -810,14 +810,14 @@ impl<'a> Run<'a> {
 // What stands at `path` beneath the working copy at `at`, walked a directory
 // at a time so no link on the way is followed; `None` when nothing does, or
 // something on the way is no directory.
-async fn kind_at(at: &str, path: &str) -> Result<Option<EntryKind>, Error> {
+fn kind_at(at: &str, path: &str) -> Result<Option<EntryKind>, Error> {
     let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
     let Some((file, directories)) = segments.split_last() else {
         return Ok(None);
     };
     let mut directory = String::from(".");
     for segment in directories {
-        let entries = files::list(at, &directory).await?;
+        let entries = files::list(at, &directory)?;
         match entries.iter().find(|entry| entry.name == *segment) {
             Some(entry) if entry.kind == EntryKind::Directory => {}
             _ => return Ok(None),
@@ -825,7 +825,7 @@ async fn kind_at(at: &str, path: &str) -> Result<Option<EntryKind>, Error> {
         directory =
             if directory == "." { (*segment).to_owned() } else { format!("{directory}/{segment}") };
     }
-    let entries = files::list(at, &directory).await?;
+    let entries = files::list(at, &directory)?;
     Ok(entries.into_iter().find(|entry| entry.name == *file).map(|entry| entry.kind))
 }
 
@@ -839,7 +839,7 @@ async fn initialise(adapter: &str, at: &str) -> Result<Vec<Change>, Error> {
         return Err(server_error!("`{adapter}` answered {outcome} to {}", Task::Init));
     }
     let pending = vcs::pending(at).await?;
-    gated(at, "the initialisation", &pending).await?;
+    gated(at, "the initialisation", &pending)?;
     tracing::info!(scaffolded = pending.len(), "initialised");
     Ok(pending)
 }
@@ -849,7 +849,7 @@ async fn initialise(adapter: &str, at: &str) -> Result<Vec<Change>, Error> {
 // store's alone to write and a commit carrying one would rewrite the revision
 // its label names, then the secret gate. The specification guard reads
 // nothing, so it runs first and a refusal reads no file.
-async fn gated(at: &str, wrote: &str, pending: &[Change]) -> Result<(), Error> {
+fn gated(at: &str, wrote: &str, pending: &[Change]) -> Result<(), Error> {
     let rewritten: Vec<String> = pending
         .iter()
         .filter(|change| matches!(beneath(&change.path), Err(BadPath::Specification)))
@@ -865,7 +865,7 @@ async fn gated(at: &str, wrote: &str, pending: &[Change]) -> Result<(), Error> {
             ),
         ));
     }
-    let leaks = secrets::findings(at, pending).await?;
+    let leaks = secrets::findings(at, pending)?;
     if !leaks.is_empty() {
         return Err(secrets::refusal(wrote, &leaks));
     }
@@ -945,9 +945,9 @@ impl Progress {
         let (path, content) = IGNORE;
         if repo.is_created()
             && !changes.iter().any(|change| change.path == path)
-            && kind_at(integration.path(), path).await?.is_none()
+            && kind_at(integration.path(), path)?.is_none()
         {
-            files::write(integration.path(), path, content).await?;
+            files::write(integration.path(), path, content)?;
             changes.push(Change {
                 path: path.to_owned(),
                 kind: ChangeKind::Added,

@@ -3,7 +3,6 @@
 //! A [`Brief`] combines engine facts, prompt documents, an answer schema, and
 //! fact-based validation to produce verified engine output.
 
-use std::borrow::Cow;
 use std::fmt::Display;
 
 use emery_lexicon::Lexicon;
@@ -29,8 +28,8 @@ pub trait Brief: Display + Sync + Sized {
 
     // `Self::NAME` unless a run puts the brief more than once, when each
     // question carries what tells it apart.
-    fn label(&self) -> Cow<'static, str> {
-        Cow::Borrowed(Self::NAME)
+    fn label(&self) -> String {
+        Self::NAME.to_owned()
     }
 
     // Schema changes guide generation; `Self::verify` remains the
@@ -51,15 +50,17 @@ pub trait Brief: Display + Sync + Sized {
     #[tracing::instrument(skip_all, fields(question = %self.label()))]
     async fn judge(self) -> Result<Self::Output, Error> {
         tracing::info!("asking the model");
-        let mut system = Vec::with_capacity(Self::PROSE.len());
-        for path in Self::PROSE {
-            let prose = emery_prose::body(PROSE, path)
-                .ok_or_else(|| server_error!("synthesis prose `{path}` is not embedded"))?;
-            system.push(prose);
-        }
+        let system = Self::PROSE
+            .iter()
+            .map(|path| {
+                emery_prose::body(PROSE, path)
+                    .ok_or_else(|| server_error!("synthesis prose `{path}` is not embedded"))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .join("\n\n---\n\n");
         let mut tightened = Ok(());
         let question = Question::<Self::Answer>::new(&self.label())
-            .system(system.join("\n\n---\n\n"))
+            .system(system)
             .schema(|schema| tightened = self.tighten(schema));
         tightened?;
         let check = |answer: &Self::Answer| {
@@ -70,35 +71,23 @@ pub trait Brief: Display + Sync + Sized {
 
         // a failure of the transport or the backend's time, not of the
         // answer, is put once more, fresh, before the run is given up
-        let turn = self.to_string();
         let mut attempt = 0;
         let answer = loop {
             attempt += 1;
-            match question.ask(turn.clone(), None, check).await {
-                Ok(Ok(answer)) => break answer,
-                Ok(Err(exhausted)) => {
-                    let error = Error::from(exhausted);
-                    if attempt < RETRIES && is_retryable(&error) {
-                        tracing::warn!(
-                            attempt,
-                            description = %error.description(),
-                            "the model failed upstream or timed out; asking once more"
-                        );
-                        continue;
-                    }
-                    return Err(error);
+            let outcome = question
+                .ask(self.to_string(), None, check)
+                .await
+                .and_then(|res| res.map_err(Error::from));
+            match outcome {
+                Ok(answer) => break answer,
+                Err(error) if attempt < RETRIES && is_retryable(&error) => {
+                    tracing::warn!(
+                        attempt,
+                        description = %error.description(),
+                        "the model failed upstream or timed out; asking once more"
+                    );
                 }
-                Err(error) => {
-                    if attempt < RETRIES && is_retryable(&error) {
-                        tracing::warn!(
-                            attempt,
-                            description = %error.description(),
-                            "the model failed upstream or timed out; asking once more"
-                        );
-                        continue;
-                    }
-                    return Err(error);
-                }
+                Err(error) => return Err(error),
             }
         };
         tracing::info!("answered");

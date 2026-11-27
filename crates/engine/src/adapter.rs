@@ -13,7 +13,7 @@ use emery_adapter::is_kebab;
 use emery_adapter::source::{self as source_adapter, SourceMetadata};
 use emery_adapter::target::{self as target_adapter, TargetMetadata};
 use futures::future;
-use omnia_sdk::plugins::{self, Conflict, Release, Source};
+use omnia_sdk::plugins::{self, Release, Source};
 use omnia_sdk::{Error, bad_request, server_error};
 use serde::{Deserialize, Serialize};
 
@@ -145,7 +145,7 @@ impl FromStr for AdapterRef {
     fn from_str(value: &str) -> Result<Self, Error> {
         let value = value.trim();
         if value.is_empty() {
-            return Err(malformed("adapter reference is empty".to_owned()));
+            return Err(malformed("adapter reference is empty"));
         }
         if value.starts_with("https://github.com/") {
             return Err(malformed(format!("adapter `{value}`: GitHub URLs are not supported")));
@@ -172,7 +172,7 @@ impl FromStr for AdapterRef {
 }
 
 // Every malformed reference shares one recovery: spell an exact package.
-fn malformed(description: String) -> Error {
+fn malformed(description: impl Into<String>) -> Error {
     Error::bad_request("adapter-reference", description)
 }
 
@@ -251,8 +251,9 @@ async fn load_axis<'a, M: Declared>(
     }
 
     // load all adapters in parallel
-    let loaders = pins.iter().map(|(adapter, pin)| async move {
-        acquire(adapter, pin.as_deref()).await.map_err(|error| at_adapter(&error, adapter))
+    let loaders = pins.into_iter().map(|(adapter, pin)| async move {
+        let plugin = acquire(adapter, pin).await?;
+        Ok::<_, Error>((adapter, plugin))
     });
     let handles = future::try_join_all(loaders).await?;
 
@@ -261,7 +262,7 @@ async fn load_axis<'a, M: Declared>(
 
     // hold each adapter to its axis, gate its version, and record what it loaded as
     let mut loaded = BTreeMap::new();
-    for (adapter, plugin) in pins.into_keys().zip(handles) {
+    for (adapter, plugin) in handles {
         axis.require(adapter, &plugin.exports)?;
         let id = plugin.name;
         let metadata = metadata(&id);
@@ -279,32 +280,29 @@ async fn load_axis<'a, M: Declared>(
 
 async fn acquire(adapter: &AdapterRef, pin: Option<&str>) -> Result<plugins::Plugin, Error> {
     let source = adapter.source(pin.map(str::to_owned));
-    match plugins::load(source).await? {
-        Ok(plugin) => Ok(plugin),
-        Err(conflict) => Err(refused(adapter, &conflict)),
-    }
-}
-
-fn refused(adapter: &AdapterRef, conflict: &Conflict) -> Error {
-    Error::bad_request("refused", format!("adapter `{adapter}`: {conflict}"))
+    plugins::load(source)
+        .await
+        .and_then(|outcome| {
+            outcome.map_err(|conflict| Error::bad_request("refused", conflict.to_string()))
+        })
+        .map_err(|error| at_adapter(&error, adapter))
 }
 
 // One load per distinct reference, under one pin, every entry checked.
 fn distinct<'a>(
     adapters: impl IntoIterator<Item = (&'a AdapterRef, Option<&'a str>)>,
-) -> Result<BTreeMap<&'a AdapterRef, Option<String>>, Error> {
-    let mut pins: BTreeMap<&AdapterRef, Option<String>> = BTreeMap::new();
+) -> Result<BTreeMap<&'a AdapterRef, Option<&'a str>>, Error> {
+    let mut pins: BTreeMap<&'a AdapterRef, Option<&'a str>> = BTreeMap::new();
     for (adapter, digest) in adapters {
         match pins.entry(adapter) {
             Entry::Vacant(slot) => {
-                slot.insert(digest.map(str::to_owned));
+                slot.insert(digest);
             }
             Entry::Occupied(mut slot) => {
-                if let Some(again) = digest {
-                    let first = slot.get_mut().get_or_insert_with(|| again.to_owned());
-                    if first != again {
-                        return Err(bad_request!("adapter `{adapter}` is pinned to two digests"));
-                    }
+                if let Some(again) = digest
+                    && *slot.get_mut().get_or_insert(again) != again
+                {
+                    return Err(bad_request!("adapter `{adapter}` is pinned to two digests"));
                 }
             }
         }

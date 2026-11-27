@@ -33,7 +33,7 @@ pub use authority::Rank;
 pub use files::{Entry, EntryKind};
 pub use omnia_sdk::ErrorKind;
 use omnia_sdk::{Error, bad_request};
-pub use store::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
+pub use store::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY, target_required};
 
 // How many times a question to the model, a slice's build, or a wave's
 // verification is put when it fails upstream or runs out of the backend's
@@ -55,8 +55,8 @@ const REJECTED: &str = "## Previous answer (rejected)";
 #[must_use]
 pub fn is_retryable(error: &Error) -> bool {
     match error.kind() {
-        omnia_sdk::ErrorKind::BadGateway => true,
-        omnia_sdk::ErrorKind::BadRequest => {
+        ErrorKind::BadGateway => true,
+        ErrorKind::BadRequest => {
             let description = error.description();
             description.contains("budget exhausted")
                 && description.contains("timed out")
@@ -125,6 +125,6 @@ pub fn preopen_join(base: impl AsRef<Path>, relative: impl AsRef<Path>) -> Resul
 
 // The error with its description rewritten and its class and code kept, so
 // a failure gains where it happened without losing what it was.
-pub(crate) fn describe(error: &Error, rewrite: impl FnOnce(String) -> String) -> Error {
-    Error::new(error.kind(), error.code(), rewrite(error.description().to_owned()))
+pub(crate) fn describe(error: &Error, rewrite: impl FnOnce(&str) -> String) -> Error {
+    Error::new(error.kind(), error.code(), rewrite(error.description()))
 }
