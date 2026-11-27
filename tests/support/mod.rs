@@ -6,7 +6,6 @@ pub mod files;
 pub mod guest;
 pub mod prefix;
 pub mod provider;
-pub mod scratch;
 pub mod storage;
 pub mod store;
 pub mod vcs;
@@ -15,15 +14,13 @@ use omnia_sdk::command::Response;
 pub use provider::{Provider, cli};
 use serde_json::Value;
 
-/// Runs one CLI invocation and asserts success.
 pub async fn cli_ok(provider: &Provider, argv: &[&str]) -> Response {
     let resp = cli(provider, argv).await;
     assert_eq!(resp.exit, 0, "{}", String::from_utf8_lossy(&resp.stderr));
     resp
 }
 
-/// Runs `argv` in JSON mode and asserts the typed failure envelope.
-/// Returns the last JSON object in `stderr`, past any log lines the guest may emit.
+// Guest tracing lines precede the fatal JSON envelope on stderr.
 pub fn envelope_bytes(stderr: &[u8]) -> &[u8] {
     let text = std::str::from_utf8(stderr).expect("utf-8 stderr");
     for marker in ["\n{\n  \"error\"", "\n{\"error\"", "{\n  \"error\""] {

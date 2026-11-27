@@ -9,10 +9,11 @@ use std::fs;
 use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::OnceLock;
 
 use emery_engine::amend::PartClass;
 use emery_engine::vcs::{Message, PartSummary, RevisionMessage, Summary};
-use omnia::{CompileOptions, Connect as _, Digest, ExitStatus, RuntimeOptions};
+use omnia::{CompileOptions, Connect as _, Digest, ExitStatus, SourceSpec};
 use omnia_git::{Client, ConnectOptions};
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
 use omnia_wasi_blobstore::WasiBlobStore;
@@ -21,7 +22,6 @@ use omnia_wasi_model::WasiModel;
 use omnia_wasi_otel::WasiOtel;
 use omnia_wasi_vcs::WasiVcs;
 use serde_json::Value;
-use sha2::{Digest as _, Sha256};
 
 // The engine `build.rs` emits, as the binary embeds it; `guest` is what a
 // scenario deploys.
@@ -569,35 +569,25 @@ fn local_registry_toml(root: &Path) -> String {
     )
 }
 
-// The engine guest compiled for this host once per build, under
-// `CARGO_TARGET_TMPDIR` keyed by its bytes, so every process nextest runs
-// deploys one artifact: the first to take the lock compiles it under the
-// deployment's own compile options, the rest wait and read it. A guest
-// `build.rs` already precompiled is deployed as it is.
-fn guest() -> PathBuf {
-    let bytes = fs::read(GUEST).expect("reading the engine guest");
-    if !bytes.starts_with(b"\0asm") {
-        return PathBuf::from(GUEST);
-    }
-    let key = hex::encode(&Sha256::digest(&bytes)[..8]);
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"));
-    let compiled = dir.join(format!("emery-{key}.cwasm"));
-    if compiled.exists() {
-        return compiled;
-    }
+// The engine guest compiled once for this host and cached across invocations
+// through `omnia_test::host::precompiled`. A guest `build.rs` already
+// precompiled is deployed as it is.
+fn guest() -> SourceSpec {
+    static PRECOMPILED: OnceLock<Vec<u8>> = OnceLock::new();
 
-    // compile once, under the lock
-    fs::create_dir_all(dir).expect("creating the target tmpdir");
-    let lock = fs::File::create(dir.join(format!("emery-{key}.lock"))).expect("creating the lock");
-    lock.lock().expect("locking the artifact");
-    if !compiled.exists() {
-        let options = RuntimeOptions::load_env().expect("the runtime options").compile_options();
-        let staged = dir.join(format!("emery-{key}.cwasm.tmp"));
-        omnia::compile::compile(Path::new(GUEST), Some(staged.clone()), None, &options)
-            .expect("compiling the engine guest");
-        fs::rename(&staged, &compiled).expect("placing the artifact");
-    }
-    compiled
+    let bytes: &'static [u8] = PRECOMPILED.get_or_init(|| {
+        let raw = fs::read(GUEST).expect("reading the engine guest");
+        if omnia::wasmtime::Engine::detect_precompiled(&raw).is_some() {
+            return raw;
+        }
+        let SourceSpec::Bytes(bytes) =
+            omnia_test::host::precompiled(GUEST).expect("precompiling the engine guest")
+        else {
+            unreachable!("omnia_test::host::precompiled returns SourceSpec::Bytes");
+        };
+        bytes.into_owned()
+    });
+    SourceSpec::from(bytes)
 }
 
 // What `omnia compile` writes for `wasm`, under the scratch registry root so

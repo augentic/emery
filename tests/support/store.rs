@@ -4,15 +4,13 @@ use emery_engine::{STAGED_CONTAINER, STAGED_KEY};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
-use super::files::{Files, document};
+use super::files::Files;
 use super::storage::Storage;
 
-/// Scripts `spec/` in the revision working copy; returns the revision id.
 pub fn seed(files: &Files, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
     files.seed(spec, design, plan)
 }
 
-/// Stages the three documents as a revision candidate.
 pub async fn stage(storage: &Storage, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
     let id = revision(spec, design, plan);
     storage.insert_object(STAGED_CONTAINER, &format!("{id}/spec.json"), spec).await;
@@ -23,7 +21,6 @@ pub async fn stage(storage: &Storage, spec: &[u8], design: &[u8], plan: &[u8]) -
     id
 }
 
-/// Stages a fresh candidate (`apply` seals with no parent).
 pub async fn stage_fresh(storage: &Storage, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
     let id = stage(storage, spec, design, plan).await;
     let record = serde_json::json!({"id": id, "kind": "revision", "fresh": true}).to_string();
@@ -31,7 +28,6 @@ pub async fn stage_fresh(storage: &Storage, spec: &[u8], design: &[u8], plan: &[
     id
 }
 
-/// Stages an amendment document.
 pub async fn stage_amendment(storage: &Storage, amendment: &[u8]) -> String {
     let id = digest(&[amendment]);
     storage.insert_object(STAGED_CONTAINER, &format!("{id}/amendment.json"), amendment).await;
@@ -49,22 +45,14 @@ pub async fn stage_amendment(storage: &Storage, amendment: &[u8]) -> String {
     id
 }
 
-/// Copies a sealed revision from one tree helper into another.
 pub fn carry(from: &Files, to: &Files) -> String {
-    super::files::carry(from, to)
+    from.carry(to)
 }
 
-/// Bytes of `spec/<name>.json` in the revision working copy.
 pub fn written(files: &Files, name: &str) -> Vec<u8> {
-    super::files::written(files, name)
+    files.written(name)
 }
 
-/// Path of a revision document relative to the revision working copy root.
-pub fn document_path(name: &str) -> String {
-    document(name)
-}
-
-/// The engine's content id over the three bodies.
 pub fn revision(spec: &[u8], design: &[u8], plan: &[u8]) -> String {
     digest(&[spec, design, plan])
 }

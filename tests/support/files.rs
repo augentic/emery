@@ -16,7 +16,6 @@ const INTEGRATION: &str = "./.emery/vcs/integration";
 
 type Preserved = BTreeMap<String, BTreeMap<String, Vec<u8>>>;
 
-/// Tracks revision-tree and working-copy changes across a run.
 #[derive(Clone, Debug, Default)]
 pub struct Files {
     project: Option<PathBuf>,
@@ -25,16 +24,13 @@ pub struct Files {
     preserved: Arc<Mutex<Preserved>>,
     access_before: Arc<Mutex<HashMap<String, SystemTime>>>,
     read_order: Arc<Mutex<Vec<(String, String)>>>,
-    list_order: Arc<Mutex<Vec<(String, String)>>>,
 }
 
 impl Files {
-    /// Binds this helper to `project` for subsequent staging.
     pub fn bind(&mut self, project: &Scratch) {
         self.project = Some(project.path().to_path_buf());
     }
 
-    /// Scripts `spec/` at the revision working copy with the three documents.
     pub fn seed(&self, spec: &[u8], design: &[u8], plan: &[u8]) -> String {
         for (name, body) in [("spec", spec), ("design", design), ("plan", plan)] {
             self.write_revision(&document(name), body);
@@ -42,34 +38,24 @@ impl Files {
         super::store::revision(spec, design, plan)
     }
 
-    /// Records project bytes before the next CLI run.
     pub fn mark_run_start(&self) {
         self.before_revision.lock().expect("before revision").clone_from(&self.snapshot_revision());
         self.before_project.lock().expect("before project").clone_from(&self.snapshot_project());
         self.read_order.lock().expect("reads").clear();
-        self.list_order.lock().expect("lists").clear();
         self.access_before.lock().expect("access before").clone_from(&self.access_times());
     }
 
-    /// Derives read and list order from access-time changes since [`mark_run_start`].
     pub fn record_accesses(&self) {
         let before = self.access_before.lock().expect("access before").clone();
         let after = self.access_times();
-        let paths: Vec<String> = after
-            .keys()
-            .chain(before.keys())
-            .cloned()
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
+        let paths: BTreeSet<String> = after.keys().chain(before.keys()).cloned().collect();
+        let root = self.project.as_ref().expect("project bound");
         let mut read_batch = Vec::new();
-        let mut list_batch = Vec::new();
         for rel in paths {
             let Some(after_time) = after.get(&rel) else {
                 continue;
             };
-            let before_time = before.get(&rel);
-            if before_time == Some(after_time) {
+            if before.get(&rel) == Some(after_time) || rel.contains("/.git/") {
                 continue;
             }
             let Some((at, path)) = working_copy_path(&rel) else {
@@ -78,30 +64,18 @@ impl Files {
             if path.is_empty() {
                 continue;
             }
-            let root = self.project.as_ref().expect("project bound");
             let full = root.join(rel.strip_prefix("./").unwrap_or(&rel));
-            let is_dir = full.is_dir();
-            if is_dir || rel.contains("/.git/") {
-                list_batch.push((at, path));
-            } else {
+            if !full.is_dir() {
                 read_batch.push((at, path));
             }
         }
         *self.read_order.lock().expect("reads") = read_batch;
-        *self.list_order.lock().expect("lists") = list_batch;
     }
 
-    /// Files read during the last CLI run, in discovery order, beyond the revision tree.
     pub fn accessed_reads(&self) -> Vec<(String, String)> {
         self.read_order.lock().expect("reads").clone()
     }
 
-    /// Directories listed during the last CLI run, beyond the revision tree.
-    pub fn accessed_lists(&self) -> Vec<(String, String)> {
-        self.list_order.lock().expect("lists").clone()
-    }
-
-    /// Returns paths under the revision tree that changed since [`mark_run_start`].
     pub fn writes(&self) -> Vec<(String, String)> {
         let before = self.before_revision.lock().expect("before revision");
         let after = self.snapshot_revision();
@@ -112,7 +86,6 @@ impl Files {
             .collect()
     }
 
-    /// Returns working-copy writes since [`mark_run_start`]: the copy, the path, and the bytes.
     pub fn worktree_writes(&self) -> Vec<(String, String, Vec<u8>)> {
         let before = self.before_project.lock().expect("before project");
         let after = self.snapshot_project();
@@ -129,7 +102,7 @@ impl Files {
             .collect()
     }
 
-    /// Lays a directory at `path` so a credential read answers as neither file nor link.
+    // Lays a directory at `path` so a credential read answers as neither file nor link.
     pub fn unreadable(&self, at: &str, path: &str) {
         self.remove(at, path);
         self.ensure_working_copy(at);
@@ -137,7 +110,6 @@ impl Files {
         std::fs::create_dir_all(&dir).expect("unreadable directory");
     }
 
-    /// Removes `path` beneath working copy `at` when it exists.
     pub fn remove(&self, at: &str, path: &str) {
         if let Some(paths) = self.preserved.lock().expect("preserved").get_mut(at) {
             paths.remove(path);
@@ -146,7 +118,6 @@ impl Files {
         let _ = std::fs::remove_file(&file);
     }
 
-    /// Drops a working copy tree beneath the project mount.
     pub fn purge(&self, at: &str) {
         let root = self.project.as_ref().expect("project bound");
         let at = at.strip_prefix("./").unwrap_or(at);
@@ -154,7 +125,6 @@ impl Files {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Forgets held files for a working copy so the next cut does not replant them.
     pub fn clear_preserved(&self, at: &str) {
         let stripped = at.strip_prefix("./").unwrap_or(at);
         let mut keys = vec![at.to_owned(), stripped.to_owned()];
@@ -168,12 +138,10 @@ impl Files {
         drop(preserved);
     }
 
-    /// Lays text at `path` beneath working copy `at` on the project mount.
     pub fn holds(&self, at: &str, path: &str, content: &str) {
         self.holds_bytes(at, path, content.as_bytes());
     }
 
-    /// Lays bytes at `path` beneath working copy `at` on the project mount.
     pub fn holds_bytes(&self, at: &str, path: &str, content: &[u8]) {
         self.preserved
             .lock()
@@ -189,7 +157,6 @@ impl Files {
         std::fs::write(file, content).expect("write working copy file");
     }
 
-    /// Rewrites every path recorded for `at` after a working copy was cut again.
     pub fn replant(&self, at: &str) {
         let Some(paths) = self.preserved.lock().expect("preserved").get(at).cloned() else {
             return;
@@ -204,7 +171,6 @@ impl Files {
         }
     }
 
-    /// Lays directory entries beneath `at` so [`list`](emery_engine::files::list) sees them.
     pub fn lists(&self, at: &str, path: &str, entries: &[(&str, EntryKind)]) {
         self.ensure_working_copy(at);
         let base = self.resolve(at, path);
@@ -241,11 +207,23 @@ impl Files {
         }
     }
 
-    /// Reads `path` relative to a working-copy directory beneath the project mount.
     pub fn read_at(&self, working_copy: &str, path: &str) -> Vec<u8> {
         let file = self.resolve(working_copy, path);
         std::fs::read(&file)
             .unwrap_or_else(|err| panic!("read `{path}` under `{working_copy}`: {err}"))
+    }
+
+    pub fn written(&self, name: &str) -> Vec<u8> {
+        let root = self.project.as_ref().expect("project bound");
+        let path = root.join(REVISION_DIR).join(document(name));
+        std::fs::read(path).unwrap_or_else(|err| panic!("{name} sealed: {err}"))
+    }
+
+    pub fn carry(&self, to: &Self) -> String {
+        let spec = self.written("spec");
+        let design = self.written("design");
+        let plan = self.written("plan");
+        to.seed(&spec, &design, &plan)
     }
 
     fn resolve(&self, at: &str, path: &str) -> PathBuf {
@@ -349,22 +327,6 @@ fn strip_working_path(rel: &str, at: &str) -> String {
     rel.strip_prefix(prefix).and_then(|rest| rest.strip_prefix('/')).unwrap_or(rel).to_owned()
 }
 
-/// Path of a revision document relative to the revision working copy root.
 pub fn document(name: &str) -> String {
     format!("{SPECIFICATION}/{name}.json")
-}
-
-/// Bytes last written to `spec/<name>.json` in the revision working copy.
-pub fn written(files: &Files, name: &str) -> Vec<u8> {
-    let root = files.project.as_ref().expect("project bound");
-    let path = root.join(REVISION_DIR).join(document(name));
-    std::fs::read(path).unwrap_or_else(|err| panic!("{name} sealed: {err}"))
-}
-
-/// Scripts the revision `from` sealed into the tree `to` reads.
-pub fn carry(from: &Files, to: &Files) -> String {
-    let spec = written(from, "spec");
-    let design = written(from, "design");
-    let plan = written(from, "plan");
-    to.seed(&spec, &design, &plan)
 }

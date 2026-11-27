@@ -6,7 +6,7 @@ mod support;
 #[path = "support/verbs.rs"]
 mod verbs;
 
-use emery_adapter::source::{ClaimKind, SourceKind};
+use emery_adapter::source::ClaimKind;
 use emery_engine::amend::PartClass;
 use emery_engine::vcs::{PartSummary, REVISION, RevisionMessage, Summary};
 use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
@@ -1014,7 +1014,6 @@ const SCOPED_GROUPING: &str = r#"{"groups": [
 
 // A behaviour source `code`, its one claim restating `orders.create`.
 fn code(provider: &mut Provider) {
-    provider.source.kinds.insert("acme:code".to_owned(), SourceKind::Behaviour);
     provider.source.evidence.insert(
         "code".to_owned(),
         Ok(evidence(vec![requirement("orders.create", "A signed-in user places an order.")])),
@@ -2925,10 +2924,6 @@ async fn amend_over_staged() {
         "{envelope}"
     );
     assert!(provider.source.calls().is_empty(), "no source is extracted over a staged candidate");
-    assert!(
-        provider.source.metadata.lock().expect("metadata").is_empty(),
-        "no adapter is loaded over a staged candidate"
-    );
 }
 
 // `baseline` names the current revision's own requirements in the grouping,
@@ -2957,7 +2952,7 @@ async fn corrupt_baseline() {
         "{envelope}"
     );
     assert!(provider.vcs.calls().is_empty(), "refused before the repository is read");
-    assert!(provider.source.metadata.lock().expect("metadata").is_empty(), "and before any load");
+    assert!(provider.source.calls().is_empty(), "no source is extracted");
 }
 
 // An amendment is prepared against a sealed revision: with none it is

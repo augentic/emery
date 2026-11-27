@@ -12,25 +12,21 @@ use omnia_wasi_vcs::{
 
 use super::files::Files;
 
-/// The commit every unscripted `head` answers.
+// The commit every unscripted `head` answers.
 pub const HEAD: &str = "9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6";
 
 type Queued<T> = BTreeMap<String, VecDeque<Result<T, Error>>>;
 
-/// One merge as the script saw it: the message whole and the policy it rode.
 pub type Merge = (String, Vec<Rule>);
 
-/// Answers queued per location, consumed in call order.
 #[derive(Clone, Debug, Default)]
 pub struct Queue<T>(Arc<Mutex<Queued<T>>>);
 
 impl<T> Queue<T> {
-    /// Queues `answer` for the next call at `location`.
     pub fn script(&self, location: &str, answer: Result<T, Error>) {
         self.0.lock().expect("queue").entry(location.to_owned()).or_default().push_back(answer);
     }
 
-    /// Drops every queued answer at `location`.
     pub fn clear(&self, location: &str) {
         self.0.lock().expect("queue").remove(location);
     }
@@ -45,42 +41,24 @@ impl<T> Queue<T> {
     }
 }
 
-/// A scripted [`VcsClient`] with a record of every call.
 #[derive(Clone, Debug, Default)]
 pub struct VcsScript {
-    /// `pending` answers by working copy.
     pub pending: Queue<Vec<Change>>,
-    /// `head` answers by working copy.
     pub heads: Queue<String>,
-    /// `resolve` answers by repository.
     pub resolves: Queue<String>,
-    /// `labelled` answers by repository.
     pub labelleds: Queue<String>,
-    /// `descends` answers by repository.
     pub descends: Queue<bool>,
-    /// `log` answers by repository.
     pub logs: Queue<Vec<Entry>>,
-    /// `commit` answers by working copy.
     pub commits: Queue<Option<String>>,
-    /// `merge` answers by working copy.
     pub merges: Queue<Merged>,
-    /// `fetch` answers by repository.
     pub fetches: Queue<()>,
-    /// `init` answers by repository.
     pub inits: Queue<()>,
-    /// `clone` answers by clone location.
     pub clones: Queue<()>,
-    /// `add` answers by working copy.
     pub adds: Queue<()>,
-    /// `remove` answers by working copy.
     pub removes: Queue<()>,
-    /// `label` answers by repository.
     pub labels: Queue<()>,
-    /// Every call, in order, spelled `<operation> <arguments>`.
     pub calls: Arc<Mutex<Vec<String>>>,
-    /// Every commit message whole, in order.
     pub messages: Arc<Mutex<Vec<String>>>,
-    /// Every merge, in order.
     pub merged: Arc<Mutex<Vec<Merge>>>,
     cut: Arc<Mutex<BTreeMap<String, String>>>,
     project: Arc<Mutex<Option<PathBuf>>>,
@@ -89,42 +67,42 @@ pub struct VcsScript {
 }
 
 impl VcsScript {
-    /// Maps absolute deployment paths back to project-relative spellings in call records.
     pub fn bind_project(&self, root: &Path) {
         *self.project.lock().expect("project") = Some(root.to_path_buf());
     }
 
-    /// Purges physical working copies when [`remove`](Self::remove) succeeds.
     pub fn bind_files(&self, files: Files) {
         *self.files.lock().expect("files") = Some(files);
     }
 
-    /// Marks `repo` as initialised so [`head`](Self::head) reads scripted heads for it.
     pub fn mark_ready(&self, repo: &str) {
-        self.mark_inited(repo);
+        self.inited.lock().expect("inited").insert(repo.to_owned());
+        let root = self.project.lock().expect("project").clone();
+        let Some(root) = root.as_ref() else {
+            return;
+        };
+        let rel = repo.strip_prefix("./").unwrap_or(repo);
+        let path = root.join(rel);
+        fs::create_dir_all(&path).expect("created repository directory");
+        self.cut.lock().expect("cut").entry(repo.to_owned()).or_insert_with(|| HEAD.to_owned());
     }
 
-    /// Returns every call so far, in order.
     pub fn calls(&self) -> Vec<String> {
         self.calls.lock().expect("calls").clone()
     }
 
-    /// Asserts `expected` appears in order within [`calls`](Self::calls), allowing extra entries between.
     pub fn assert_subsequence(&self, expected: &[String], reason: &str) {
         assert_subsequence(&self.calls(), expected, reason);
     }
 
-    /// Returns every commit message so far, in order.
     pub fn messages(&self) -> Vec<String> {
         self.messages.lock().expect("messages").clone()
     }
 
-    /// Returns every merge so far, in order.
     pub fn merged(&self) -> Vec<Merge> {
         self.merged.lock().expect("merged").clone()
     }
 
-    /// Asserts that every queued answer was consumed.
     pub fn assert_exhausted(&self) {
         let left: Vec<String> = [
             ("pending", self.pending.drained()),
@@ -237,7 +215,7 @@ impl VcsClient for VcsScript {
         self.record(format!("init {key}"));
         let answer = self.inits.take(&key).unwrap_or(Ok(()));
         if answer.is_ok() {
-            self.mark_inited(&key);
+            self.mark_ready(&key);
         }
         async move { answer.map_err(Into::into) }.boxed()
     }
@@ -320,7 +298,6 @@ impl VcsClient for VcsScript {
     }
 }
 
-/// Asserts `expected` appears in order within `calls`, allowing extra entries between.
 pub fn assert_subsequence(calls: &[String], expected: &[String], reason: &str) {
     let mut at = 0;
     for want in expected {
@@ -333,18 +310,6 @@ pub fn assert_subsequence(calls: &[String], expected: &[String], reason: &str) {
 }
 
 impl VcsScript {
-    fn mark_inited(&self, key: &str) {
-        self.inited.lock().expect("inited").insert(key.to_owned());
-        let root = self.project.lock().expect("project").clone();
-        let Some(root) = root.as_ref() else {
-            return;
-        };
-        let rel = key.strip_prefix("./").unwrap_or(key);
-        let path = root.join(rel);
-        fs::create_dir_all(&path).expect("created repository directory");
-        self.cut.lock().expect("cut").entry(key.to_owned()).or_insert_with(|| HEAD.to_owned());
-    }
-
     fn place_key(&self, place: &Place) -> String {
         let path = place.path();
         let root = self.project.lock().expect("project").clone();

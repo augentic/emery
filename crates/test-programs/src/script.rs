@@ -6,10 +6,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use emery_adapter::source::{
-    Backing, Claim, ClaimKind, Evidence, SourceInput, SourceKind, SourceMetadata,
-};
-use emery_adapter::target::{MergeRule, Outcome, Report, Slice, TargetMetadata, Task, Verdict};
+use emery_adapter::source::{Backing, Claim, ClaimKind, Evidence, SourceInput};
+use emery_adapter::target::{Outcome, Report, Slice, Task, Verdict};
 use omnia_sdk::{Error, ErrorKind};
 use serde::{Deserialize, Serialize};
 
@@ -94,12 +92,6 @@ pub struct SourceScriptState {
     /// Source names whose `extract` never completes.
     #[serde(default)]
     pub held: BTreeSet<String>,
-    /// Minimum `emery` versions keyed by adapter guest id.
-    #[serde(default)]
-    pub versions: BTreeMap<String, String>,
-    /// Kinds of source by adapter guest id.
-    #[serde(default)]
-    pub kinds: BTreeMap<String, SourceKind>,
     /// Optional parallel-dispatch barrier.
     #[serde(default)]
     pub rendezvous: Option<RendezvousScript>,
@@ -117,15 +109,6 @@ pub struct TargetScriptState {
     /// Verify outcomes, consumed in wave order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub verdicts: Vec<VerdictScript>,
-    /// Minimum `emery` versions keyed by adapter guest id.
-    #[serde(default)]
-    pub versions: BTreeMap<String, String>,
-    /// Merge rules every adapter declares.
-    #[serde(default)]
-    pub rules: Vec<MergeRule>,
-    /// Default slice budget.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub budget: Option<u32>,
     /// Optional parallel-dispatch barrier over slice ids.
     #[serde(default)]
     pub rendezvous: Option<RendezvousScript>,
@@ -182,14 +165,6 @@ pub struct ScriptError {
     pub description: String,
 }
 
-impl ScriptError {
-    /// Builds a [`ScriptError`] from a host [`Error`].
-    #[must_use]
-    pub fn from_adapter(error: &Error) -> Self {
-        Self::from(error)
-    }
-}
-
 impl From<&Error> for ScriptError {
     fn from(error: &Error) -> Self {
         Self {
@@ -210,22 +185,12 @@ impl From<ScriptError> for Error {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "axis", rename_all = "lowercase")]
 pub enum ScriptCall {
-    /// A source `metadata` dispatch.
-    SourceMetadata {
-        /// Adapter guest id.
-        id: String,
-    },
     /// A source `extract` dispatch.
     SourceExtract {
         /// Adapter guest id.
         id: String,
         /// The input the engine passed.
         input: SourceInput,
-    },
-    /// A target `metadata` dispatch.
-    TargetMetadata {
-        /// Adapter guest id.
-        id: String,
     },
     /// A target `run` dispatch for initialisation.
     TargetInit {
@@ -253,15 +218,6 @@ pub enum ScriptCall {
 }
 
 impl SourceScriptState {
-    /// Metadata for adapter guest `id`.
-    #[must_use]
-    pub fn metadata(&self, id: &str) -> SourceMetadata {
-        SourceMetadata {
-            emery_version: self.versions.get(id).cloned(),
-            kind: self.kinds.get(id).copied().unwrap_or(SourceKind::Documentation),
-        }
-    }
-
     /// Resolves the scripted extraction outcome for source `name`.
     ///
     /// # Errors
@@ -292,16 +248,6 @@ impl SourceScriptState {
 }
 
 impl TargetScriptState {
-    /// Metadata for adapter guest `id`.
-    #[must_use]
-    pub fn metadata(&self, id: &str) -> TargetMetadata {
-        TargetMetadata {
-            emery_version: self.versions.get(id).cloned(),
-            merge_rules: self.rules.clone(),
-            budget: self.budget,
-        }
-    }
-
     /// Resolves the `attempt`-th dispatch of `task` against this immutable script.
     ///
     /// # Errors

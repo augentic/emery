@@ -1,14 +1,10 @@
 //! Verifies `emery build` over scripted target, file, and version-control capabilities.
 
 #![cfg(not(target_arch = "wasm32"))]
-#![expect(
-    dead_code,
-    reason = "fixture constants and typed helpers stay for documentation parity with main"
-)]
 
 mod support;
 
-use emery_adapter::target::{DesignType, MergeRule, Report, Requirement, Scenario, Slice, Verdict};
+use emery_adapter::target::{DesignType, Report, Requirement, Scenario, Slice, Verdict};
 use emery_adapter::{Route, Trigger};
 use emery_engine::vcs::REVISION;
 use emery_engine::{EntryKind, REVISION_KEY};
@@ -161,11 +157,6 @@ fn project(base: &str) -> Vec<String> {
 // What the run read through the guest filesystem beyond the revision tree.
 fn reads(provider: &Provider) -> Vec<(String, String)> {
     provider.files.accessed_reads().into_iter().filter(|(at, _)| at != REVISION).collect()
-}
-
-// What the run listed through the guest filesystem beyond the revision tree.
-fn listed(provider: &Provider) -> Vec<(String, String)> {
-    provider.files.accessed_lists().into_iter().filter(|(at, _)| at != REVISION).collect()
 }
 
 // A requirement as the fixture lowers it: one scenario with no `given` and no `and`.
@@ -463,9 +454,25 @@ async fn build_plan() {
         "a working copy per slice, never the checkout"
     );
 
-    // each slice is dispatched once; full lowering is recorded when slice wire is enabled (A26).
+    // each slice carries its own documents, typed beside the renderings, and
+    // the head it builds over
     assert_eq!(first.id, "SLICE-001");
+    assert_eq!(first.part, "PART-001");
+    assert_eq!(first.name, "authentication");
+    assert_eq!((first.index, first.count), (1, 1));
+    assert_eq!(first.spec, SPEC_001, "the specification is cut to the slice");
+    assert_eq!(first.design, DESIGN_MD, "the design is whole");
+    assert_eq!(first.plan, PLAN_001, "the plan entry is the slice's own");
+    assert_eq!(first.base, BASE, "the first wave builds over the base");
     assert_eq!(second.id, "SLICE-002");
+    assert_eq!(second.part, "PART-002");
+    assert_eq!(second.name, "orders");
+    assert_eq!((second.index, second.count), (1, 1));
+    assert_eq!(second.spec, SPEC_002);
+    assert_eq!(second.design, DESIGN_MD);
+    assert_eq!(second.plan, PLAN_002);
+    assert_eq!(second.base, HEAD, "the second wave builds over the verified head");
+    typed(first, second);
     assert_eq!(provider.target.verifies(), [INTEGRATION, INTEGRATION], "one verify per wave");
     assert_eq!(provider.target.inits(), [INTEGRATION], "one init, before any slice");
 
@@ -600,8 +607,7 @@ async fn build_jobs_one() {
 // The merge rules the target declares ride every merge, in the order declared.
 #[tokio::test]
 async fn build_merge_rules() {
-    let (mut provider, _) = planned();
-    provider.target.rules = vec![MergeRule::union("src/*/mod.rs"), MergeRule::ours("Cargo.lock")];
+    let (provider, _) = planned();
 
     cli_ok(&provider, &["emery", "build", "--config", PROJECT_CONFIG]).await;
 
@@ -814,8 +820,7 @@ async fn conflict_staged_higher() {
 // lands as one merge commit in its wave and the paths are reported.
 #[tokio::test]
 async fn conflict_prior_merged() {
-    let (mut provider, id) = conflicted_at_lib(&[RESOLVED_LIB]);
-    provider.target.rules = vec![MergeRule::ours("Cargo.lock")];
+    let (provider, id) = conflicted_at_lib(&[RESOLVED_LIB]);
     let copy = worktree("SLICE-003");
     provider.vcs.commits.script(&copy, Ok(Some("SLICE-003-commit".to_owned())));
     provider.vcs.commits.script(&copy, Ok(Some("SLICE-003-resolved".to_owned())));
@@ -1248,8 +1253,7 @@ async fn verify_verdict_fail() {
 // a lockfile a check regenerated under one is no repair.
 #[tokio::test]
 async fn verify_repair_turn() {
-    let (mut provider, id) = planned();
-    provider.target.rules = vec![MergeRule::ours("Cargo.lock")];
+    let (provider, id) = planned();
     let repaired = || {
         Ok(vec![
             change("src/orders.rs", ChangeKind::Modified),
@@ -1958,10 +1962,7 @@ async fn build_from_config() {
     );
     cli_ok(&provider, &["emery", "build", "--config", &config]).await;
 
-    assert!(
-        provider.source.metadata.lock().expect("metadata").is_empty(),
-        "no source adapter loads for a build"
-    );
+    assert!(provider.source.calls().is_empty(), "no source adapter runs for a build");
     assert_eq!(provider.target.calls().len(), 2);
 }
 
@@ -2157,7 +2158,7 @@ async fn build_target_grammar() {
             fail(&provider, &["emery", "build", "--config", &config], 1, "bad_request").await;
         assert_message(&envelope, &format!("unknown field `{key}`"));
     }
-    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
     assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
 }
 
@@ -2255,7 +2256,7 @@ async fn build_no_target() {
     let envelope =
         fail(&provider, &["emery", "build", "--config", &config], 1, "bad_request").await;
     assert_message(&envelope, "adapter `builder` names no version");
-    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
     assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
 }
 
@@ -2280,7 +2281,7 @@ async fn malformed_reference() {
             "{envelope}"
         );
     }
-    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
 }
 
 // The revision is read from the repository before the adapter loads, so a
@@ -2299,7 +2300,6 @@ async fn build_no_revision() {
         envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery specify")),
         "the hint names the way out: {envelope}"
     );
-    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
     assert!(provider.target.calls().is_empty(), "no slice is dispatched");
     provider
         .vcs
@@ -2315,7 +2315,7 @@ async fn build_no_revision() {
         envelope["hint"].as_str().is_some_and(|hint| hint.contains("emery apply")),
         "the hint names the seal: {envelope}"
     );
-    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
 
     // a repository `apply` has not created yet holds none either, and the
     // build creates nothing
@@ -2425,7 +2425,7 @@ async fn build_spec_mismatch() {
         envelope["hint"].as_str().is_some_and(|hint| hint.contains("git checkout emery/")),
         "{envelope}"
     );
-    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
     assert_eq!(provider.vcs.calls().last(), Some(&format!("remove {REVISION}")), "the copy goes");
 
     // the operator's own `spec/`, in a repository with no label
@@ -2454,7 +2454,7 @@ async fn build_outdated() {
     let envelope =
         fail(&provider, &["emery", "build", "--config", PROJECT_CONFIG], 1, "spec-outdated").await;
     assert_message(&envelope, "grammar 1");
-    assert!(provider.target.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert!(provider.target.calls().is_empty(), "no slice is dispatched");
 }
 
 // The target's `emery-version` pin is gated as a source adapter's is, before
@@ -3750,8 +3750,7 @@ async fn budget_from_metadata() {
 // reported as `config`.
 #[tokio::test]
 async fn build_budget_from_config() {
-    let (mut provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
-    provider.target.budget = Some(10);
+    let (provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
     let config = provider.write_project(
         "tests/build/budget-target.toml",
@@ -3771,8 +3770,7 @@ async fn build_budget_from_config() {
 // reported as `flag`; `--budget 0` is refused at the CLI boundary.
 #[tokio::test]
 async fn budget_flag_precedence() {
-    let (mut provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
-    provider.target.budget = Some(12);
+    let (provider, _) = budgeted_revision(&[("a", 3, None), ("b", 3, None)]);
     provider.vcs.heads.script(".", Ok(BASE.to_owned()));
     let config = provider.write_project(
         "tests/build/budget-precedence.toml",

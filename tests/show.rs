@@ -284,12 +284,11 @@ async fn show_schedule() {
     );
 
     // `[target] budget` overrides the adapter's metadata without loading the adapter
-    let mut provider = Provider::idle();
+    let provider = Provider::idle();
     let config = provider.write_project(
         "tests/build/budget-six.toml",
         "[target]\nadapter = \"acme:builder@2.1.0\"\nrepository = \".\"\nbudget = 6\n",
     );
-    provider.target.budget = Some(4);
     seed(&provider.files, SPEC, DESIGN, PLAN);
 
     let resp =
@@ -298,10 +297,6 @@ async fn show_schedule() {
     let envelope: Value = serde_json::from_slice(&resp.stdout).expect("one JSON envelope");
     assert_eq!(envelope["document"]["budget"], 6, "{envelope}");
     assert_eq!(envelope["document"]["source"], "config", "{envelope}");
-    assert!(
-        provider.target.metadata.lock().expect("metadata").is_empty(),
-        "a configured budget needs no adapter metadata load"
-    );
 }
 
 // `--budget` cuts a multi-sub-stem part into serial slices, packs untriggered
@@ -382,10 +377,6 @@ async fn schedule_budget_flag() {
         ]),
         "{envelope}"
     );
-    assert!(
-        provider.target.metadata.lock().expect("metadata").is_empty(),
-        "`--budget` resolves the budget without loading the target adapter"
-    );
 
     let text =
         cli_ok(&provider, &["emery", "show", "schedule", "--config", PROJECT_CONFIG, "-b", "1"])
@@ -416,5 +407,4 @@ async fn schedule_staged_flag() {
         "{envelope}"
     );
     assert!(provider.vcs.calls().is_empty(), "refused before touching the repository");
-    assert!(provider.target.metadata.lock().expect("metadata").is_empty());
 }

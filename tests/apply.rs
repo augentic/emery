@@ -964,7 +964,7 @@ async fn apply_target_required() {
         );
     }
     assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
-    assert!(provider.source.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert!(provider.source.calls().is_empty(), "no source is extracted");
 
     cli_ok(&provider, &["emery", "show", "spec", "--staged"]).await;
     cli_ok(&provider, &["emery", "specify", "--config", &config]).await;
@@ -1035,7 +1035,7 @@ async fn specify_apply_fresh() {
         "lineage-exists",
     )
     .await;
-    assert!(provider.source.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert!(provider.source.calls().is_empty(), "no source is extracted");
 
     let provider = Provider::answering([SPEC_ANSWER, DESIGN_ANSWER]);
     let outgoing = seed(&provider.files, &lineage(), DESIGN, PLAN);
@@ -1113,7 +1113,7 @@ async fn specify_apply_no_source() {
     let provider = Provider::idle();
 
     fail(&provider, &["emery", "specify", "--apply"], 1, "specify-source-required").await;
-    assert!(provider.source.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+    assert!(provider.source.calls().is_empty(), "no source is extracted");
     assert!(provider.storage.state(STAGED_KEY).await.is_none());
     assert!(provider.storage.state(REVISION_KEY).await.is_none());
     assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");

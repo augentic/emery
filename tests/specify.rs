@@ -4,7 +4,7 @@
 
 mod support;
 
-use emery_adapter::source::{Claim, ClaimKind, Evidence, SourceContent, SourceKind};
+use emery_adapter::source::{Claim, ClaimKind, Evidence, SourceContent};
 use emery_engine::vcs::{REVISION, RevisionMessage, SPECIFICATION};
 use emery_engine::{REVISION_KEY, STAGED_CONTAINER, STAGED_KEY};
 use omnia_sdk::{bad_gateway, bad_request};
@@ -471,9 +471,7 @@ async fn authority_precedence() {
         slicing.as_str(),
     ]);
 
-    // rank each adapter by its metadata; the unscripted ones read documentation
-    provider.source.kinds.insert(guest("code"), SourceKind::Behaviour);
-    provider.source.kinds.insert(guest("intent"), SourceKind::Intent);
+    // rank each adapter by its metadata: code is Behaviour, intent is Intent, the rest Documentation
     provider.source.evidence.insert(
         "docs".to_string(),
         Ok(evidence(vec![
@@ -561,7 +559,6 @@ async fn authority_precedence() {
 #[tokio::test]
 async fn configured_rank() {
     let bind = |provider: &mut Provider| {
-        provider.source.kinds.insert(guest("code"), SourceKind::Behaviour);
         provider.source.evidence.insert(
             "docs".to_string(),
             Ok(evidence(vec![requirement("session.timeout", "Sessions expire after 30 minutes.")])),
@@ -651,7 +648,6 @@ async fn configured_rank() {
 #[tokio::test]
 async fn invalid_grouping() {
     let bind = |provider: &mut Provider| {
-        provider.source.kinds.insert(guest("code"), SourceKind::Behaviour);
         provider.source.evidence.insert(
             "docs".to_string(),
             Ok(evidence(vec![requirement("session.timeout", "Sessions expire after 30 minutes.")])),
@@ -712,13 +708,12 @@ async fn invalid_grouping() {
     provider.model.assert_exhausted();
 }
 
-// Two behaviour sources whose claims are all `type` pass the claim gate but
-// leave nothing to reconcile.
+// Sources whose claims are all `type` pass the claim gate but leave nothing
+// to reconcile.
 #[tokio::test]
 async fn no_claims() {
     let mut provider = Provider::idle();
     for name in ["api", "code"] {
-        provider.source.kinds.insert(guest(name), SourceKind::Behaviour);
         provider.source.evidence.insert(
             name.to_string(),
             Ok(evidence(vec![claim(
@@ -746,7 +741,6 @@ async fn no_claims() {
 async fn one_claims_source() {
     let design = design_with_apis();
     let mut provider = Provider::answering([SPEC_ANSWER, design.as_str()]);
-    provider.source.kinds.insert(guest("code"), SourceKind::Behaviour);
     provider.source.evidence.insert(
         "code".to_string(),
         Ok(evidence(vec![claim(
@@ -3234,8 +3228,8 @@ async fn config_file() {
             assert_message(&envelope, case.fragment);
         }
         assert!(
-            provider.source.metadata.lock().expect("metadata").is_empty(),
-            "a refused list gates nothing: {}",
+            provider.source.calls().is_empty(),
+            "a refused list extracts nothing: {}",
             case.body
         );
     }
@@ -3274,8 +3268,8 @@ async fn config_reference() {
             fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
         assert_message(&envelope, fragment);
         assert!(
-            provider.source.metadata.lock().expect("metadata").is_empty(),
-            "a refused reference loads nothing: {adapter}"
+            provider.source.calls().is_empty(),
+            "a refused reference extracts nothing: {adapter}"
         );
     }
 }
@@ -3300,10 +3294,7 @@ async fn config_rank() {
         let envelope =
             fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
         assert_message(&envelope, fragment);
-        assert!(
-            provider.source.metadata.lock().expect("metadata").is_empty(),
-            "a refused rank loads nothing: {rank}"
-        );
+        assert!(provider.source.calls().is_empty(), "a refused rank extracts nothing: {rank}");
     }
 }
 
@@ -3341,10 +3332,7 @@ async fn config_scope() {
         let envelope =
             fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
         assert_message(&envelope, fragment);
-        assert!(
-            provider.source.metadata.lock().expect("metadata").is_empty(),
-            "a refused scope loads nothing: {scope}"
-        );
+        assert!(provider.source.calls().is_empty(), "a refused scope extracts nothing: {scope}");
     }
 }
 
@@ -3631,10 +3619,7 @@ mod repository {
             let envelope =
                 fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
             assert_message(&envelope, fragment);
-            assert!(
-                provider.source.metadata.lock().expect("metadata").is_empty(),
-                "a refused list gates nothing: {body}"
-            );
+            assert!(provider.source.calls().is_empty(), "a refused list extracts nothing: {body}");
             assert!(provider.vcs.calls().is_empty(), "nothing is asked of version control");
         }
     }
@@ -3681,8 +3666,8 @@ mod reference {
                 "{envelope}"
             );
             assert!(
-                provider.source.metadata.lock().expect("metadata").is_empty(),
-                "a malformed reference loads nothing: {reference}"
+                provider.source.calls().is_empty(),
+                "a malformed reference extracts nothing: {reference}"
             );
         }
     }
@@ -3700,10 +3685,7 @@ mod reference {
             fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
 
         assert_message(&envelope, "unknown field `registries`");
-        assert!(
-            provider.source.metadata.lock().expect("metadata").is_empty(),
-            "a file that does not parse loads nothing"
-        );
+        assert!(provider.source.calls().is_empty(), "a file that does not parse extracts nothing");
     }
 
     #[tokio::test]
@@ -3723,10 +3705,7 @@ mod reference {
             "adapters `emery:documentation@1.2.0` and `emery:documentation@1.3.0`",
         );
         assert_message(&envelope, "would both register as `emery:documentation`");
-        assert!(
-            provider.source.metadata.lock().expect("metadata").is_empty(),
-            "a colliding list loads nothing"
-        );
+        assert!(provider.source.calls().is_empty(), "a colliding list extracts nothing");
 
         let envelope = fail(
             &provider,
@@ -3796,10 +3775,7 @@ mod digest {
             fail(&provider, &["emery", "specify", "--config", &config], 1, "bad_request").await;
 
         assert_message(&envelope, &format!("adapter `{SOURCE}` is pinned to two digests"));
-        assert!(
-            provider.source.metadata.lock().expect("metadata").is_empty(),
-            "a conflicting pin loads nothing"
-        );
+        assert!(provider.source.calls().is_empty(), "a conflicting pin extracts nothing");
     }
 }
 
@@ -4003,7 +3979,7 @@ mod store {
             assert!(hint.contains("emery amend"), "{argv:?}: {envelope}");
             assert!(hint.contains("emery specify --fresh"), "{argv:?}: {envelope}");
         }
-        assert!(provider.source.metadata.lock().expect("metadata").is_empty(), "nothing loads");
+        assert!(provider.source.calls().is_empty(), "no source is extracted");
         assert!(provider.storage.state(STAGED_KEY).await.is_none(), "nothing is staged");
 
         let provider = Provider::idle();

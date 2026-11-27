@@ -4,14 +4,12 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
-use emery_adapter::source::{Backing, Claim, ClaimKind, Evidence, SourceInput, SourceKind};
-use emery_adapter::target::{MergeRule, Report, Slice, Verdict};
+use emery_adapter::source::{Backing, Claim, ClaimKind, Evidence, SourceInput};
+use emery_adapter::target::{Report, Slice, Verdict};
 use futures::FutureExt as _;
 use futures::executor::block_on;
-use hex;
-use omnia::RegistryConfig;
+use omnia::{Digest, RegistryConfig};
 use omnia_sdk::Error;
 use omnia_sdk::command::Response;
 use omnia_test::host::{Backends, Deployment, Run, Scratch, ScriptedModel, scratch};
@@ -22,7 +20,6 @@ use omnia_wasi_model::{
 };
 use omnia_wasi_otel::WasiOtel;
 use omnia_wasi_vcs::WasiVcs;
-use sha2::{Digest, Sha256};
 use test_programs::script::{
     ARRIVED, CALLS_DIR, CombinedScript, EvidenceScript, FAILURES_DIR, MOUNT, ReportScript, STATE,
     ScriptCall, ScriptError, SourceScriptState, TargetScriptState, VERIFIES_DIR, VerdictScript,
@@ -36,9 +33,6 @@ use super::vcs::VcsScript;
 
 type Recorded = Vec<(String, SourceInput)>;
 
-/// A [`ModelClient`] that refuses the first `count` completions upstream, then
-/// delegates to `inner` for the rest.
-/// The model backend wired into each deployment run.
 #[derive(Clone, Debug)]
 enum HostModel {
     Scripted(ScriptedModel),
@@ -61,33 +55,39 @@ impl ModelClient for HostModel {
     }
 }
 
+// Refuses either the first `left` completions before delegating to `inner`, or every completion when `left` is `None`.
 #[derive(Clone, Debug)]
 struct FailingCompletes {
     inner: ScriptedModel,
-    left: Arc<Mutex<usize>>,
+    left: Option<Arc<Mutex<usize>>>,
     message: String,
-    /// When false, every completion is an upstream failure and `inner` is never called.
-    delegate: bool,
 }
 
 impl FailingCompletes {
-    fn new(count: usize, message: impl Into<String>, inner: ScriptedModel, delegate: bool) -> Self {
+    fn first(count: usize, message: impl Into<String>, inner: ScriptedModel) -> Self {
         Self {
             inner,
-            left: Arc::new(Mutex::new(count)),
+            left: Some(Arc::new(Mutex::new(count))),
             message: message.into(),
-            delegate,
+        }
+    }
+
+    fn always(message: impl Into<String>, inner: ScriptedModel) -> Self {
+        Self {
+            inner,
+            left: None,
+            message: message.into(),
         }
     }
 }
 
 impl ModelClient for FailingCompletes {
     fn complete(&self, request: Request, tool_host: Arc<dyn ToolHost>) -> FutureResult<Answer> {
-        if !self.delegate {
+        let Some(left) = &self.left else {
             let message = self.message.clone();
             return async move { Err(ModelError::Unavailable(message).into()) }.boxed();
-        }
-        let mut left = self.left.lock().expect("transport failures");
+        };
+        let mut left = left.lock().expect("transport failures");
         if *left > 0 {
             *left -= 1;
             let message = self.message.clone();
@@ -102,7 +102,6 @@ impl ModelClient for FailingCompletes {
     }
 }
 
-/// Parallel-dispatch barrier configuration staged for adapter guests.
 #[derive(Clone, Debug, Default)]
 pub struct Rendezvous {
     expected: BTreeSet<String>,
@@ -116,15 +115,11 @@ impl<T: Into<String>> FromIterator<T> for Rendezvous {
     }
 }
 
-/// Scripted source outcomes and call records.
 #[derive(Clone, Debug, Default)]
 pub struct SourceScript {
     pub evidence: BTreeMap<String, Result<Evidence, Error>>,
     pub held: BTreeSet<String>,
-    pub versions: BTreeMap<String, String>,
-    pub kinds: BTreeMap<String, SourceKind>,
     pub calls: Arc<Mutex<Recorded>>,
-    pub metadata: Arc<Mutex<Vec<String>>>,
     pub rendezvous: Option<Rendezvous>,
 }
 
@@ -134,19 +129,14 @@ impl SourceScript {
     }
 }
 
-/// Scripted target outcomes and call records.
 #[derive(Clone, Debug, Default)]
 pub struct TargetScript {
     pub reports: BTreeMap<String, Result<Report, Error>>,
     pub failures: Arc<Mutex<BTreeMap<String, VecDeque<Error>>>>,
     pub verdicts: Arc<Mutex<VecDeque<Result<Verdict, Error>>>>,
-    pub versions: BTreeMap<String, String>,
-    pub rules: Vec<MergeRule>,
-    pub budget: Option<u32>,
     pub inits: Arc<Mutex<Vec<String>>>,
     pub calls: Arc<Mutex<Vec<(String, Slice, String)>>>,
     pub verifies: Arc<Mutex<Vec<String>>>,
-    pub metadata: Arc<Mutex<Vec<String>>>,
     pub rendezvous: Option<Rendezvous>,
 }
 
@@ -172,7 +162,6 @@ impl TargetScript {
     }
 }
 
-/// The façade behind every root scenario suite.
 pub struct Provider {
     pub model: ScriptedModel,
     model_override: Option<FailingCompletes>,
@@ -185,9 +174,6 @@ pub struct Provider {
     project: Scratch,
     store: Scratch,
     registry: Scratch,
-    guest: PathBuf,
-    script_source: PathBuf,
-    script_target: PathBuf,
     store_scope: Option<String>,
 }
 
@@ -200,14 +186,12 @@ impl Provider {
         Self::answering(Vec::<String>::new())
     }
 
-    /// Reuses staging storage from a prior run with a fresh deployment shell.
     pub fn over(storage: Storage, answers: impl IntoIterator<Item = impl Into<String>>) -> Self {
         let mut provider = Self::answering(answers);
         provider.storage = storage;
         provider
     }
 
-    /// One shared backend bundle with keyvalue and blobstore scoped under `scope`.
     pub fn scoped(
         backends: Backends, scope: impl Into<String>,
         answers: impl IntoIterator<Item = impl Into<String>>,
@@ -219,24 +203,18 @@ impl Provider {
         provider
     }
 
-    /// Scripts the first `count` model completions as upstream transport failures,
-    /// then answers through `self.model`.
     #[must_use]
     pub fn failing_model(mut self, count: usize, message: impl Into<String>) -> Self {
-        let message = message.into();
-        self.model_override = Some(FailingCompletes::new(count, message, self.model.clone(), true));
+        self.model_override = Some(FailingCompletes::first(count, message, self.model.clone()));
         self
     }
 
-    /// Every model completion fails upstream; `inner` is never called.
     #[must_use]
     pub fn upstream_failing(mut self, message: impl Into<String>) -> Self {
-        self.model_override =
-            Some(FailingCompletes::new(0, message.into(), self.model.clone(), false));
+        self.model_override = Some(FailingCompletes::always(message, self.model.clone()));
         self
     }
 
-    /// A follow-up run over staged or sealed storage, with the same scripted sources and vcs history.
     pub fn continuing(self, answers: impl IntoIterator<Item = impl Into<String>>) -> Self {
         let Self {
             storage,
@@ -259,22 +237,13 @@ impl Provider {
         next
     }
 
-    /// Writes `contents` under the deployment project mount and returns its relative path.
     pub fn write_project(&self, relative: &str, contents: impl AsRef<[u8]>) -> String {
         self.project.write(relative, contents);
         relative.to_owned()
     }
 
-    #[expect(clippy::print_stderr, reason = "A17 records per-invocation wall time for the spike")]
     pub async fn cli(&self, argv: &[&str]) -> Response {
-        let started = Instant::now();
         self.stage_script();
-        if self.target.budget.is_some()
-            && uses_project_build_config(argv)
-            && !argv_has_budget_flag(argv)
-        {
-            self.target.metadata.lock().expect("metadata").push("acme:builder".to_owned());
-        }
         self.files.mark_run_start();
         let model = self.model_override.as_ref().map_or_else(
             || HostModel::Scripted(self.model.clone()),
@@ -297,11 +266,6 @@ impl Provider {
         self.files.record_accesses();
         self.ingest_calls();
         self.ingest_target_script();
-        eprintln!(
-            "provider cli {:?} {:.3?}",
-            argv.first().copied().unwrap_or("emery"),
-            started.elapsed()
-        );
         response_of(run)
     }
 }
@@ -322,9 +286,12 @@ impl Provider {
         let vcs = VcsScript::default();
         vcs.bind_project(project.path());
         vcs.bind_files(files.clone());
-        let guest = engine_guest();
-        let (script_source, script_target) = adapter_paths();
-        publish_adapters(&store, &registry, &script_source, &script_target);
+        publish_adapters(
+            &store,
+            &registry,
+            Path::new(test_programs::ADAPTER_SCRIPT_SOURCE),
+            Path::new(test_programs::ADAPTER_SCRIPT_TARGET),
+        );
         Self {
             model,
             model_override: None,
@@ -337,9 +304,6 @@ impl Provider {
             project,
             store,
             registry,
-            guest,
-            script_source,
-            script_target,
             store_scope: None,
         }
     }
@@ -347,7 +311,7 @@ impl Provider {
     fn deployment(&self, argv: &[&str]) -> Deployment {
         let (command_name, command_args) = deployment_command(argv);
         Deployment::new()
-            .guest("emery", self.guest.clone())
+            .guest("emery", engine_guest())
             .command(command_name)
             .mount(self.project.mount(true))
             .store(self.store.path())
@@ -380,15 +344,13 @@ impl Provider {
                     (
                         key.clone(),
                         value.as_ref().map_or_else(
-                            |err| EvidenceScript::Err(ScriptError::from_adapter(err)),
+                            |err| EvidenceScript::Err(ScriptError::from(err)),
                             |evidence| EvidenceScript::Ok(evidence.clone()),
                         ),
                     )
                 })
                 .collect(),
             held: self.source.held.clone(),
-            versions: self.source.versions.clone(),
-            kinds: self.source.kinds.clone(),
             rendezvous: self.source.rendezvous.as_ref().map(|r| {
                 test_programs::script::RendezvousScript {
                     expected: r.expected.clone(),
@@ -407,7 +369,7 @@ impl Provider {
                     (
                         key.clone(),
                         value.as_ref().map_or_else(
-                            |err| ReportScript::Err(ScriptError::from_adapter(err)),
+                            |err| ReportScript::Err(ScriptError::from(err)),
                             |report| ReportScript::Ok(report.clone()),
                         ),
                     )
@@ -419,9 +381,7 @@ impl Provider {
                 .lock()
                 .expect("failures")
                 .iter()
-                .map(|(key, errs)| {
-                    (key.clone(), errs.iter().map(ScriptError::from_adapter).collect())
-                })
+                .map(|(key, errs)| (key.clone(), errs.iter().map(ScriptError::from).collect()))
                 .collect(),
             verdicts: self
                 .target
@@ -431,14 +391,11 @@ impl Provider {
                 .iter()
                 .map(|value| {
                     value.as_ref().map_or_else(
-                        |err| VerdictScript::Err(ScriptError::from_adapter(err)),
+                        |err| VerdictScript::Err(ScriptError::from(err)),
                         |verdict| VerdictScript::Ok(verdict.clone()),
                     )
                 })
                 .collect(),
-            versions: self.target.versions.clone(),
-            rules: self.target.rules.clone(),
-            budget: self.target.budget,
             rendezvous: self.target.rendezvous.as_ref().map(|r| {
                 test_programs::script::RendezvousScript {
                     expected: r.expected.clone(),
@@ -447,7 +404,6 @@ impl Provider {
         }
     }
 
-    /// Clears queued build failures for `slice_id`.
     pub fn clear_target_failures(&self, slice_id: &str) {
         self.target.failures.lock().expect("failures").remove(slice_id);
     }
@@ -489,14 +445,8 @@ impl Provider {
             let call: ScriptCall = serde_json::from_slice(&bytes)
                 .unwrap_or_else(|err| panic!("call JSON {}: {err}", file.display()));
             match call {
-                ScriptCall::SourceMetadata { id } => {
-                    self.source.metadata.lock().expect("metadata").push(id);
-                }
                 ScriptCall::SourceExtract { id, input } => {
                     self.source.calls.lock().expect("calls").push((id, input));
-                }
-                ScriptCall::TargetMetadata { id } => {
-                    self.target.metadata.lock().expect("metadata").push(id);
                 }
                 ScriptCall::TargetInit { workspace, .. } => {
                     self.target.inits.lock().expect("inits").push(workspace);
@@ -513,7 +463,6 @@ impl Provider {
     }
 }
 
-/// Runs one CLI invocation, returning the raw response.
 pub async fn cli(provider: &Provider, argv: &[&str]) -> Response {
     provider.cli(argv).await
 }
@@ -566,17 +515,10 @@ fn response_of(run: Run) -> Response {
     }
 }
 
-fn adapter_paths() -> (PathBuf, PathBuf) {
-    (
-        PathBuf::from(test_programs::ADAPTER_SCRIPT_SOURCE),
-        PathBuf::from(test_programs::ADAPTER_SCRIPT_TARGET),
-    )
-}
-
-/// Digest of the bytes the suite publishes for `acme:builder`.
 pub fn builder_digest() -> String {
-    let bytes = fs::read(adapter_paths().1).expect("the scripted target adapter");
-    format!("sha256:{}", hex::encode(Sha256::digest(bytes)))
+    let bytes =
+        fs::read(test_programs::ADAPTER_SCRIPT_TARGET).expect("the scripted target adapter");
+    Digest::of(&bytes).to_string()
 }
 
 fn publish_adapters(store: &Scratch, registry: &Scratch, source: &Path, target: &Path) {
@@ -656,19 +598,6 @@ fn copy_tree(source: &Path, destination: &Path) {
         }
         fs::copy(source, destination).expect("copy fixture");
     }
-}
-
-fn argv_has_budget_flag(argv: &[&str]) -> bool {
-    let (_, command_args) = deployment_command(argv);
-    command_args.iter().any(|arg| *arg == "--budget" || *arg == "-b")
-}
-
-fn uses_project_build_config(argv: &[&str]) -> bool {
-    let (_, command_args) = deployment_command(argv);
-    matches!(
-        command_args.windows(2).find(|window| window[0] == "--config").map(|window| window[1]),
-        Some("tests/build/project.toml") | None
-    )
 }
 
 fn deployment_command<'a>(argv: &'a [&'a str]) -> (String, Vec<&'a str>) {
